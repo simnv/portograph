@@ -874,7 +874,10 @@ faces, as vertical, or straight when the frame and row rules would pin it on tho
 makes after the rows rule), and the search moves on to the next candidate; at most `SEAT_SET_GAIN_READS` (16) candidates are read. What
 stage 6 cannot read this way: a link that a later rule straightens or bends (a centring move of 7c, an overlay, a chord of another row's
 frame). The best candidate that breaks no owner wins: a solid block may not pass `BLOCK_CAP` and a flat block's floor demand
-may not pass its gap (both read with `blockDemands`, the one demand reader `reserveBlockGaps` reserves from). A cut search (`bound`), a row
+may not pass its gap (both read with `blockDemands`, the one demand reader `reserveBlockGaps` reserves from). The cell box over the set (as
+`coverInterval` grows it) may not break or deepen a hard separation inside its frame: the gap to a child frame or to a cell beside it
+(dense-16x9 ticket 48). The frame column sweep moves a frame whole, so it cannot open such a gap, and the later pack that opens it moves the
+child into the next column. The gaps between columns stay with `separateFrameColumns` and `fixedClearances`. A cut search (`bound`), a row
 out of scope, a row where no set keeps more than it stands (`no-gain`) and a row whose every better set breaks an owner (`owner`) keep no
 record and are named (`SEAT_SET_DECLINED`). A set moves its members, makes the cell box cover its interval and writes one `seatSet` entry
 (producer `rows`): the order, the widths, each kept vertical as an equation `x(member) + memberOffset = x(parent) + farOffset` (the far
@@ -1727,7 +1730,9 @@ The yield ranking and the window producer read one growth split: x between pill 
 split otherwise. The validator still replays the one 7f room producer.
 
 `topUpBandClearance` rebuilds every moved node's pills and text, including lower-tier cascades, before
-`holdColumnsAfterPush` and `reserveLinkLabelRoom` read them.
+`holdColumnsAfterPush` and `reserveLinkLabelRoom` read them. The pack of `holdColumnsAfterPush` reads every hard separation as part of
+its window (dense-16x9 ticket 48): a child frame whose move would break or deepen one stays where it stands, named by
+`FRAME_PACK_SEPARATION_HELD`. Placement reserves the gaps; this move only checks.
 
 **Direct families come first** (architecture-2 ticket 22; `docs/design/routed-chords.md`, Section 15). Before `freezeChords`,
 `planDirectFamilies` counts the orthogonal crossings of each facing pair on a copy, and decides each triggered family's chords
@@ -2258,6 +2263,13 @@ on its own side. It never stands on the far side of a foreign frame. A fixed-poi
 the held lane, grow the frame, place the foreign lane, repeat) was tried and dropped. It does not
 converge: a held lane that may pass a foreign frame makes the frame reserved second grow over the
 first lane.
+
+A held lane grows its frame in every sub-tier of the frame, but its slot reads only the sub-tiers the
+link crosses. So once the held lanes stand, and before any foreign lane is reserved, the units beside a
+grown frame edge give way, outward and whole, each unit after them in turn, by what the beside gap
+(`besideGap`, the gap G9 reads) lacks (`separateHeldFrames`, dense-16x9 ticket 48). The grown frame stays,
+because its cells hold the sources of its lanes. A unit that holds a lane source, stands in a sub-tier no
+link crosses or would reach a reserved lane stays, and `LANE_FRAME_GAP_HELD` names it.
 
 Sibling frames of one tier are columns. A column is the frame box plus `COLUMN_SLACK` (20 px) on
 each side. `packFrameColumns` (`src/layout/columns.ts`) runs in stage 4 after ELK and packs the
