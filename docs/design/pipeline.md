@@ -2275,7 +2275,8 @@ cannot move. A flank moves with the group it flanks. Every unit the chain does n
 room, a grid, a bar or a unit of another tier included: the chain is judged whole on the hard
 separations of the model with all its moves in place (`separationsBrokenBy`, the gaps between a
 canton and its neighbours included). The slot of a held lane reads these chains while the allocator can still choose it: on a
-trial that is put back exactly, it places the slot's lanes, moves the chains as they would move (the part
+trial that is put back exactly, it opens the slot and places its lanes with the same step as the commit (the
+plan's shifts first, review 3), moves the chains as they would move (the part
 a blocked chain can take included) and measures every separation that stands deeper, a fixed grid, bar or
 flank included (`slotShort`, review 2). A slot that leaves less short wins over a nearer slot. A chain that cannot take
 the whole lack takes the largest part that breaks or deepens no separation. It commits whole or not at

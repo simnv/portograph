@@ -7,7 +7,7 @@ import { resolve } from '../../src/resolve/index.js';
 import { holdColumnsAfterPush } from '../../src/layout/bands.js';
 import { derivedShortfalls, worseSeparations } from '../../src/layout/constraints/separation.js';
 import { deriveFrames, FRAME_TO_FRAME_GAP } from '../../src/layout/frames.js';
-import { lanes } from '../../src/layout/lanes.js';
+import { allocateLanes, lanes } from '../../src/layout/lanes.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { rows } from '../../src/layout/rows.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
@@ -103,6 +103,38 @@ describe('the slot of a held lane reads the gaps its frame would leave short (de
       expect(Object.entries(gates).filter(([, gate]) => !gate.passed && gate.severity === 'error').map(([id]) => id)).toEqual([]);
     }, 120000);
   }
+});
+
+describe('the trial of a held slot opens the slot as the commit does (dense-16x9 ticket 48, review 3)', () => {
+  // A stage reproduction on the grid-link sheet (R1): a two-node grid `spare` stands in sub-tier 2 with its right edge on the left edge of frame `mid`, and
+  // the grid `extra` stands 90 px right of `mid` (its 80 px minimum holds). The left slot of link-11 opens by shifting `spare` 18.76 px left. A trial that
+  // reads the slot without that shift charges it 18.76 px and takes the right slot, which leaves `mid` 8.76 px nearer than the beside gap to `extra`.
+  it('takes the slot its own opening shift clears, and keeps the gap to the fixed grid', async () => {
+    const input = withSeats(sheet('a-refused-reseat-restores-its-frames'), true);
+    input.groups.extra = { tier: 1, shape: 'grid' };
+    input.nodes.x = { group: 'extra', size: { width: 32, height: 50 } };
+    input.nodes.y = { group: 'extra' };
+    input.links.push(['u0', 'x'], ['y', 'l1'], ['midg', 'l1']);
+    input.groups.spare = { tier: 1, shape: 'grid' };
+    input.nodes.stand = { group: 'spare' };
+    input.nodes.two = { group: 'spare' };
+    const sized = sizeNodes(sidesOne(resolve(parse(writeYaml(input)))));
+    await skeleton(sized, { createAttempt });
+    const model = clone(rows(sidesTwo(sized))), spare = model.groups.spare!, frame = deriveFrames(model)!.find(item => item.id === 'mid')!.box;
+    const band = model.tierBands.find(item => item.tier === 2)!;
+    spare.tier = 2; model.document.groups.spare!.tier = 2;
+    moveGroup(model, spare, frame.x - spare.bounds!.width - spare.bounds!.x, band.bounds!.y - spare.bounds!.y);
+    rebuildNodeGeometry(model, spare.nodes, 'current');
+    const extra = model.groups.extra!;
+    moveGroup(model, extra, frame.x + frame.width + 90 - extra.bounds!.x, 0);
+    rebuildNodeGeometry(model, extra.nodes, 'current');
+    const gap = 'separation-root-frame-group:frame:mid|group:extra';
+    expect(derivedShortfalls(model).has(gap)).toBe(false);
+    allocateLanes(model);
+    expect(model.lanes.find(lane => lane.id === 'lane:"link-11":2')!.x).toBeCloseTo(255.7395, 3);
+    expect(spare.bounds!.x).toBeCloseTo(frame.x - spare.bounds!.width - 18.7605, 3);
+    expect(derivedShortfalls(model).get(gap)?.short ?? 0).toBe(0);
+  }, 120000);
 });
 
 describe('the 7f pack of the beside rows (dense-16x9 ticket 48, review 1)', () => {

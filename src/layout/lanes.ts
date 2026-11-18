@@ -1250,32 +1250,35 @@ export function allocateLanes(model: LayoutModel): void {
     }
   };
   /**
-   * What a held slot leaves short (dense-16x9 ticket 48, review 2): the px by which the hard separations of the model stand deeper, with the slot's lanes in
-   * place and the chains of `separateHeldFrames` moved as they would move (the part a blocked chain can take included), than with the held lanes reserved so far.
+   * What a held slot leaves short (dense-16x9 ticket 48, review 2): the px by which the hard separations of the model stand deeper, with the slot opened and its
+   * lanes in place as the commit places them (`open`: the same `place` steps, so the opening shifts move the cells first, review 3) and the chains of
+   * `separateHeldFrames` moved as they would move (the part a blocked chain can take included), than with the held lanes reserved so far.
    * Every unit of the document tier of the grown frame counts, a fixed grid, bar or flank included: a frame the slot grows into a fixed neighbour asks for no
    * chain, and the reading still sees the gap. A unit of another tier does not: the tier gaps of 7f move the tiers apart after this.
    * The trial runs on the model and is put back exactly: the boxes, bodies, anchors, icons, pills, labels and diagnostics it changed (`moveGroup` writes boxes and
    * anchors in place, so they are copied; the rebuild replaces icons, pills and labels, so the old ones are kept).
    */
-  const slotShort = (slot: readonly Lane[]): number => {
+  const slotShort = (open: () => Lane[]): number => {
     const lanes = model.lanes, copy = (lane: Lane): Lane => ({ ...lane, bounds: { ...lane.bounds } });
     const boxes = Object.values(model.groups).map(group => [group, { ...group.bounds! }] as const);
     const bodies = Object.values(model.nodes).map(node => [node, { ...node.bounds! }, node.icon, node.ports.map(port => [port, port.anchor === undefined ? undefined : { ...port.anchor }, port.pill] as const)] as const);
     const labels = model.labels, diagnostics = [...model.diagnostics];
     const reading = (reserved: Lane[]): Map<string, Shortfall> => { model.lanes = reserved; try { return derivedShortfalls(model); } finally { model.lanes = lanes; } };
-    // The units of the document tiers whose frames the slot grows, and the flanks of their groups: an entry between them is read; one that reaches a unit of
-    // another tier is not, because the tier gaps of 7f move the tiers apart after this.
-    const hosts = new Set(slot.map(lane => lane.group)), owners = new Set<string>();
-    for (const units of frameTiers(model)) {
-      if (!units.some(unit => unit.groups.some(group => hosts.has(group.id)))) continue;
-      for (const unit of units) {
-        if (unit.frame) owners.add(`frame:${unit.id}`);
-        for (const group of unit.groups) owners.add(`group:${group.id}`);
-      }
-    }
-    for (const group of Object.values(model.groups)) if (group.flank !== undefined && owners.has(`group:${group.flank.of}`)) owners.add(`group:${group.id}`);
-    const before = reading(pending), trial = [...pending, ...slot].map(copy);
+    const before = reading(pending);
     try {
+      const slot = open();
+      // The units of the document tiers whose frames the slot grows, and the flanks of their groups: an entry between them is read; one that reaches a unit of
+      // another tier is not, because the tier gaps of 7f move the tiers apart after this.
+      const hosts = new Set(slot.map(lane => lane.group)), owners = new Set<string>();
+      for (const units of frameTiers(model)) {
+        if (!units.some(unit => unit.groups.some(group => hosts.has(group.id)))) continue;
+        for (const unit of units) {
+          if (unit.frame) owners.add(`frame:${unit.id}`);
+          for (const group of unit.groups) owners.add(`group:${group.id}`);
+        }
+      }
+      for (const group of Object.values(model.groups)) if (group.flank !== undefined && owners.has(`group:${group.flank.of}`)) owners.add(`group:${group.id}`);
+      const trial = [...pending, ...slot].map(copy);
       separateHeldFrames(trial);
       const after = reading(trial);
       return [...after].filter(([, item]) => item.owners.every(owner => !owner.startsWith('frame:') && !owner.startsWith('group:') || owners.has(owner)))
@@ -1299,12 +1302,17 @@ export function allocateLanes(model: LayoutModel): void {
     return { id: laneId(link, tier), owner: { kind: 'link', id: link.id }, layer: 'routed', group: group.id, tier,
       side: x < group.bounds!.x ? 'left' : 'right', x, bounds: { x: x - width / 2, width, ...laneExtent(model, tier) } };
   };
+  /** Opens the slot in `tier` (the plan's shifts) and gives the lane that stands in it: the commit and the slot's trial (`slotShort`) run this one step (R1). */
+  const place = (link: LayoutLink, tier: number, groups: LayoutGroup[], group: LayoutGroup, x: number, shifts: number[]): Lane => {
+    shiftGroups(link, groups, shifts);
+    return laneAt(link, tier, group, x);
+  };
   const commit = (link: LayoutLink, tier: number, groups: LayoutGroup[], group: LayoutGroup, x: number, shifts: number[]): void => {
     const source = model.nodes[laneSource(model, link).node]!;
-    shiftGroups(link, groups, shifts);
+    const lane = place(link, tier, groups, group, x, shifts);
     if (x < source.bounds!.x || x > right(source.bounds!)) placementWarning(model, 'LANE_OUTSIDE_SOURCE_SPAN',
       `${link.id} cannot fit an in-span corridor beside existing reservations at tier ${tier}; routing must complete its attachment jog.`, [link.id]);
-    pending.push(laneAt(link, tier, group, x));
+    pending.push(lane);
   };
   /**
    * A link foreign to a frame crosses every sub-tier of it with ONE lane x, decided here once over the
@@ -1441,7 +1449,10 @@ export function allocateLanes(model: LayoutModel): void {
         // A held lane grows its frame: the slot reads the separations the grown frame would leave short after the chains of the units beyond it
         // take what they can (`slotShort`, dense-16x9 ticket 48), while it can still choose.
         const short = !feasible || heldGap === undefined ? 0
-          : slotShort(tiers.map((tier, index) => laneAt(link, tier, hostFor(tier, item.x, plans[index]!.groups, plans[index]!.shifts), item.x)));
+          : slotShort(() => tiers.map((tier, index) => {
+            const { groups, shifts } = plans[index]!;
+            return place(link, tier, groups, hostFor(tier, item.x, groups, shifts), item.x, shifts ?? groups.map(() => 0));
+          }));
         return { ...item, feasible, short, offset: Math.abs(item.x - sx), moved: shifts.reduce((sum, dx) => sum + Math.abs(dx), 0) };
       }).filter(item => item.feasible).sort((a, b) => Math.abs(a.gap - wanted) - Math.abs(b.gap - wanted)
         || (Math.abs(a.short - b.short) > RESIDUAL_TOLERANCE ? a.short - b.short : 0) || a.offset - b.offset || a.moved - b.moved);
