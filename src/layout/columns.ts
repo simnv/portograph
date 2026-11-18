@@ -1372,13 +1372,17 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
 }
 
 const FRAME_PACK_HELD = 'FRAME_PACK_HELD';
+/** The warning of a child frame the pack of 7f holds off its packed place because the move would break or deepen a hard separation (dense-16x9 ticket 48). */
+export const FRAME_PACK_SEPARATION_HELD = 'FRAME_PACK_SEPARATION_HELD';
 /**
  * Withdraws the `FRAME_PACK_HELD` warning of a child frame, and raises it again when the pack had to leave the child `delta` from its packed place (R6). A later pack
  * that finds the child packed, or moves it, withdraws it, so the warning names only a child that stands unpacked in the published model.
  */
 function warnPackHeld(model: LayoutModel, child: string, parent: string, delta: number): void {
   const prefix = `Frame ${child} cannot be packed beside its row in ${parent}`;
-  model.diagnostics = model.diagnostics.filter(item => !(item.code === FRAME_PACK_HELD && item.owners?.some(owner => owner.kind === 'group' && owner.id === child)));
+  // A child the pack finds packed, moves, or holds for a reservation is no longer held for a separation (`FRAME_PACK_SEPARATION_HELD`, R6).
+  model.diagnostics = model.diagnostics.filter(item => !((item.code === FRAME_PACK_HELD || item.code === FRAME_PACK_SEPARATION_HELD)
+    && item.owners?.some(owner => owner.kind === 'group' && owner.id === child)));
   if (Math.abs(delta) <= PLACEMENT_EPS) return;
   model.diagnostics.push({ stage: 'placement', severity: 'warning', code: FRAME_PACK_HELD, owners: [{ kind: 'group', id: child }],
     message: `${prefix}: the move of ${Math.round(Math.abs(delta) * 100) / 100} px would break a reservation made before it (a lane, a straight link or an exit), so it stays where it stands.` });
