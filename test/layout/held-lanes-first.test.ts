@@ -39,8 +39,9 @@ const sheets: Record<string, { path: string; expect: Record<string, Form> }> = {
   'a held lane on the other margin of its cell is not reserved first': {
     path: '../fixtures/staged/a-held-lane-on-the-other-margin-of-its-cell-is-not-reserved-first.yaml',
     expect: {
-      // Main throws in all six forms ("Lane crosses occupied group zone#2"). The forms with the option off publish with a G5 on the router, not asserted.
-      'off, as written': { gates: ['G5'], crossings: 8, threwBefore: true }, 'off, links reversed': { gates: ['G5'], crossings: 8, threwBefore: true },
+      // Main throws in all six forms ("Lane crosses occupied group zone#2"). The forms with the option off publish the router's face in an order the far-end
+      // round declined on a full trial: its decision holds, so G5 passes (dense-16x9 ticket 49); nodes reversed, the round does not settle (its trial leaves `c` bottom out of order), and G5 stays.
+      'off, as written': { gates: [], crossings: 8, threwBefore: true }, 'off, links reversed': { gates: [], crossings: 8, threwBefore: true },
       'off, nodes reversed': { gates: ['G5'], threwBefore: true },
       // Review 2: only the held lane on the right margin is reserved first.
       'on, nodes reversed': { ...none, crossings: 4, threwBefore: true },
@@ -51,9 +52,10 @@ const sheets: Record<string, { path: string; expect: Record<string, Form> }> = {
   'a held lane of a second router': {
     path: '../fixtures/staged/a-held-lane-of-a-second-router-keeps-the-order-of-the-passes.yaml',
     expect: {
-      // The order of the passes has a G5 on e here, before ticket 46 and after; the forms with nodes reversed threw, and publish with a G5 on mid, not asserted.
-      'off, as written': { gates: ['G5'], crossings: 5 }, 'off, links reversed': { gates: ['G5'], crossings: 5 }, 'off, nodes reversed': { gates: ['G5'], threwBefore: true },
-      'on, as written': { ...none, crossings: 7 }, 'on, links reversed': { ...none, crossings: 7 }, 'on, nodes reversed': { gates: ['G5'], threwBefore: true },
+      // The order of the passes had a G5 on e here, before ticket 46 and after, and the forms with nodes reversed threw and published a G5 on mid. The far-end
+      // round declines those orders on a full trial, and its decision holds, so G5 passes (dense-16x9 ticket 49).
+      'off, as written': { gates: [], crossings: 5 }, 'off, links reversed': { gates: [], crossings: 5 }, 'off, nodes reversed': { gates: [], threwBefore: true },
+      'on, as written': { ...none, crossings: 7 }, 'on, links reversed': { ...none, crossings: 7 }, 'on, nodes reversed': { gates: [], threwBefore: true },
     },
   },
 };
