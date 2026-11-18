@@ -1,7 +1,8 @@
 # Expected: with `layout.moveBeforeGrow: true` (ADR-0027, clause 5) a centring step that widens a body and leaves every aligned port of
-# its group off its x is declined whole. The sheet is a-stranded-growth-is-given-back with the option and `layout.feedOrder: false`.
-# The step that widens `srv0` toward `sw1`, `sw2` and `sw4` strands that width, so the step is declined: `srv0` stays 56 px and the
-# target record keeps no target of it. `srv1` keeps its seat (two top ports, 247 px). Nothing is given back (no `givenBack` record):
+# its group off its x withdraws its seats alone (dense-16x9 ticket 47); the main move of the step stands. The sheet is
+# a-stranded-growth-is-given-back with the option and `layout.feedOrder: false`. The step that widens `srv0` toward `sw1`, `sw2` and `sw4`
+# strands that width, so the seat is withdrawn (`ALIGNMENT_SEAT_REFUSED` names `srv0`): `srv0` stays 56 px and the target record keeps no
+# target of it. `srv1` keeps its seat (two top ports, 247 px). Nothing is given back (no `givenBack` record):
 # with the option the centre rule runs its passes once. Without the option ticket 71's rule gives the growth back after a second run.
 portograph: 2
 layout: { moveBeforeGrow: true, feedOrder: false }
