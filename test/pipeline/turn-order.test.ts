@@ -6,6 +6,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { betterByUnified } from '../../src/layout/turn-measure.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
 import { measureTurnOrder } from '../../src/layout/turn-measure.js';
+import { farEndDecisionsOf } from '../../src/layout/reservations.js';
 import type { Env } from '../../src/pipeline/env.js';
 import { chooseStart } from '../../src/pipeline/driver.js';
 import { turn } from '../../src/pipeline/rounds.js';
@@ -406,10 +407,12 @@ describe('a face with a held straight link, through the turn round', () => {
     expect(codes(model)).toContain('TURN_ORDER_TAKEN');
     // The straight face keeps the far-end order that the baseline gave it, and G5 passes on both faces.
     expect(bottom(model, 'west-gw')).toEqual(bottom(base, 'west-gw'));
-    // G5 accepts the recorded face, and the far-end faces fail it exactly as they do on the baseline (the stale order of stage 5, outside this rule): no violation is new.
+    // G5 accepts the recorded face. The baseline runs no far-end round, so its far-end faces keep the stale order of stage 5 and fail G5; the full run proposes
+    // their order, the trial is worse by the unified order, and the round records the decision (dense-16x9 ticket 49): G5 reads it, and no violation stays.
     const g5 = (m: LayoutModel): string[] => score(m).snapshot.gates.G5.violations.map(v => v.elements[0]!);
-    expect(g5(model)).not.toContain('up-b');
-    expect(g5(model)).toEqual(g5(base));
+    expect([...new Set(g5(base))]).toEqual(['up-a', 'west-gw']);
+    expect(farEndDecisionsOf(model.reservations ?? []).map(entry => `${entry.payload.node} ${entry.payload.side} ${entry.payload.reason}`)).toEqual(['up-a bottom unified', 'west-gw bottom unified']);
+    expect(g5(model)).toEqual([]);
     expect(restoreLayoutModel(JSON.stringify(model)).freeze?.turnOrder).toEqual(model.freeze?.turnOrder);
   });
 

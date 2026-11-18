@@ -15,7 +15,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * the restore of a frozen model and the restore of a model before the freeze each read that list. A kind left out does not compile (a mapped type);
  * the list below fails too, so a new kind is named in this test with its readers.
  */
-const KINDS = ['bundleNeighbours', 'corridorSide', 'course', 'farEndOrder', 'groupExit', 'groupOrder', 'labelRoom', 'laneOwner', 'laneSide', 'nodeFloor',
+const KINDS = ['bundleNeighbours', 'corridorSide', 'course', 'farEndDecision', 'farEndOrder', 'groupExit', 'groupOrder', 'labelRoom', 'laneOwner', 'laneSide', 'nodeFloor',
   'pairFloor', 'pitchFloor', 'refusedChord', 'riserKeepOut', 'rowOrder', 'seatSet', 'seatSetDeclined', 'sideAlignment', 'sideFace', 'spanChord', 'spanCorridor', 'staggerDeclined', 'trunkDeclined',
   'trunkExtension', 'turnOrder'];
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-top-row-staggers-when-a-lower-tier-sets-the-stage-5-width.yaml', import.meta.url), 'utf8');

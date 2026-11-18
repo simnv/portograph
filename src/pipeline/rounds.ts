@@ -738,7 +738,8 @@ export const farEnd: Round<FarEndTrialOffer> = {
     // of the routed trial, or a stage that refused the order. The round records it, and G5 reads the record while it holds. A trial that did not settle
     // (a next proposal, a fresh face out of order, final far ends that disagree) and a repeated proposal decide nothing.
     const decides = !unsettled && (r.at !== 'verdict' || o.verdict?.clause === 'unified' || o.verdict?.clause === 'guard');
-    if (decides) s.kept = addReservations(s.kept, farEndDecisions(env, o, r));
+    const decided = decides ? farEndDecisions(env, o, r) : [];
+    if (decided.length > 0) s.kept = addReservations(s.kept, decided);
     s.sideNotes.push({ stage: 'placement', severity: 'info', code: unsettled ? 'FAR_END_ORDER_UNSETTLED' : 'FAR_END_ORDER_DECLINED', owners: o.faces.map(face => ({ kind: 'node' as const, id: face.node })),
       message: `The far-end order of ${faceNames(o.faces)} is ${unsettled ? 'not settled' : 'declined'}: ${why}.` });
   },
