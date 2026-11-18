@@ -1,0 +1,28 @@
+# Expected: the sheet of `a-held-lane-is-reserved-before-the-foreign-lane-of-its-tier-pass` without the router-c link. No lane crosses the frame `zone` in the order of the passes, so 7a
+# reserves no held lane first and the layout is the one of that order: with nodes reversed and `moveBeforeGrow` the lane of mid-a passes the right margin of `zone#3` and the
+# ports of `a` keep their far-end order (G5). Where the order makes a foreign lane cross the frame (option off, as written), the held lane is reserved first and the sheet
+# publishes. Every gate passes in three orders, option off and on. Dense-16x9 ticket 46, review 1; test/layout/held-lanes-first.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  wan: { tier: 0 }
+  site: { tier: 1 }
+  zone: { parent: site }
+nodes:
+  e: { group: site, class: server }
+  d: { group: site, class: server }
+  c: { group: zone, class: ntp-stratum2 }
+  b: { group: zone, class: ntp-stratum2 }
+  a: { group: zone, class: load-balancer }
+  mid: { group: site, class: switch }
+  router: { group: site, class: router }
+  provider: { group: wan, class: provider }
+links:
+  - [router, provider, { class: dashed }]
+  - [router, mid, { class: physical, route: orthogonal }]
+  - [router, b, { class: physical, route: orthogonal }]
+  - [c, a, { class: physical, route: orthogonal }]
+  - [mid, a, { class: physical, route: orthogonal }]
+  - [a, d, { class: physical, route: orthogonal }]
+  - [b, e, { class: physical, route: orthogonal }]
+  - [mid, router, { class: physical, route: orthogonal }]

@@ -17,8 +17,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * Dense-16x9 ticket 46: a sheet that draws with `layout.moveBeforeGrow` off draws with it on, in every input order. Two corpus sheets with `nodes`
  * reversed drew without the option and threw with it; each fixture is such a sheet as written, with the option, so it publishes in all three orders.
  *
- * (b) A frame's held lanes are reserved before the lanes foreign to it, the held lanes of the tier pass included (`allocateLanes`): the held lane
- * stands next to its cell, and the foreign lane beyond the room the frame grows to hold it.
+ * (b) A held lane of the tier pass is reserved before the lanes foreign to its frame where, in the order of the passes, the frame grows around a
+ * foreign lane (`allocateLanes`, `heldLanesOverForeign`; review 1: only there): the held lane stands next to its cell, and the foreign lane beyond the
+ * room the frame grows to hold it.
  */
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const orders3 = (yaml: string): Record<string, string> => ({ 'as written': yaml, 'links reversed': reversed(yaml, 'links') as string, 'nodes reversed': reversed(yaml, 'nodes') as string });

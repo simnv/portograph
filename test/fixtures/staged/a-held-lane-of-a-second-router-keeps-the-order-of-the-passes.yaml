@@ -1,0 +1,32 @@
+# Expected: the sheet of `a-held-lane-is-reserved-before-the-foreign-lane-of-its-tier-pass` with a router x linked to e and the provider. In the order of the passes no
+# lane crosses the frame `zone` as written and with links reversed, so the layout is the one of that order, option off and on: no gate finding with the option on, and
+# the G5 on e of that order with it off. With nodes reversed the order makes a foreign lane cross the frame; the held lane is reserved first and the sheet publishes, with
+# a G5 on mid that is not asserted. Staged: the G5 makes it a new failure for the corpus gate. Dense-16x9 ticket 46, review 1; test/layout/held-lanes-first.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  wan: { tier: 0 }
+  site: { tier: 1 }
+  zone: { parent: site }
+nodes:
+  e: { group: site, class: server }
+  d: { group: site, class: server }
+  c: { group: zone, class: ntp-stratum2 }
+  b: { group: zone, class: ntp-stratum2 }
+  a: { group: zone, class: load-balancer }
+  mid: { group: site, class: switch }
+  router: { group: site, class: router }
+  provider: { group: wan, class: provider }
+  x: { group: site, class: router }
+links:
+  - [router, provider, { class: dashed }]
+  - [router, mid, { class: physical, route: orthogonal }]
+  - [router, c, { class: physical, route: orthogonal }]
+  - [router, b, { class: physical, route: orthogonal }]
+  - [c, a, { class: physical, route: orthogonal }]
+  - [mid, a, { class: physical, route: orthogonal }]
+  - [a, d, { class: physical, route: orthogonal }]
+  - [b, e, { class: physical, route: orthogonal }]
+  - [mid, router, { class: physical, route: orthogonal }]
+  - [x, e, { class: physical, route: orthogonal }]
+  - [provider, x, { class: physical, route: orthogonal }]

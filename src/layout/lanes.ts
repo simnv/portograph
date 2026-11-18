@@ -1050,7 +1050,7 @@ export function corridorReader(model: LayoutModel): { farEnd: (link: LayoutLink)
  * but on a left margin it puts the lane of the leftmost source innermost, and two lanes of a pair then cross each other on both faces. Stage 5 ordered both
  * faces of a facing pair by one key per link, the x at the held node (`facingPairs`, `pairedFaceKey`); the port anchors at that node are the record of
  * that order, and 7a reads them, not its own key (R1). The links of a pair whose lanes, in the transited tier next to the held node, pass one side of one
- * group (`corridorSide`, the side 7a takes, read on the occupied box before any lane) keep their slots in `sorted` and fill them inner lane first: on the left side the larger x at the
+ * group (`corridorSide`, the side 7a takes, read on the occupied box with `lanes`: none, or the held lanes 7a reserved first) keep their slots in `sorted` and fill them inner lane first: on the left side the larger x at the
  * held node first, on the right side the smaller. Their lanes then stand in the faces' order, outer lane for the outer port. Links of no pair, and a pair
  * whose lanes take two sides or two groups, keep the source order. Ties keep `sorted` (a stable sort; its last key is `sourceIndex`).
  * What this does not hold: the side is read before any plan, as the frame pass reads it (the side the target asks for, else the source's) and as the tier
@@ -1058,7 +1058,8 @@ export function corridorReader(model: LayoutModel): { farEnd: (link: LayoutLink)
  * starts from `corridorSide(core, sx)` and moves to the target's margin only when the stacked x crosses the group); a pair placed that way nests in the
  * order read for the other side, which crosses.
  */
-export function nestFacingPairs(model: LayoutModel, sorted: LayoutLink[], targetX: (link: LayoutLink, tier: number) => number | undefined): LayoutLink[] {
+export function nestFacingPairs(model: LayoutModel, sorted: LayoutLink[], targetX: (link: LayoutLink, tier: number) => number | undefined,
+  lanes: readonly Lane[] = []): LayoutLink[] {
   const result = [...sorted], slot = new Map(sorted.map((link, index) => [link.id, index]));
   for (const pair of facingPairs(model, ref => findPort(model, ref)?.side)) {
     const members = pair.links.filter(link => slot.has(link.id));
@@ -1071,7 +1072,7 @@ export function nestFacingPairs(model: LayoutModel, sorted: LayoutLink[], target
       const reserved = corridorSideOf(model.reservations, link.id, tier);
       const main = Object.values(model.groups).filter(group => group.tier === tier && !group.flank);
       const host = (reserved === undefined ? undefined : model.groups[reserved.group]) ?? transitedCore(main, sx);
-      return host?.bounds === undefined ? undefined : { host: host.id, side: reserved?.side ?? corridorSide(occupied(model, host, link, []), sx, targetX(link, tier)) };
+      return host?.bounds === undefined ? undefined : { host: host.id, side: reserved?.side ?? corridorSide(occupied(model, host, link, lanes), sx, targetX(link, tier)) };
     });
     const first = margins[0];
     if (first === undefined || margins.some(item => item?.host !== first.host || item.side !== first.side)) continue;
@@ -1084,9 +1085,48 @@ export function nestFacingPairs(model: LayoutModel, sorted: LayoutLink[], target
 }
 /** The halvings that find the part of a held frame's lack a chain of units can take (`separateHeldFrames`): 1/4096 of the lack. */
 const SLACK_STEPS = 12;
-/** Allocate all corridors before publishing x. Intermediate occupied margins may translate horizontally. */
-export function allocateLanes(model: LayoutModel): void {
-  if (model.lanes.length || model.links.some(link => link.fixedSegments)) throw new Error('Lanes can be allocated only once');
+/**
+ * A frame's held lanes are decided before the lanes foreign to it (ticket 23), also where the held lane is no part of the foreign loop below:
+ * a link that ends in a frame and crosses a sub-tier of it where it is foreign to no frame takes its lane in the tier pass. Reserved after the
+ * foreign lane, such a held lane could stand only beyond it, and the frame, which grows to hold its lanes (`heldLaneReach`), then held the
+ * foreign lane inside (dense-16x9 ticket 46: a seat set put the source of a foreign lane on the side of the frame where a held lane stands).
+ * These pairs are the candidates 7a may reserve first; it does so only for those the crossing names (`heldLanesOverForeign`, review 1).
+ */
+function heldInFrame(model: LayoutModel, link: LayoutLink, tier: number): boolean {
+  const own = ownFrameCells(model, link), groups = Object.values(model.groups).filter(group => group.tier === tier);
+  return groups.some(group => own.has(group.id)) && groups.every(group => foreignRoot(model, group.id, link) === undefined);
+}
+/**
+ * Whether the occupied box of `group`, as `link` reads it with `lanes` reserved, crosses the transit lane `lane`: the one predicate of a lane
+ * that crosses an occupied group (`validateLanes`) and of the held lanes 7a reserves first (`heldLanesOverForeign`, dense-16x9 ticket 46).
+ */
+export function crossesOccupied(model: LayoutModel, lane: Lane, link: LayoutLink, group: LayoutGroup, lanes: readonly Lane[] = model.lanes): boolean {
+  const box = occupied(model, group, link, lanes);
+  return box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS;
+}
+/**
+ * The held lanes of the tier pass (`candidates`) that grow a frame over a transit lane foreign to it (dense-16x9 ticket 46, review 1): the lane
+ * crosses a cell of its tier with them reserved, and does not with the held lanes of that cell taken out. A crossing they do not cause names none.
+ */
+function heldLanesOverForeign(model: LayoutModel, lanes: readonly Lane[], candidates: ReadonlySet<string>): string[] {
+  const named = new Set<string>();
+  for (const lane of lanes) {
+    const link = laneLink(model, lane);
+    if (link === undefined) continue;
+    for (const group of Object.values(model.groups)) {
+      if (group.tier !== lane.tier || group.bounds === undefined || !crossesOccupied(model, lane, link, group, lanes)) continue;
+      const held = lanes.filter(other => candidates.has(other.id) && other.group === group.id && heldLaneReach(model, group.id, link, other, laneLink(model, other)) !== undefined);
+      if (held.length && !crossesOccupied(model, lane, link, group, lanes.filter(other => !held.includes(other)))) for (const other of held) named.add(other.id);
+    }
+  }
+  return [...named].sort(compareId);
+}
+/**
+ * The transit lanes of 7a, in the order of the passes: the lanes of the links foreign to a frame (held lanes first), then the tier pass. `early` names
+ * the held lanes of the tier pass reserved before every other lane (`heldLanesOverForeign`); empty, this is the order before ticket 46.
+ */
+function reserveTransitLanes(model: LayoutModel, early: ReadonlySet<string>): { pending: Lane[]; occ: (group: LayoutGroup, link?: LayoutLink) => Rect;
+  shiftGroups: (link: LayoutLink, groups: LayoutGroup[], shifts: number[]) => void } {
   const pending: Lane[] = [];
   // The one reader of a group's reach for this allocation: the lanes reserved so far are held lanes.
   const occ = (group: LayoutGroup, link?: LayoutLink): Rect => occupied(model, group, link, pending);
@@ -1108,8 +1148,9 @@ export function allocateLanes(model: LayoutModel): void {
     const far = corridors.target(link, tier);
     return far === undefined ? undefined : findPort(model, far)!.anchor!.x;
   };
-  const links = nestFacingPairs(model, model.links.filter(link => ownsTransitLanes(model, link)).sort((a, b) =>
-    findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex), targetX);
+  const sorted = model.links.filter(link => ownsTransitLanes(model, link)).sort((a, b) =>
+    findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex);
+  let links = nestFacingPairs(model, sorted, targetX);
   // The alignment-end groups stay, and so does every group the lane stage's guard holds (`heldSourceGroups`): a link with a course
   // or a spanning chord owns no lane here, but its source group may not move either (ticket 17 found a plan that moved one).
   const fixedSources = fixedSourceGroups(model);
@@ -1394,18 +1435,12 @@ export function allocateLanes(model: LayoutModel): void {
       }
     }
   };
-  /**
-   * A frame's held lanes are decided before the lanes foreign to it (ticket 23), also where the held lane is no part of the foreign loop below:
-   * a link that ends in a frame and crosses a sub-tier of it where it is foreign to no frame takes its lane in the tier pass. Reserved after the
-   * foreign lane, such a held lane could stand only beyond it, and the frame, which grows to hold its lanes (`heldLaneReach`), then held the
-   * foreign lane inside (dense-16x9 ticket 46: a seat set put the source of a foreign lane on the side of the frame where a held lane stands).
-   * So these pairs are reserved first, and the foreign lanes read them; every other pair keeps its order.
-   */
-  const heldInFrame = (link: LayoutLink, tier: number): boolean => {
-    const own = ownFrameCells(model, link), groups = Object.values(model.groups).filter(group => group.tier === tier);
-    return groups.some(group => own.has(group.id)) && groups.every(group => foreignRoot(model, group.id, link) === undefined);
-  };
-  reserveTierLanes(heldInFrame);
+  if (early.size) {
+    reserveTierLanes((link, tier) => early.has(laneId(link, tier)));
+    // The facing pairs nest on the margins the lanes of this pass leave (dense-16x9 ticket 46, review 1): the side each pair link reads is read
+    // on the frame as these lanes grow it, as the foreign planner below reads it.
+    links = nestFacingPairs(model, sorted, targetX, pending);
+  }
   const topFrame = (frame: string): string => {
     let id = frame;
     for (let parent = model.document.frames![id]?.parent; parent !== undefined; parent = model.document.frames![id]?.parent) id = parent;
@@ -1567,6 +1602,30 @@ export function allocateLanes(model: LayoutModel): void {
   const passLanes = pending.filter(lane => !pinned.has(lane.id)).sort((a, b) => tierRank.get(a.tier)! - tierRank.get(b.tier)!
     || linkRank.get((a.owner as { id: string }).id)! - linkRank.get((b.owner as { id: string }).id)!);
   pending.splice(0, pending.length, ...pending.filter(lane => pinned.has(lane.id)), ...passLanes);
+  return { pending, occ, shiftGroups };
+}
+/** Allocate all corridors before publishing x. Intermediate occupied margins may translate horizontally. */
+export function allocateLanes(model: LayoutModel): void {
+  if (model.lanes.length || model.links.some(link => link.fixedSegments)) throw new Error('Lanes can be allocated only once');
+  // A held lane of the tier pass is reserved after the lanes foreign to its frame, and the frame grows to hold it (`heldLaneReach`). Where it
+  // stands beyond such a lane, the frame grows over it and the lane crosses the frame (dense-16x9 ticket 46). The passes run in their order;
+  // where the one predicate of that crossing (`crossesOccupied`) names held lanes of the tier pass as its cause, the draft is restored and
+  // those lanes are reserved first. Every other held lane keeps the order, so a layout the order allocates stands as it was. Each round
+  // names one held lane more, so the rounds are bounded by their count (R4).
+  const candidates = new Set(model.links.filter(link => ownsTransitLanes(model, link))
+    .flatMap(link => transitTiers(model, link).filter(tier => heldInFrame(model, link, tier)).map(tier => laneId(link, tier))));
+  const saved = candidates.size ? JSON.stringify({ ...model, document: null }) : undefined;
+  let early = new Set<string>(), state = reserveTransitLanes(model, early);
+  while (saved !== undefined) {
+    const named = heldLanesOverForeign(model, state.pending, candidates).filter(id => !early.has(id));
+    if (!named.length) break;
+    const document = model.document, copy = JSON.parse(saved) as LayoutModel;
+    for (const key of Object.keys(model)) delete (model as unknown as Record<string, unknown>)[key];
+    Object.assign(model, copy, { document });
+    early = new Set([...early, ...named]);
+    state = reserveTransitLanes(model, early);
+  }
+  const { pending, occ, shiftGroups } = state;
   // The side lanes are placed against the frames as the transit lanes leave them: `commit` moved groups and `transitLanes` grows a frame for a
   // held lane, so the boxes read at this point are rebuilt from the published lanes first (a document with no candidate keeps its old order).
   if (model.links.some(link => sideLaneCandidate(model, link) !== undefined) || (model.courses ?? []).some(course => !isApproachCourse(course))) {
@@ -2001,8 +2060,7 @@ export function validateLanes(model: LayoutModel): void {
     const group = model.groups[lane.group]!;
     if (lane.side === 'left' ? lane.x >= group.bounds!.x : lane.x <= right(group.bounds!)) throw new Error(`Lane side contradicts its group: ${lane.id} / ${group.id}`);
     for (const other of Object.values(model.groups).filter(group => group.tier === lane.tier)) {
-      const box = occupied(model, other, link);
-      if (box.x < right(lane.bounds) - PLACEMENT_EPS && right(box) > lane.bounds.x + PLACEMENT_EPS) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
+      if (crossesOccupied(model, lane, link, other)) throw new Error(`Lane ${lane.id} crosses occupied group ${other.id}`);
     }
     for (const other of model.lanes) if (other !== lane && other.tier === lane.tier && !isCourseLane(other) && !isSpanLane(other)
       && Math.abs(other.x - lane.x) < (other.bounds.width + lane.bounds.width) / 2 - PLACEMENT_EPS) throw new Error('Owned lanes overlap');

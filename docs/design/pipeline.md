@@ -2268,13 +2268,18 @@ lane x outside the frame for all the sub-tiers it crosses (`foreignReach`). It n
 frame.
 
 Lane x is immutable, and a frame only grows. So a lane that a frame holds is reserved before a
-foreign lane: `allocateLanes` takes the links that hold a lane in a frame first (`holdsLane`), and
-before the foreign loop it reserves, in the tier pass, every lane of a link in a sub-tier where the
-link ends in a frame cell and is foreign to no frame (`heldInFrame`, dense-16x9 ticket 46). Reserved
-after the foreign lane, such a held lane could stand only beyond it, and the frame then grew around
-the foreign lane ("Lane crosses occupied group"). The published list keeps the order of the passes
-before the ticket (the foreign loop, then the tier pass). A foreign lane then reads the held lane
-through `heldLaneReach`. A held lane also stays on its own
+foreign lane: `allocateLanes` takes the links that hold a lane in a frame first (`holdsLane`). The
+tier pass after the foreign loop also holds lanes: the lane of a link in a sub-tier where the link
+ends in a frame cell and is foreign to no frame (`heldInFrame`). Reserved after a foreign lane, such
+a held lane can stand only beyond it, and the frame then grows around the foreign lane ("Lane crosses
+occupied group"). So the passes run in their order, and the one predicate of that crossing
+(`crossesOccupied`, which `validateLanes` reads) names the held lanes of the tier pass that cause it
+(`heldLanesOverForeign`, dense-16x9 ticket 46). Only where it names some is the draft restored and are
+those lanes reserved before the foreign loop; the facing pairs then nest on the margins they leave
+(`nestFacingPairs` reads them). Each round names one held lane more. Every other held lane keeps the
+order, so a sheet the order draws is drawn as before. The published list keeps the order of the passes
+(the foreign loop, then the tier pass). A foreign lane then reads the held lane through
+`heldLaneReach`. A held lane also stays on its own
 frame's side of a foreign frame: it takes the one gap between the foreign frames where its own
 cells stand (`heldGap`). It may stand beside its own frame, between the frames, or beyond the pair
 on its own side. It never stands on the far side of a foreign frame. A fixed-point rule (reserve

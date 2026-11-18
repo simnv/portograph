@@ -1,0 +1,31 @@
+# Expected: the sheet of `a-held-lane-is-reserved-before-the-foreign-lane-of-its-tier-pass` with a second switch x linked to the router. With `moveBeforeGrow` the order of
+# the passes makes the foreign lane of the router-switch pair cross the frame `zone`, so 7a reserves the held lane first; the pair then nests on the margin that lane leaves
+# (`nestFacingPairs` reads it), and in each tier its lanes stand in the order of its ports at mid and at the router, in three orders. Dense-16x9 ticket 46, review 1;
+# test/layout/lane-nesting.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  wan: { tier: 0 }
+  site: { tier: 1 }
+  zone: { parent: site }
+nodes:
+  e: { group: site, class: server }
+  d: { group: site, class: server }
+  c: { group: zone, class: ntp-stratum2 }
+  b: { group: zone, class: ntp-stratum2 }
+  a: { group: zone, class: load-balancer }
+  mid: { group: site, class: switch }
+  router: { group: site, class: router }
+  provider: { group: wan, class: provider }
+  x: { group: site, class: switch }
+links:
+  - [router, provider, { class: dashed }]
+  - [router, mid, { class: physical, route: orthogonal }]
+  - [router, c, { class: physical, route: orthogonal }]
+  - [router, b, { class: physical, route: orthogonal }]
+  - [c, a, { class: physical, route: orthogonal }]
+  - [mid, a, { class: physical, route: orthogonal }]
+  - [a, d, { class: physical, route: orthogonal }]
+  - [b, e, { class: physical, route: orthogonal }]
+  - [mid, router, { class: physical, route: orthogonal }]
+  - [x, router, { class: physical, route: orthogonal }]

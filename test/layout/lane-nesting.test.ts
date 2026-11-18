@@ -28,6 +28,8 @@ const orders3 = (yaml: string): Record<string, string> => ({ 'as written': yaml,
 const inputs = orders3(fixture('an-allocated-run-ends-on-the-tip-of-a-lone-port'));
 /** The dedicated sheet: `u` in tier 0, `v` in tier 2, the anchor tier between, the two links written both ways (`v` is held on a tie). */
 const pairInputs = orders3(fixture('a-facing-pair-nests-its-lanes-in-the-face-order'));
+/** The ticket-46 sheet with a second switch: with the option, 7a reserves a held lane first, and the pair nests on the margin it leaves (review 1). */
+const besideHeld = orders3(fixture('a-facing-pair-nests-beside-a-held-lane-reserved-first'));
 
 /** The model 7a receives; with `layout.moveBeforeGrow` set on the parsed document when `on` (the seat sets of stage 6, dense-16x9 ticket 46). */
 async function beforeLanes(text: string, on = false): Promise<LayoutModel> {
@@ -58,6 +60,19 @@ describe('7a nests the lanes of a facing pair in the face order', () => {
   for (const [name, text] of Object.entries(inputs)) for (const on of [false, true]) {
     it(`the router-switch lanes keep the order of both faces (${name}${on ? ', layout.moveBeforeGrow' : ''})`, async () => {
       const placed = lanes(await beforeLanes(text, on));
+      const mid = orders(placed, 'mid'), router = orders(placed, 'router');
+      expect(mid.ports).toHaveLength(2);
+      expect(router.ports).toEqual(mid.ports);
+      expect(mid.lanes.length).toBeGreaterThan(0);
+      for (const tier of mid.lanes) expect(tier).toEqual(mid.ports);
+    }, 60000);
+  }
+
+  for (const [name, text] of Object.entries(besideHeld)) {
+    it(`a pair nests on the margin a held lane reserved first leaves (${name}, layout.moveBeforeGrow; dense-16x9 ticket 46, review 1)`, async () => {
+      // `nestFacingPairs` read the side of each pair link on the frame before any lane; the foreign planner then chose the margin with the held lane
+      // reserved, and the pair stood on it in the reverse order of its faces. It reads the frame as the held lanes of that pass grow it.
+      const placed = lanes(await beforeLanes(text, true));
       const mid = orders(placed, 'mid'), router = orders(placed, 'router');
       expect(mid.ports).toHaveLength(2);
       expect(router.ports).toEqual(mid.ports);

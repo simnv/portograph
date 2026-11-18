@@ -1,0 +1,77 @@
+# Expected: a held pair of the tier pass (b-e twice) beside a wide cell of the frame `zone`. No lane crosses the frame in the order of the passes, so both held lanes keep
+# the left margin of `zone#2` they take in that order, and the sheet has 2 crossings in three orders, option off and on, every gate passing. Dense-16x9 ticket 46,
+# review 1; test/layout/held-lanes-first.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  wan:
+    tier: 0
+  site:
+    tier: 1
+  zone:
+    parent: site
+nodes:
+  e:
+    group: site
+    class: server
+  d:
+    group: site
+    class: server
+  c:
+    group: zone
+    class: ntp-stratum2
+  b:
+    group: zone
+    class: ntp-stratum2
+  a:
+    group: zone
+    class: load-balancer
+    label: WWWWWWWWWWWWWWWW
+  mid:
+    group: site
+    class: switch
+  router:
+    group: site
+    class: router
+  provider:
+    group: wan
+    class: provider
+links:
+  - - router
+    - provider
+    - class: dashed
+  - - router
+    - mid
+    - class: physical
+      route: orthogonal
+  - - router
+    - c
+    - class: physical
+      route: orthogonal
+  - - router
+    - b
+    - class: physical
+      route: orthogonal
+  - - c
+    - a
+    - class: physical
+      route: orthogonal
+  - - mid
+    - a
+    - class: physical
+      route: orthogonal
+  - - a
+    - d
+    - class: physical
+      route: orthogonal
+  - - b
+    - e
+    - class: physical
+      route: orthogonal
+  - - mid
+    - router
+    - class: physical
+      route: orthogonal
+  - - b
+    - e
+    - route: orthogonal

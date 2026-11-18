@@ -72,7 +72,7 @@ export const BOX_WRITERS: readonly BoxWriter[] = [
   { id: 'S18', file: 'src/layout/skeleton-geometry.ts', fn: 'placeFlanksAndPeers', guard: { kind: 'pre-7a' } },
   { id: 'S19', file: 'src/layout/stagger.ts', fn: 'seatOnce', guard: { kind: 'pre-7a' } },
   // 7a and 7b: the rule checks of the transaction see these writes.
-  { id: 'W01', file: 'src/layout/lanes.ts', fn: 'allocateLanes', guard: { kind: 'guarded', by: 'the lanes rule checks of mutate (whole-group x translation, occupied intermediate tiers, fixed transit sources); the kinds begin here' } },
+  { id: 'W01', file: 'src/layout/lanes.ts', fn: 'reserveTransitLanes', guard: { kind: 'guarded', by: 'the lanes rule checks of mutate (whole-group x translation, occupied intermediate tiers, fixed transit sources); the kinds begin here' } },
   { id: 'W02', file: 'src/layout/flanks.ts', fn: 'alignFlanks', guard: { kind: 'guarded', by: 'the flanks rule checks of mutate (no x translation, a common y translation of the flank group)' } },
   // The forced writes (P-06 F3): each keeps some kinds by construction, and the rest by the path it names.
   { id: 'W03', file: 'src/layout/region-rebuild.ts', fn: 'reserveBarBandGrowth', guard: { kind: 'forced', keeps: 'a y-only band shift by the growth of a bar band: Ri, Si, lane sides, Tr; in the bars rule the x of every non-bar box is checked unchanged', otherwise: REPLAY } },
