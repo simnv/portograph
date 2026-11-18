@@ -1,0 +1,36 @@
+# Expected: A far-end order that a full trial measures worse is decided once (dense-16x9 ticket 49; owner ruling 2026-11-18: the whole-sheet
+# measure wins). The stages after stage 5 move the far ends of `src0` bottom, so one pair of its ports stands the wrong way round. The far-end
+# round proposes the order of the final far ends and places again; the routed trial is worse by the unified order (5 bent links, 10 turns and
+# 4 crossings, against 5, 10 and 3), so the round declines it (`FAR_END_ORDER_DECLINED`) and records a `farEndDecision` for the face: its ports
+# in engine order, the pair that stands wrong, the clause and both tallies. G5 reads the record (`readFace`) and accepts the face while it
+# holds; a stale record buys nothing. No G5 finding.
+# The sweep input v5-1-1, as written, with the option off (main had G5 here). Test-only input owned by dense-16x9 ticket 49; test/pipeline/far-end-decision.test.ts reads it.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  src0: { group: src, class: router, ports: [] }
+  src1: { group: src, class: router, ports: [] }
+  acc0: { group: access, class: switch, ports: [] }
+  acc1: { group: access, class: switch, ports: [] }
+  acc2: { group: access, class: switch, ports: [] }
+  acc3: { group: access, class: switch, ports: [] }
+  acc4: { group: access, class: switch, ports: [] }
+  snk0: { group: edge-near, class: server, ports: [] }
+  snk1: { group: edge-far, class: server, ports: [] }
+links:
+  - [src0, acc0]
+  - [src0, acc1]
+  - [src1, acc2]
+  - [src1, acc3]
+  - [src1, acc4]
+  - [acc0, snk1]
+  - [acc1, snk0]
+  - [acc2, snk1]
+  - [acc3, snk0]
+  - [acc4, snk1]
+  - [src0, snk1]
+  - [src1, snk1]
