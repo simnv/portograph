@@ -4,8 +4,7 @@
 # it back to its feed after each main move toward the unit's seat; after the chord freeze the region fit no longer gave the box back, each replay
 # widened `other` by the distance between the two seats, and the publication refused the sheet ("the row unit of other stands off its seat").
 # Ticket 46, cause a (design B): after the chord freeze the recorded seat of a pooled member holds only inside the body the member has; when the
-# unit's move takes its port off the seat's feed, the seat is withdrawn by name (ALIGNMENT_SEAT_REFUSED) and the member takes no seat again in the
-# placement attempt (`seatLatches`). Every order settles with no error gate and no link removed; routed turns 6, 6 and 0 (as written, links
+# unit's move takes its port off the seat's feed, the seat is withdrawn by name (ALIGNMENT_SEAT_REFUSED). Every order settles with no error gate and no link removed; routed turns 6, 6 and 0 (as written, links
 # reversed, nodes reversed). A regression input of dense-16x9 ticket 46; test/layout/r3-move-before-grow.test.ts reads it in three input orders.
 portograph: 2
 layout: {moveBeforeGrow: true}

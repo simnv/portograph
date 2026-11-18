@@ -38,21 +38,4 @@ describe('the restore check of the seat record (ADR-0027)', () => {
     expect(standsBySeatMove(forged, link)).toBe(false);
     expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/alignment seat record is forged: a record without layout.moveBeforeGrow/);
   }, 120000);
-
-  // Dense-16x9 ticket 46, cause a: a latched member takes no seat again, so the check refuses a latch on a seated node, a latch that names no
-  // node, latches out of order, an empty list, and latches without a seat record. A model with no latch restores (absent = none).
-  it('refuses a seat latch the producer cannot have written', async () => {
-    const model = await publish(sheet('a-seat-keeps-the-ports-it-stands'));
-    expect(model.seatLatches).toBeUndefined();
-    const seated = Object.keys(model.alignmentSeats!).sort();
-    expect(seated.length).toBeGreaterThan(1);
-    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
-    const forge = (change: (forged: LayoutModel) => void): string => { const forged = structuredClone(model); change(forged); return JSON.stringify(forged); };
-    expect(() => restoreLayoutModel(forge(forged => { forged.seatLatches = [seated[0]!]; }))).toThrow(/a latched node holds a seat/);
-    expect(() => restoreLayoutModel(forge(forged => { forged.seatLatches = ['no-such-node']; }))).toThrow(/is no node/);
-    const free = Object.keys(model.nodes).filter(id => !seated.includes(id)).sort();
-    expect(() => restoreLayoutModel(forge(forged => { forged.seatLatches = [free[1]!, free[0]!]; }))).toThrow(/out of node-id order/);
-    expect(() => restoreLayoutModel(forge(forged => { forged.seatLatches = []; }))).toThrow(/an empty list of seat latches/);
-    expect(() => restoreLayoutModel(forge(forged => { delete forged.alignmentSeats; forged.seatLatches = [free[0]!]; }))).toThrow(/seat latches without a seat record/);
-  }, 120000);
 });

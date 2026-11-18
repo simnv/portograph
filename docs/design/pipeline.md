@@ -1440,10 +1440,7 @@ stands in both cases. A whole-step decline undoes the alignment; the tier pack (
 the group clear of the group before it.
 After the chord freeze (`frozenChords` set, an empty set included) the recorded seat of a pooled member
 holds only inside the body the member has: it does not slide or grow the body back after the unit's move (dense-16x9 ticket 46, cause a, design B
-of 2026-11-18). A recorded seat the unit's move takes off its feed is withdrawn by name (`ALIGNMENT_SEAT_REFUSED`), and the member is latched
-(`seatLatches`, written with the first latch): it takes no seat again in the placement attempt. The bound (R4): each pooled member loses a seat at
-most once after the freeze, so the post-freeze withdrawals of one attempt are at most the pooled members, and the passes after the last one reach a
-fixed point or spend the budget as before. Before the freeze the recorded seat moves as on main: the slide back and the region fit return to the
+of 2026-11-18). A recorded seat the unit's move takes off its feed is withdrawn by name (`ALIGNMENT_SEAT_REFUSED`). Before the freeze the recorded seat moves as on main: the slide back and the region fit return to the
 start geometry.
 At 7e a bent bundle block keeps the start of a face whose seat keeps a port. The publication check refuses a seat record in a model
 without the option, and a seat whose kept port stands off its feed, whatever the centring replay excuses (R5). ADR-0027 states the rule,

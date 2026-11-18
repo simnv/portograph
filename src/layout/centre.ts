@@ -1273,16 +1273,13 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     // The seats, only when the step's own geometry stands: a step given back or kept at its start leaves no seat of its own (ADR-0027).
     if (step.group === began) {
       writeAlignmentSeats(model, step.notes.seated, warn ? stepPass : 0, step.notes.unseated);
-      // A pooled member's recorded seat the step withdrew after the freeze is read from the record it leaves (dense-16x9 ticket 46, cause a; R1):
-      // the member is latched (`seatLatches`) and takes no seat again in the attempt, and the decline is named. A step given back or kept at its
-      // start withdraws nothing.
-      for (const [nodeId, keys] of [...step.notes.lost ?? []].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
-        // A seat decided again over other ports is no withdrawal: only a member the step leaves with no seat is latched.
+      // A pooled member's recorded seat the step withdrew after the freeze is read from the record it leaves (dense-16x9 ticket 46, cause a; R1),
+      // and the decline is named. A step given back or kept at its start withdraws nothing.
+      if (warn) for (const [nodeId, keys] of [...step.notes.lost ?? []].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+        // A seat decided again over other ports is no withdrawal: only a member the step leaves with no seat is named.
         if (model.alignmentSeats === undefined || Object.hasOwn(model.alignmentSeats, nodeId)) continue;
-        if (!(model.seatLatches ?? []).includes(nodeId)) model.seatLatches = [...model.seatLatches ?? [], nodeId].sort();
-        if (!warn) continue;
         const named = [...new Set(keys.map(key => step.notes.seats.get(key)!.link))].sort();
-        placementWarning(model, SEAT_REFUSED, `${nodeId} withdraws its recorded seat and takes no seat again in this placement (seat latch): the move of its row unit takes it off the feeds of ${named.join(', ')}; after the chord freeze a seat of a row unit member holds only inside the body it has.`, named);
+        placementWarning(model, SEAT_REFUSED, `${nodeId} withdraws its recorded seat: the move of its row unit takes it off the feeds of ${named.join(', ')}; after the chord freeze a seat of a row unit member holds only inside the body it has.`, named);
       }
     }
     centreCheckTrace.step?.(model, id, warn, step.unresolved, step.group === began);
@@ -1635,11 +1632,9 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const keptHere = record === undefined ? new Set([...kept].filter(key => nodePorts.has(key))) : Object.hasOwn(record, nodeId) ? new Set(record[nodeId]!.ports) : undefined;
     const recorded = record !== undefined && Object.hasOwn(record, nodeId) ? record[nodeId]! : undefined;
     const seatedFrom = node.bounds!.x;
-    // After the chord freeze the recorded seat of a pooled member holds only inside the body it has (dense-16x9 ticket 46, cause a), and a member
-    // whose seat a step withdrew then takes no seat again in the placement attempt (`seatLatches`, R4).
-    const frozen = model.frozenChords !== undefined, latched = pooled && (model.seatLatches?.includes(nodeId) ?? false);
-    const seat = latched ? { kept: new Set<string>(), dx: 0, from: node.bounds!.width, capped: new Set<string>() }
-      : seatNode(model, group, node, wanted, owes, inBody(node, rowWindow), stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from, pooled && frozen);
+    // After the chord freeze the recorded seat of a pooled member holds only inside the body it has (dense-16x9 ticket 46, cause a).
+    const frozen = model.frozenChords !== undefined;
+    const seat = seatNode(model, group, node, wanted, owes, inBody(node, rowWindow), stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from, pooled && frozen);
     for (const key of seat.kept) aligned.add(key);
     // After the freeze, a recorded seat of a pooled member that the unit's move takes off its feeds is withdrawn by name (dense-16x9 ticket 46,
     // cause a): it holds only inside the body the member has, so it is not left standing off its feed, and the replay reads the same record (R1).

@@ -277,7 +277,7 @@ export function standsBySeatMove(model: LayoutModel, link: LayoutLink): boolean 
  */
 export function alignmentSeatsFault(model: LayoutModel): string | undefined {
   const record = model.alignmentSeats;
-  if (record === undefined) return model.seatLatches === undefined ? undefined : 'seat latches without a seat record';
+  if (record === undefined) return undefined;
   // Only the option writes seats (ADR-0027, an opt-in): with it off no rule reads a seat, so a record is no decision of the producer.
   if (!moveBeforeGrow(model)) return 'a record without layout.moveBeforeGrow';
   if (!RECORD_STAGES.includes(model.stage)) return `a record at stage ${model.stage}`;
@@ -301,18 +301,6 @@ export function alignmentSeatsFault(model: LayoutModel): string | undefined {
     }
     // The cap reads the record's own numbers (R5: the record, not a diagnostic): a body another rule made wide may align inside its width.
     if (!withinAlignmentCap(model, node, [...sides] as ('top' | 'bottom')[], seat)) return `${id}: the seat grew the body to ${seat.width} px, past the alignment cap`;
-  }
-  // The seat latches (dense-16x9 ticket 46, cause a): written with the first latch, so never empty; node ids in order, each a node, and none
-  // holds a seat (a latched member takes no seat again).
-  const latches = model.seatLatches;
-  if (latches !== undefined) {
-    if (!Array.isArray(latches)) return 'the seat latches are not a list';
-    if (!latches.length) return 'an empty list of seat latches (absent = none)';
-    for (const [index, id] of latches.entries()) {
-      if (typeof id !== 'string' || !Object.hasOwn(model.nodes, id)) return `the latch ${String(id)} is no node`;
-      if (index > 0 && !(latches[index - 1]! < id)) return `the latch ${id} is out of node-id order or repeated`;
-      if (Object.hasOwn(record, id)) return `${id}: a latched node holds a seat`;
-    }
   }
   return undefined;
 }

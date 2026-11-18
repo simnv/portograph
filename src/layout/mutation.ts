@@ -956,7 +956,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // The centring steps of 7c to 7f write the record of their alignment targets (architecture-2 ticket 66) and, with `layout.moveBeforeGrow`, of
     // their seats (ADR-0027); a rule withdraws a seat its rebuild left off its feed. The route rule drops the targets by default (the publication
     // of 7f has compared them) and keeps both records with the option.
-    ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets', 'alignmentSeats', 'seatLatches'] : []),
+    ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets', 'alignmentSeats'] : []),
     // The end trim of 7f records the bodies and boxes it narrowed (architecture-2 ticket 68); every later rule keeps the record.
     ...(rule === 'bands' ? ['bodyTrims'] : []),
     // D-Q5: the publication writes the command's lift record (`decideLifts`); the entries it adds after the kept run are declined and move no band.
