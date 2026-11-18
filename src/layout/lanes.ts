@@ -1252,20 +1252,34 @@ export function allocateLanes(model: LayoutModel): void {
   /**
    * What a held slot leaves short (dense-16x9 ticket 48, review 2): the px by which the hard separations of the model stand deeper, with the slot's lanes in
    * place and the chains of `separateHeldFrames` moved as they would move (the part a blocked chain can take included), than with the held lanes reserved so far.
-   * Every unit counts, a fixed grid, bar or flank included: a frame the slot grows into a fixed neighbour asks for no chain, and the reading still sees the gap.
-   * The trial runs on the model and is put back exactly: the boxes, bodies, anchors, icons, pills, labels and diagnostics it changed.
+   * Every unit of the document tier of the grown frame counts, a fixed grid, bar or flank included: a frame the slot grows into a fixed neighbour asks for no
+   * chain, and the reading still sees the gap. A unit of another tier does not: the tier gaps of 7f move the tiers apart after this.
+   * The trial runs on the model and is put back exactly: the boxes, bodies, anchors, icons, pills, labels and diagnostics it changed (`moveGroup` writes boxes and
+   * anchors in place, so they are copied; the rebuild replaces icons, pills and labels, so the old ones are kept).
    */
   const slotShort = (slot: readonly Lane[]): number => {
     const lanes = model.lanes, copy = (lane: Lane): Lane => ({ ...lane, bounds: { ...lane.bounds } });
     const boxes = Object.values(model.groups).map(group => [group, { ...group.bounds! }] as const);
-    const bodies = Object.values(model.nodes).map(node => [node, { ...node.bounds! }, node.icon, node.ports.map(port => [port, port.anchor, port.pill] as const)] as const);
+    const bodies = Object.values(model.nodes).map(node => [node, { ...node.bounds! }, node.icon, node.ports.map(port => [port, port.anchor === undefined ? undefined : { ...port.anchor }, port.pill] as const)] as const);
     const labels = model.labels, diagnostics = [...model.diagnostics];
     const reading = (reserved: Lane[]): Map<string, Shortfall> => { model.lanes = reserved; try { return derivedShortfalls(model); } finally { model.lanes = lanes; } };
+    // The units of the document tiers whose frames the slot grows, and the flanks of their groups: an entry between them is read; one that reaches a unit of
+    // another tier is not, because the tier gaps of 7f move the tiers apart after this.
+    const hosts = new Set(slot.map(lane => lane.group)), owners = new Set<string>();
+    for (const units of frameTiers(model)) {
+      if (!units.some(unit => unit.groups.some(group => hosts.has(group.id)))) continue;
+      for (const unit of units) {
+        if (unit.frame) owners.add(`frame:${unit.id}`);
+        for (const group of unit.groups) owners.add(`group:${group.id}`);
+      }
+    }
+    for (const group of Object.values(model.groups)) if (group.flank !== undefined && owners.has(`group:${group.flank.of}`)) owners.add(`group:${group.id}`);
     const before = reading(pending), trial = [...pending, ...slot].map(copy);
     try {
       separateHeldFrames(trial);
       const after = reading(trial);
-      return [...after].reduce((sum, [id, item]) => sum + Math.max(0, item.short - (before.get(id)?.short ?? 0)), 0);
+      return [...after].filter(([, item]) => item.owners.every(owner => !owner.startsWith('frame:') && !owner.startsWith('group:') || owners.has(owner)))
+        .reduce((sum, [id, item]) => sum + Math.max(0, item.short - (before.get(id)?.short ?? 0)), 0);
     } finally {
       for (const [group, box] of boxes) group.bounds = box;
       for (const [node, box, icon, ports] of bodies) {
