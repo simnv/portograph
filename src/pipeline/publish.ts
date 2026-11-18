@@ -10,7 +10,9 @@ import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { sideHintDiagnostics } from '../layout/side-hints.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { routedBends } from '../layout/side-judge.js';
-import { declinedStaggersOf, sideHintsOf, staggerDeclineSentence } from '../layout/reservations.js';
+import { declinedStaggersOf, farEndDecisionsOf, sideHintsOf, staggerDeclineSentence, withFarEndDecisions } from '../layout/reservations.js';
+import { staleFarEndDecisions } from '../layout/far-end-faults.js';
+import { routedLinksOf } from '../layout/far-end-order.js';
 import { FAN_WRAP_DECLINED } from '../layout/stagger.js';
 import { holdsRouted } from '../layout/reservation-checks.js';
 import type { Env } from './env.js';
@@ -77,6 +79,12 @@ export async function publish(env: Env, s: State): Promise<LayoutModel> {
       message: `The link ${failure.link} has ${failure.got === undefined ? 'no route' : `${failure.got} turns`} on its course, ${failure.max} were promised.` });
   }
   lost.push(...turnMissed(published));
+  // A far-end decision that no longer holds on the published sheet buys nothing: G5 judges its face again, and the decision is named (R6, dense-16x9 ticket 49).
+  const decisions = farEndDecisionsOf(s.kept), decided = decisions.length === 0 ? published : { ...published, reservations: withFarEndDecisions(published.reservations ?? [], decisions) };
+  for (const { entry, why } of staleFarEndDecisions(decided, routedLinksOf(decided))) {
+    lost.push({ stage: 'placement', severity: 'warning', code: 'FAR_END_DECISION_STALE', owners: [{ kind: 'node', id: entry.payload.node }],
+      message: `The far-end order of the ${entry.payload.side} face of ${entry.payload.node} was declined (${entry.payload.why}), but ${why}; G5 judges the face again.` });
+  }
   // A hinted link of a kept trial has no more bends than on the baseline (the judgment tested it); this names a break of that rule.
   if (s.routedFinal !== undefined && s.routedBase !== undefined) {
     const before = routedBends(s.routedBase), after = routedBends(s.routedFinal);
@@ -86,5 +94,5 @@ export async function publish(env: Env, s: State): Promise<LayoutModel> {
     }
   }
 
-  return env.timed('link-labels', () => env.step('link-labels', () => linkLabels(published, [...s.cuts, ...sideNotes, ...declined, ...lost], env.groupLifts)));
+  return env.timed('link-labels', () => env.step('link-labels', () => linkLabels(published, [...s.cuts, ...sideNotes, ...declined, ...lost], env.groupLifts, decisions)));
 }

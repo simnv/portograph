@@ -112,6 +112,12 @@ export function guardRoutedTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   return { gatesThen, gatesNow };
 }
 
+/** The bent links, turns and crossings of a routed baseline and of its routed trial (both layers), or `undefined` when one does not score: what a far-end decision names. */
+export function trialCounts(routedBase: LayoutModel, routedTrial: LayoutModel): { base: Count; trial: Count } | undefined {
+  const then = gateFindings(routedBase), now = gateFindings(routedTrial);
+  return then === undefined || now === undefined ? undefined : { base: countOf(then.counts), trial: countOf(now.counts) };
+}
+
 /** The unified reading of a score's counts: the profile the user approved reads it. */
 const readingOf = (counts: ScoreCounts): Reading => {
   const family = (bent: number, turns: number) => ({ straight: 0, bent, turns });

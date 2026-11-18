@@ -43,7 +43,7 @@ describe('finding 1: a trial is withdrawn on a named refusal only (R4, R6)', () 
   const env = (route: () => Promise<never>, bands: () => Promise<never> = async () => ({ model: {}, moved: false, unmoved: undefined }) as never): never => ({
     options: {}, bands, route, timed: (_label: string, run: () => unknown) => run() }) as never;
   const opened = { ledger: [], trial7e: { freeze: undefined } as never };
-  const offer = { faces: [], current: {} as never, split: false };
+  const offer = { faces: [], current: {} as never, decisions: new Map(), split: false };
   const state = { sideNotes: [], farEnd: undefined } as never;
   it('close() lets a router deadline end the command instead of picking the old drawing', async () => {
     await expect(close(env(async () => { throw new RouteDeadlineError(1); }), state, farEnd, offer, opened)).rejects.toBeInstanceOf(RouteDeadlineError);

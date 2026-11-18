@@ -12,6 +12,7 @@ import { type ShapeQuery, overlayPath, sharedBlockers, straightChord } from './o
 import { drawnBoxes as paintedBoxes, produceLegend } from './legend.js';
 import { BUS_LABEL_FONT, BUS_LABEL_GAP, busCarriesLabel, busLabelText } from './bus-room.js';
 import { withLayoutMutation } from './mutation.js';
+import { withFarEndDecisions, type ReservationOf } from './reservations.js';
 import { RectangleIndex, type RectangleBounds } from './rectangle-index.js';
 
 export { LINK_LABEL_GEOMETRY } from './link-label-geometry.js';
@@ -842,9 +843,16 @@ export function validateLinkLabels(model: LayoutModel): void {
 }
 
 /** Stage 9: measure and place post-route link and multiplicity labels. */
-export function linkLabels(model: LayoutModel, notes: readonly Diagnostic[] = [], groupLifts?: LayoutModel['groupLifts']): LayoutModel {
+export function linkLabels(model: LayoutModel, notes: readonly Diagnostic[] = [], groupLifts?: LayoutModel['groupLifts'],
+  farEndDecisions?: readonly ReservationOf<'farEndDecision'>[]): LayoutModel {
   return withLayoutMutation(model, 'link-labels', draft => {
     draft.diagnostics.push(...notes);
+    // Dense-16x9 ticket 49: the command's far-end decisions. A decision the round took after the kept placement stands in the kept ledger only; the published
+    // ledger carries the command's own, as G5 reads them. Nothing else of the ledger changes.
+    if (farEndDecisions !== undefined && (draft.reservations !== undefined || farEndDecisions.length > 0)) {
+      const ledger = withFarEndDecisions(draft.reservations ?? [], farEndDecisions);
+      if (JSON.stringify(ledger) !== JSON.stringify(draft.reservations ?? [])) draft.reservations = ledger;
+    }
     // D-Q5: the final lift record of the command. A placed model carries the entries decided before it was placed; the declined entries decided
     // after it change no band, so the published record is the command's own.
     if (groupLifts !== undefined) draft.groupLifts = JSON.parse(JSON.stringify(groupLifts)) as NonNullable<LayoutModel['groupLifts']>;

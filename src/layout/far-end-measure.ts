@@ -1,9 +1,10 @@
 import type { Side } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
 import { faceKey } from './turn-order.js';
-import { guardRoutedTrial, unifiedOrder } from './turn-measure.js';
+import { guardRoutedTrial, trialCounts, unifiedOrder, type Count } from './turn-measure.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { proposeFarEndOrder, staleFaces, type FarEndFace, type FarEndProposal } from './far-end-order.js';
+import type { FarEndDecisionEntry } from './far-end-faults.js';
 
 /**
  * The far-end round (dense-16x9 ticket 07): the offer and the judge. The offer is the order of the ports of every face that fails G5 on the published geometry of a
@@ -11,7 +12,8 @@ import { proposeFarEndOrder, staleFaces, type FarEndFace, type FarEndProposal } 
  * and the judge keeps the trial only when the final ranges agree.
  */
 
-export const measureFarEndOrder = (routedBase: LayoutModel): FarEndProposal => proposeFarEndOrder(routedBase);
+/** The proposal on the kept result; `decisions` are the far-end decisions the command holds (default: those of the model's ledger, `readFace`). */
+export const measureFarEndOrder = (routedBase: LayoutModel, decisions?: ReadonlyMap<string, FarEndDecisionEntry>): FarEndProposal => proposeFarEndOrder(routedBase, [], decisions);
 
 export interface FarEndVerdict {
   kept: boolean;
@@ -23,6 +25,14 @@ export interface FarEndVerdict {
   after?: number;
   /** The published canvas of the baseline and of the kept trial, when the trial grows it (named in the note of a kept trial). */
   canvas?: { from: { width: number; height: number }; to: { width: number; height: number } };
+  /**
+   * The clause that refused a trial: `unified` (worse by the unified order), `guard` (a guard of the routed trial), `fresh` (a face the baseline had in
+   * order is out of order on the trial) or `open` (the final far ends disagree with the proposed order). A `unified` or `guard` refusal with no `next` is a
+   * decision of the whole-sheet measure (dense-16x9 ticket 49): the round records it (`farEndDecision`).
+   */
+  clause?: 'unified' | 'guard' | 'fresh' | 'open';
+  /** The bent links, turns and crossings of the baseline and of the trial, when both score. */
+  tallies?: { base: Count; trial: Count };
 }
 
 /**
@@ -43,17 +53,19 @@ const names = (faces: readonly { node: string; side: Side }[]): Set<string> => n
  * turns, crossings): the repair buys a port order, and may not pay for it with a bend; and the final ranges agree on every proposed face, or on some of them and on no fewer faces
  * than the baseline. A refused trial that left a face stale carries the next proposal, which reads the trial's own final positions.
  */
-export function judgeFarEndTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>, proposed: readonly FarEndFace[], published: PublishedCanvas): FarEndVerdict {
-  const was = names(staleFaces(routedBase)), now = names(staleFaces(routedTrial)), asked = names(proposed);
+export function judgeFarEndTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>, proposed: readonly FarEndFace[], published: PublishedCanvas,
+  decisions?: ReadonlyMap<string, FarEndDecisionEntry>): FarEndVerdict {
+  const was = names(staleFaces(routedBase, undefined, decisions)), now = names(staleFaces(routedTrial)), asked = names(proposed);
   const before = was.size, after = now.size;
   const open = [...asked].filter(face => now.has(face));
   const fresh = [...now].filter(face => !was.has(face));
   // What the next trial reads: the faces of this trial that settled, kept, and every face that is stale on the trial's own final positions, sorted again from them.
-  const refuse = (reason: string): FarEndVerdict => {
+  const refuse = (reason: string, clause: NonNullable<FarEndVerdict['clause']>): FarEndVerdict => {
     const next = open.length > 0 || fresh.length > 0 ? proposeFarEndOrder(routedTrial, proposed.filter(face => !now.has(faceKey(face.node, face.side)))).faces : [];
-    return { kept: false, reason, ...(next.length > 0 ? { next } : {}), before, after };
+    const tallies = clause === 'unified' || clause === 'guard' ? trialCounts(routedBase, routedTrial) : undefined;
+    return { kept: false, reason, clause, ...(next.length > 0 ? { next } : {}), before, after, ...(tallies === undefined ? {} : { tallies }) };
   };
-  if (fresh.length > 0) return refuse(`the trial leaves faces out of far-end order that the baseline had in order (${fresh.join(', ')})`);
+  if (fresh.length > 0) return refuse(`the trial leaves faces out of far-end order that the baseline had in order (${fresh.join(', ')})`, 'fresh');
   // The published canvas of both candidates, labels and legend included (R1: the extent that publishes, not the one the route leaves).
   let grown: FarEndVerdict['canvas'];
   const canvasRefusal = (base: LayoutModel, trial: LayoutModel): string | undefined => {
@@ -64,11 +76,11 @@ export function judgeFarEndTrial(routedBase: LayoutModel, routedTrial: LayoutMod
     return ratio > FAR_END_CANVAS_GROWTH + PLACEMENT_EPS ? `the published canvas grows from ${Math.round(was.width)}x${Math.round(was.height)} to ${Math.round(now.width)}x${Math.round(now.height)} px` : undefined;
   };
   const guarded = guardRoutedTrial(routedBase, routedTrial, keptPromises, canvasRefusal);
-  if (typeof guarded === 'string') return refuse(guarded);
+  if (typeof guarded === 'string') return refuse(guarded, 'guard');
   const { before: was3, after: now3, order } = unifiedOrder(guarded);
-  if (order > 0) return refuse(`the routed trial is worse by the unified order (${now3.bent} bent links, ${now3.turns} turns, ${now3.crossings} crossings, against ${was3.bent}, ${was3.turns} and ${was3.crossings})`);
+  if (order > 0) return refuse(`the routed trial is worse by the unified order (${now3.bent} bent links, ${now3.turns} turns, ${now3.crossings} crossings, against ${was3.bent}, ${was3.turns} and ${was3.crossings})`, 'unified');
   // A face the new order did not settle stays out of order as it was on the baseline: the trial is kept when it settles more faces than it leaves (no face is worse), and the round
   // goes on with the faces left. A trial that settles none is refused.
-  if (open.length > 0 && after >= before) return refuse(`the final far ends of ${open.join(', ')} disagree with the proposed order`);
+  if (open.length > 0 && after >= before) return refuse(`the final far ends of ${open.join(', ')} disagree with the proposed order`, 'open');
   return { kept: true, reason: '', before, after, ...(grown === undefined ? {} : { canvas: grown }) };
 }

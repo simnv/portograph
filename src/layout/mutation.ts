@@ -831,6 +831,11 @@ function onlySeatSetsWithdrawn(after: LayoutModel['reservations'], before: Layou
   return JSON.stringify(after.slice(0, stays.length)) === JSON.stringify(stays) && added.every(entry => entry.kind === 'seatSetDeclined'
     && before.some(item => item.kind === 'seatSet' && item.owner.kind === 'group' && item.owner.id === entry.payload.row && !kept.has(item.id)));
 }
+/** Whether `after` differs from `before` in far-end decisions only (dense-16x9 ticket 49: the publication writes the command's own). */
+function onlyFarEndDecisionsDiffer(after: LayoutModel['reservations'], before: LayoutModel['reservations']): boolean {
+  const others = (ledger: LayoutModel['reservations']) => JSON.stringify((ledger ?? []).filter(entry => entry.kind !== 'farEndDecision'));
+  return after !== before && others(after) === others(before);
+}
 /** Whether `after` differs from `before` in seatSet entries only (dense-16x9 ticket 36: the rows rule writes them). */
 function onlySeatSetsDiffer(after: LayoutModel['reservations'], before: LayoutModel['reservations']): boolean {
   const others = (ledger: LayoutModel['reservations']) => JSON.stringify((ledger ?? []).filter(entry => entry.kind !== 'seatSet' && entry.kind !== 'seatSetDeclined'));
@@ -972,7 +977,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // entries there, and nothing else.
     ...(['centre', 'bars', 'bundles', 'bands'].includes(rule) && onlySeatSetsWithdrawn(draft.reservations, model.reservations) ? ['reservations'] : []),
     // The rows rule decides the seat sets of the rank rows (dense-16x9 ticket 36): it replaces the seatSet entries, and nothing else of the ledger.
-    ...(rule === 'rows' && onlySeatSetsDiffer(draft.reservations, model.reservations) ? ['reservations'] : [])];
+    ...(rule === 'rows' && onlySeatSetsDiffer(draft.reservations, model.reservations) ? ['reservations'] : []),
+    // The publication writes the command's far-end decisions (dense-16x9 ticket 49), and nothing else of the ledger.
+    ...(rule === 'link-labels' && onlyFarEndDecisionsDiffer(draft.reservations, model.reservations) ? ['reservations'] : [])];
   same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
