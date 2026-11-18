@@ -1313,14 +1313,24 @@ function holdFarEnds(model: LayoutModel, id: string, range: FarEndRange, saved: 
   for (const node of was.nodes) model.nodes[node.id] = node;
   model.labels = saved.labels; model.diagnostics = saved.diagnostics;
   if (saved.reservations === undefined) delete model.reservations; else model.reservations = saved.reservations;
-  // The translation asks the move guard as the stand near the feed does; a move it refuses keeps the row where the step began.
-  const free = !CHORD_STAGES.includes(model.stage) && Math.abs(shift.dx) > EPS && holdsMove(model, [{ group: was.group, bounds: { ...was.group.bounds!, x: was.group.bounds!.x + shift.dx } }]);
+  // The translation asks the move guard as the stand near the feed does; a move it refuses keeps the row where the step began. After the chord freeze
+  // the translation is an optional move, so the one judge of a move after the freeze reads it too (dense-16x9 tickets 33 and 57): it stands only where
+  // every solid block keeps its reservation on a copy that makes it.
+  const free = !CHORD_STAGES.includes(model.stage) && Math.abs(shift.dx) > EPS && holdsMove(model, [{ group: was.group, bounds: { ...was.group.bounds!, x: was.group.bounds!.x + shift.dx } }])
+    && (model.frozenChords === undefined || !model.blockReservations?.length || blockMoveRefusal(model, farEndShifted(model, id, shift.dx)) === undefined);
   const kept = free ? shift.dx : 0;
   if (free) { moveGroup(model, was.group, kept, 0); rebuildNodeGeometry(model, was.group.nodes, 'current'); }
   nameFarEndClamp(model, 'the centring step', id, asked, kept, intact ? range.why : `the step moves the far ends apart; ${range.why}`);
   const ports = new Map(was.group.nodes.flatMap(node => model.nodes[node]!.ports.map(port => [portId(port.ref), port] as const)));
   const open = new Set([...step.notes.wanted].filter(([key, want]) => { const at = ports.get(key)?.anchor?.x; return at === undefined || Math.abs(at - want) > 0.5; }).map(([key]) => key));
   return { unresolved: open, group: was.group, notes: { ...step.notes, grown: new Map(), declined: new Map(), seated: new Map() } };
+}
+/** A copy of `model` with row `id` translated by `dx`: what `holdFarEnds` asks the judge of a move after the freeze about before it moves the row. */
+function farEndShifted(model: LayoutModel, id: string, dx: number): LayoutModel {
+  const trial = JSON.parse(JSON.stringify(model)) as LayoutModel, group = trial.groups[id]!;
+  moveGroup(trial, group, dx, 0);
+  rebuildNodeGeometry(trial, group.nodes, 'current');
+  return trial;
 }
 /**
  * The seats of `nodes` that fall, each with its first kept port that no longer stands over its feed (`wanted`, the feed x of each child port)

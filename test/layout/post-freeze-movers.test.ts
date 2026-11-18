@@ -7,6 +7,8 @@ import { BOX_WRITERS } from '../../src/layout/box-writers.js';
 import { moveTrace } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from './move-before-grow.js';
+import type { NormalisedDocument } from '../../src/model/document.js';
 
 // Dense-16x9 ticket 33: every mover after the chord freeze of 7f goes through the one judge of a move after the freeze (`blockMoveRefusal`),
 // or states in the box writer table (`afterFreeze`) why a required move cannot be refused and what its last resort is. The movers are found,
@@ -41,7 +43,11 @@ const SHEETS = [
   'test/fixtures/staged/two-cores-reach-seven-pairs-through-hubs-on-the-last-rank.yaml',
 ];
 
-describe('every mover after the chord freeze is judged or states its last resort (dense-16x9 ticket 33)', () => {
+// Dense-16x9 ticket 57: the sheets run as written and with `layout.moveBeforeGrow` (ADR-0027). Only the option makes a seat set, so only with it
+// does the step of a far-end row (`holdFarEnds`, W40) translate a row after the freeze.
+const MODES: [string, (document: NormalisedDocument) => NormalisedDocument][] = [['as written', document => document], ['with moveBeforeGrow', withMoveBeforeGrow]];
+
+describe.each(MODES)('every mover after the chord freeze is judged or states its last resort (dense-16x9 ticket 33), %s', (_mode, read) => {
   it('finds no unjudged writer after the freeze that the box writer table does not explain', async () => {
     const judged = judges(), writers = new Set(BOX_WRITERS.map(writer => writer.fn));
     expect([...judged]).toEqual(expect.arrayContaining(['judgedMove', 'centreGroupStepChecked']));
@@ -54,7 +60,7 @@ describe('every mover after the chord freeze is judged or states its last resort
       seen.set(writer, (seen.get(writer) ?? false) || !frames.some(name => judged.has(name)));
     };
     try {
-      for (const sheet of SHEETS) await layout(parse(readFileSync(join(root, sheet), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      for (const sheet of SHEETS) await layout(read(parse(readFileSync(join(root, sheet), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     } finally {
       delete moveTrace.hook;
       Error.stackTraceLimit = limit;
