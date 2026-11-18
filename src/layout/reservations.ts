@@ -1043,9 +1043,6 @@ type ReaderCheck = true | ((model: LayoutModel) => boolean) | string;
  */
 const sameTally = (a: UnifiedTally | undefined, b: UnifiedTally): boolean => a !== undefined && a.crossings === b.crossings
   && a.routed.bent === b.routed.bent && a.routed.turns === b.routed.turns && a.overlay.bent === b.overlay.bent && a.overlay.turns === b.overlay.turns;
-const tallies = new WeakMap<LayoutModel, UnifiedTally | undefined>();
-/** The measured tally of a model, read once per model (a ledger may hold several decisions). */
-const tallyOfModel = (model: LayoutModel): UnifiedTally | undefined => { if (!tallies.has(model)) tallies.set(model, measuredTally(model)); return tallies.get(model); };
 export function farEndDecisionFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'farEndDecision') return undefined;
   const { node, side, ports, pairs, reason, tallies, binding } = item.payload, face = model.nodes[node]?.ports.filter(port => port.side === side);
@@ -1064,7 +1061,7 @@ export function farEndDecisionFailure(item: Reservation, model: LayoutModel): st
   if (!binding.proposal.some(wanted => wanted.node === node && wanted.side === side)) return `the proposal of the decision of the ${side} face of ${node} does not hold the face`;
   if (reason === 'unified' && (tallies === undefined || !(unifiedCompare(tallies.base, tallies.trial) > 0))) return `the decision of the ${side} face of ${node} names no trial worse by the unified order`;
   // The baseline tally is the model's own, measured as the judge measures it (review 2): the record cannot claim a baseline the saved geometry does not have.
-  if (tallies !== undefined && !sameTally(tallyOfModel(model), tallies.base)) return `the decision of the ${side} face of ${node} names a baseline tally the model does not have`;
+  if (tallies !== undefined && !sameTally(measuredTally(model), tallies.base)) return `the decision of the ${side} face of ${node} names a baseline tally the model does not have`;
   return undefined;
 }
 export interface KindCheck { readonly predicate?: (item: Reservation, model: LayoutModel) => string | undefined; readonly at: { readonly round: ReaderCheck; readonly final: ReaderCheck; readonly early: ReaderCheck } }
