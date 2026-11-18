@@ -669,7 +669,20 @@ ends the round (`proposalKey`), so a face that flips back is refused once and no
 postcondition refusal of a producer (`PostconditionRefusal`). A deadline, a budget refusal and a plain `Error` end the command; the round never swallows them. The record is backed
 by the ledger: restore and the freeze check refuse a `freeze.farEndOrder` with no ledger, with a face held twice, with a face of another owner (a recorded first-turn face, a bar, a
 bundle member, a bus port, a solid-block face), or with a face that no entry reserves. Production writes a record only when it holds a face; an absent record and an empty record
-are the same. The notes `FAR_END_ORDER_TAKEN`, `FAR_END_ORDER_OWNED`, `FAR_END_ORDER_DECLINED` and `FAR_END_ORDER_UNSETTLED` say what happened. No 7c rule may re-order a port: the
+are the same. The notes `FAR_END_ORDER_TAKEN`, `FAR_END_ORDER_OWNED`, `FAR_END_ORDER_DECLINED` and `FAR_END_ORDER_UNSETTLED` say what happened.
+
+**A declined order is decided once** (dense-16x9 ticket 49; owner ruling 2026-11-18: the whole-sheet measure wins). When the round declines a
+trial on a full trial (worse by the unified order, a guard of the routed trial, or a stage that refused the order), it records the decision in
+the ledger: a `farEndDecision` entry per proposed face that fails G5 on the baseline the trial was measured on, with the face in engine order,
+the pairs that stood the wrong way round there (the far-end x order the decision accepted), the clause (`unified` or `other`), its sentence, and
+the bent links, turns and crossings of both sides when the trial was routed and scored. A trial that did not settle (a next proposal, a fresh face out
+of order, final far ends that disagree) and a repeated proposal record nothing. One reader judges a face for G5, for the round and for the
+publication (`readFace`, `far-end-faults.ts`): a face whose decision holds (its ports stand in the recorded order and exactly the recorded pairs stand
+wrong) passes G5 and is not proposed again. A decision reserves no geometry, so a later trial that leaves it stale is no refusal: the face is
+judged again, a new proposal for it drops the old record from the trial's ledger, and a new decline replaces it. The round takes a decision after
+the kept placement, so the decision stands in the kept ledger; the round reads the kept result with it, and stage 9 writes the command's decisions
+into the published ledger (`linkLabels`). The publication names a decision that no longer holds on the published sheet (`FAR_END_DECISION_STALE`,
+R6). The rule is the same with `layout.moveBeforeGrow` off and on. No 7c rule may re-order a port: the
 permission stays as it is.
 
 **The U of a sibling row (dense-16x9 ticket 06, slice C).** Once the sides are voted, and before the nodes are sized, each outer

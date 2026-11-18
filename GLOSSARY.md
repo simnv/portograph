@@ -47,6 +47,7 @@ A face that holds a straight link (a held routed chord or a pinned level link) b
 The order is read again from final positions: after the last round, the far-end round proposes a new order for every face that fails G5 and has no other owner, reserves it (`farEndOrder`), and one more placement run seats it in stage 5 (`docs/design/pipeline.md`, Stage 5).
 One exception: a row bypass places its closing link in the slot on its turn side of the faces of that link, which hold the straight row neighbour (`docs/design/turn-order.md`, Section 6).
 A face that the turn round ordered keeps the first-turn order the layout recorded for it, and G5 accepts that order while the record holds.
+A face whose far-end order the far-end round declined on a full trial keeps its order by a **far-end decision** (`farEndDecision`), and G5 accepts it while the record holds (dense-16x9 ticket 49).
 
 **Link**:
 A connection between two ports, with a class and an optional route override.
