@@ -136,6 +136,19 @@ describe('the guards of the final flat-gap choice (review 1)', () => {
     }, 120000);
   }
 
+  it('leaves the marker as it was when the uncached baseline route throws (review 3)', async () => {
+    const { env, s } = await start(plain);
+    const marker = s.flatGapSheet, gaps = env.flatBlockGaps, placements = env.placements;
+    expect(marker).toBeDefined();
+    delete s.published; delete s.routedFinal; delete s.routedBase;
+    const thrown = new Error('an injected route failure');
+    env.route = async () => { throw thrown; };
+    await expect(chooseFlatGapsAgain(env, s)).rejects.toBe(thrown);
+    expect(s.flatGapSheet).toBe(marker);
+    expect(env.flatBlockGaps).toEqual(gaps);
+    expect(env.placements).toBe(placements);
+  }, 120000);
+
   it('keeps the geometry before it on a declined candidate and credits the started placement', async () => {
     const { env, s } = await start(plain);
     const before = await publish(env, s), { placements, gateRuns } = env;
