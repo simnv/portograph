@@ -3,7 +3,9 @@
 # the outer pair nodes. Stage 8 routes that link below the pairs, outside the placed boxes, so the published sheet is 5 px higher than every
 # placement reading (5015.5 x 1676.833 px when the trigger compared two 7f readings: no fit ran). The final choice reads the published sheet
 # of the run, places once (`FLAT_BLOCK_GAP_FINAL`, the flat gap 1407.33 -> 1402.33 px) and publishes 5015.5 x 1671.833 px, W / 3.
-# Test `test/pipeline/flat-gap-final-public.test.ts`.
+# Test `test/pipeline/flat-gap-final-public.test.ts`. A test input, not a golden: the published route of the labelled link keeps a 60.75 px
+# leg at the bottom port of node7b, past the 15 px orthogonal leg bound that `test/pipeline/frame-chord-leg.test.ts` asserts on every golden
+# (the same leg at 0cd85944, where no final choice runs: a defect of the exterior route, not of the flat-gap choice).
 portograph: 2
 layout: {aspect: "3:1"}
 groups:

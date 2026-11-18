@@ -69,7 +69,7 @@ describe('the final flat-gap choice in one command (review 1)', () => {
 describe('the final flat-gap choice and the published sheet of the run (review 2)', () => {
   it('is triggered by the published sheet: a route below the placed boxes moves the gap (P2a)', async () => {
     trace.calls = [];
-    const model = await layout(parse(synthetic('a-perimeter-route-below-a-flat-block-moves-its-gap')), options);
+    const model = await layout(parse(readFileSync(new URL('../fixtures/flat-gap/a-perimeter-route-below-a-flat-block-moves-its-gap.yaml', import.meta.url), 'utf8')), options);
     expect(model.canvas!.width).toBeCloseTo(5015.5, 3);
     expect(model.canvas!.height).toBeCloseTo(1671.833, 3);
     expect(trace.calls.map(({ placements, ran }) => ({ placements, ran }))).toEqual([{ placements: 1, ran: true }]);
