@@ -55,8 +55,10 @@ fan round grew a steep gap, and the published sheet stood at 1.646 for the aim 1
 - One reader: `canvasExtent`, the canvas stage 9 fits (`refitCanvas`), with the legend and the margin, read on a copy. The first choice and
   the final one read it; one function chooses for both (`aspectFlatGaps`) and one judges both (`nearerAim`).
 - After the last step that changes the sheet (the driver's rounds and the crowded-chord replay), the command chooses once more
-  (`chooseFlatGapsAgain`), only when the kept baseline reads a different sheet from the one the first choice read. It runs once per command,
-  on the run the command publishes (`fitPublication`); a group-lift or width trial is judged on its result without it (review 1). A gap that a
+  (`chooseFlatGapsAgain`). It runs once per command, on the run the command publishes (`fitPublication`); a group-lift or width trial is
+  judged on its result without it (review 1). Its trigger is the published sheet of that run, the same reading as the baseline of the
+  comparison (review 2): a route that stage 8 draws outside the placed boxes moves the gap too. A picked run that met `layout.maxWidth`
+  keeps the budget: a candidate past it is declined by name, and the width finding reads the model the command returns. A gap that a
   choice raised may also drop toward its floor; a gap at its mandatory height cannot.
 - The final choice reads the published sheet on both sides (review 1): the publication route of the model (`publicationRoute`, the route mode
   publication uses) labelled as stage 9 labels it (`publishedSheet`: link labels, legend, margin). Stage 8 can draw a route outside the placed
