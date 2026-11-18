@@ -735,12 +735,13 @@ export function holdColumnsAfterPush(model: LayoutModel): boolean {
   // centring packs them: a gap of 40 px stays 40 px. Only the flanks keep their place: an anchor-tier member pushed by a neighbour's title is packed back too.
   // The pack reads every hard separation as part of its window (dense-16x9 ticket 48): a child that would break or deepen one (the gap of its
   // frame to the next column) stays where it stands. Placement reserves the gaps (the seat sets read them, `planSeatSet`); this move only checks.
-  // The gaps a canton owns are read too: the close-up of the cantons after this pack closes a wide gap and does not open a short one.
+  // The gaps between a canton and its neighbours are read too: the close-up of the cantons after this pack closes a wide gap and does not open a
+  // short one. The gaps inside a canton stay with its member walls.
   packBesideRows(model, cell => !model.groups[cell]!.flank, (cells, delta) => {
     const child = model.groups[cells[0]!]!.frame ?? cells[0]!, broken = separationsBrokenBy(model, cells.map(cell => {
       const group = model.groups[cell]!;
       return { group, bounds: { ...group.bounds!, x: group.bounds!.x + delta } };
-    }), undefined, { cantons: 'judged' });
+    }), undefined, { cantons: 'outer' });
     // The warning names the child while the pack holds it (R6), and goes when a later pack moves it or finds it packed.
     model.diagnostics = model.diagnostics.filter(item => !(item.code === FRAME_PACK_SEPARATION_HELD && item.owners?.some(owner => 'id' in owner && owner.id === child)));
     if (broken.length) placementWarning(model, FRAME_PACK_SEPARATION_HELD, `Frame ${child} stays ${Math.round(Math.abs(delta) * 100) / 100} px from its packed place: the move would break or deepen the minimum separation ${broken[0]}.`, [child], 'group');

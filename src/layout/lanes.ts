@@ -1147,7 +1147,7 @@ export function allocateLanes(model: LayoutModel): void {
    * its gap lacks, and each unit after it by what its own gap then lacks. The grown frame stays: its cells hold the sources of its lanes.
    * A unit that holds a lane source, stands in a sub-tier no link crosses (the lanes rule moves only those) or would reach a reserved lane
    * cannot move. A flank moves with the group it flanks. Every unit the chain does not move bounds its room, a grid, a bar or a unit of
-   * another tier included: the chain is judged whole on the hard separations of the model with every move of it in place (`separationsBrokenBy`, the gaps of a canton included),
+   * another tier included: the chain is judged whole on the hard separations of the model with every move of it in place (`separationsBrokenBy`, the gaps between a canton and its neighbours included),
    * against the reading before it. The slot of a held lane reads the chains its frame would need (`commit` false) while it can still choose
    * (`allocateLanes`); once the held lanes stand, before any lane foreign to a frame is reserved, the chains move (`commit` true). A chain
    * that cannot take the whole lack takes the largest part of it that its slack gives and that breaks or deepens no separation; it commits
@@ -1216,7 +1216,7 @@ export function allocateLanes(model: LayoutModel): void {
         /** The separations the chain would break or deepen, read with every move of it and the lanes its units host in place. */
         const broken = (moves: ReadonlyMap<Unit, number>): string[] => withLanes(lanesAfter(moves), () => separationsBrokenBy(model,
           [...moves].flatMap(([unit, dx]) => unit.groups.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx }, dx }))),
-          standing, { cantons: 'judged' }));
+          standing, { cantons: 'outer' }));
         const taken = (amount: number): Map<Unit, number> | undefined => {
           const moves = plan(amount);
           return typeof moves !== 'string' && !broken(moves).length ? moves : undefined;

@@ -1731,7 +1731,7 @@ split otherwise. The validator still replays the one 7f room producer.
 
 `topUpBandClearance` rebuilds every moved node's pills and text, including lower-tier cascades, before
 `holdColumnsAfterPush` and `reserveLinkLabelRoom` read them. The pack of `holdColumnsAfterPush` reads every hard separation as part of
-its window (dense-16x9 ticket 48), the gaps a canton owns included (the close-up of the cantons after it closes a wide gap and does not open a short one): a child
+its window (dense-16x9 ticket 48), the gaps between a canton and its neighbours included (the close-up of the cantons after it closes a wide gap and does not open a short one; the member walls hold the gaps inside a canton): a child
 frame whose move would break or deepen one stays where it stands, named by `FRAME_PACK_SEPARATION_HELD`. The warning goes
 when a later pack moves the child or finds it packed. Placement reserves the gaps; this move only checks.
 
@@ -2273,8 +2273,8 @@ it by what its own gap then lacks. The grown frame stays, because its cells hold
 A unit that holds a lane source, stands in a sub-tier no link crosses or would reach a reserved lane
 cannot move. A flank moves with the group it flanks. Every unit the chain does not move bounds its
 room, a grid, a bar or a unit of another tier included: the chain is judged whole on the hard
-separations of the model with all its moves in place (`separationsBrokenBy`, the gaps of a canton
-included). The slot of a held lane reads these chains while the allocator can still choose it: a slot
+separations of the model with all its moves in place (`separationsBrokenBy`, the gaps between a
+canton and its neighbours included). The slot of a held lane reads these chains while the allocator can still choose it: a slot
 whose chains take the whole lack wins over a nearer slot whose chains cannot. A chain that cannot take
 the whole lack takes the largest part that breaks or deepens no separation. It commits whole or not at
 all, and `LANE_FRAME_GAP_HELD` names what stays short.

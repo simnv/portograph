@@ -26,8 +26,7 @@ import { BLOCK_CAP } from './block-checks.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
 import { attemptCounters } from './attempt-counters.js';
 import { EPS } from '../geometry/planar.js';
-import { derivedShortfalls, separationsBrokenBy, type Shortfall } from './constraints/separation.js';
-import type { ConstraintKind } from './constraints/types.js';
+import { derivedShortfalls, INSIDE_FRAME, separationsBrokenBy, type Shortfall } from './constraints/separation.js';
 
 /**
  * The seat set of a child row (dense-16x9 ticket 36, slice 1; design `36-seats-design.md`, mechanisms III and IV). With
@@ -368,8 +367,6 @@ function faceLinks(model: LayoutModel, faces: Resorted['faces']): Set<string> {
 const fixedKind = (model: LayoutModel, group: LayoutGroup): string | undefined => group.flank !== undefined ? 'the flank'
   : groupShape(model, group.id) !== 'row' ? `the ${groupShape(model, group.id)}` : undefined;
 
-/** The hard separations inside one frame (`xCatalogue`): a column sweep moves a frame whole, so it opens none of them. */
-const INSIDE_FRAME: readonly ConstraintKind[] = ['separation-frame-frames', 'separation-cell-child-frame', 'separation-frame-cells'];
 
 /**
  * The seat set of the cell `group` on `model` (no write): the best assignment that breaks no owner, as a record payload, or why there is

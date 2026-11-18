@@ -2,6 +2,7 @@ import type { LayoutModel } from '../../model/layout.js';
 import { framesAfter, type ProposedBox } from '../frames.js';
 import { xCatalogue } from './catalogue.js';
 import { RESIDUAL_TOLERANCE, termValue } from './evaluate.js';
+import type { ConstraintKind } from './types.js';
 
 /**
  * The minimum separations a layout breaks, read from the x catalogue (ticket 17): every hard entry of a `separation-*` kind (the band gap between root groups and
@@ -15,6 +16,9 @@ export interface Shortfall {
   /** How far under the minimum the gap stands, in px (positive). */
   short: number;
 }
+
+/** The hard separations inside one frame (`xCatalogue`): a column sweep moves a frame whole, so it opens none of them. */
+export const INSIDE_FRAME: readonly ConstraintKind[] = ['separation-frame-frames', 'separation-cell-child-frame', 'separation-frame-cells'];
 
 /** The catalogue is built once per call. */
 export function separationShortfalls(model: LayoutModel): Map<string, Shortfall> {
@@ -44,13 +48,14 @@ export function worseSeparations(now: ReadonlyMap<string, Shortfall>, then: Read
  * (`framesAfter`), and an entry that names a frame is judged too: a cell of a child frame that the grid widens grows its top-level frame into the band
  * gap of the next frame, and a reading that kept the published frame box would accept that widening and let G9 find the gap short (ticket 157).
  * An entry that names a frame in a canton (the canton frame or a frame on a chain below one) is left to the close-up of 7f, which packs the cantons and
- * their members to the spacing again after the grid (`closeCantons`, `holdMemberWalls`); no later step packs any other frame. The close-up closes a
- * wide gap and does not open a short one, so a move that can close a gap under the minimum (the 7f pack, the held-lane chains of 7a) reads them
- * too: `cantons: 'judged'` (dense-16x9 ticket 48).
- * The callers that leave them to the close-up: the linked-group grid (bands.ts) and the seat set (seat-set.ts, which judges only the gaps inside a frame).
+ * their members to the spacing again after the grid (`closeCantons`, `holdMemberWalls`); no later step packs any other frame. The member walls hold the gaps
+ * inside a canton, but the close-up of the cantons closes a wide gap between a canton and its neighbours and does not open a short one. So a move
+ * that can close that gap (the 7f pack, the held-lane chains of 7a) reads it: `cantons: 'outer'` judges every entry of a canton but the ones inside a
+ * frame (`INSIDE_FRAME`), which the member walls hold (dense-16x9 ticket 48). The callers that leave all of them to the close-up: the linked-group
+ * grid (bands.ts) and the seat set (seat-set.ts, which judges only the gaps inside a frame).
  */
 export function separationsBrokenBy(model: LayoutModel, proposed: readonly ProposedBox[], standing?: ReadonlyMap<string, Shortfall>,
-  options: { cantons: 'left-to-7f' | 'judged' } = { cantons: 'left-to-7f' }): string[] {
+  options: { cantons: 'left-to-7f' | 'outer' } = { cantons: 'left-to-7f' }): string[] {
   const published = model.frames;
   const saved = proposed.map(item => item.group.bounds!);
   const framed = (frames: typeof published): void => { if (frames !== undefined) model.frames = frames; };
@@ -62,7 +67,7 @@ export function separationsBrokenBy(model: LayoutModel, proposed: readonly Propo
     const after = framesAfter(model, proposed);
     for (const item of proposed) item.group.bounds = item.bounds;
     framed(after);
-    const judged = new Map([...separationShortfalls(model)].filter(([, item]) => options.cantons === 'judged'
+    const judged = new Map([...separationShortfalls(model)].filter(([id, item]) => (options.cantons === 'outer' && !INSIDE_FRAME.some(kind => id.startsWith(`${kind}:`)))
       || item.owners.every(owner => !owner.startsWith('frame:') || !inCanton(model, owner.slice('frame:'.length)))));
     return worseSeparations(judged, before);
   } finally {
