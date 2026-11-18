@@ -1255,11 +1255,11 @@ let stepPass = 0;
 const carryCache = readCache('centreCarry');
 /** The groups a foreign drop would run along, by id. */
 const breachedIds = (model: LayoutModel): Set<string> => new Set([...keepOutShifts(model).keys()].map(item => item.id));
-function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
+function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>, ahead: boolean, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   return withStepLinkKinds(model, () => {
     const began = model.groups[id];
     const range = farEndRange(model, context, [id]), saved = range === undefined ? undefined : farEndSnapshot(model, id);
-    const raw = centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, rowSeat, base, carried);
+    const raw = centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, rowSeat, ahead, base, carried);
     const step = range === undefined ? raw : holdFarEnds(model, id, range, saved!, raw);
     // The targets the step kept, grew toward or declined, read on the geometry it leaves on every exit (architecture-2 ticket 66).
     writeAlignmentTargets(model, model.groups[id]!.nodes, step.notes, warn ? stepPass : 0);
@@ -1368,14 +1368,14 @@ export function fallenSeatFault(model: LayoutModel): string | undefined {
   const fallen = fallenSeats(model, Object.keys(model.alignmentSeats).sort(), seatFeeds(model, centreContext(model, model.anchorTier)));
   return fallen.values().next().value;
 }
-function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
+function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>, ahead: boolean, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
   // After the chord freeze a step is judged by the one judge of a move after the freeze (`blockMoveRefusal`, dense-16x9 ticket 33): a step that
   // leaves a solid-block member or follower past the allowance of a constraint of its reservation where it held, or further past it, is given
   // back. The label-band producer replays the centring at the freeze unjudged as a whole, so its steps are judged here, one by one.
-  if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat);
+  if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat, ahead);
   const group = model.groups[id]!;
   const unbuilt = carried === undefined ? undefined : group.nodes.map(node => JSON.stringify(model.nodes[node]));
   // `moveGroup` leaves pill bounds behind, and the chord reads them: both readings are taken on rebuilt nodes.
@@ -1403,7 +1403,7 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   // rebuild below writes from its geometry, and the warnings it names. A step that does not stand gives all of them back.
   const labels = [...model.labels], diagnostics = [...model.diagnostics];
   const blockBefore = model.frozenChords !== undefined && model.blockReservations?.length ? blockReservationFaults(model) : undefined;
-  const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat);
+  const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat, ahead);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
@@ -1499,7 +1499,7 @@ function snapAlignedFaces(model: LayoutModel, group: LayoutGroup, wanted: Readon
     }
   }
 }
-function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>): { unresolved: Set<string>; group: LayoutGroup; notes: TargetNotes } {
+function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>, ahead: boolean): { unresolved: Set<string>; group: LayoutGroup; notes: TargetNotes } {
   const group = model.groups[id]!;
   const { own, wanted, yielded, conflicts, seats } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
@@ -1518,11 +1518,14 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     if (why === undefined) {
       // The seat decides where the row stands, so every wanted port it leaves off its feed is unresolved by this step's own rule (dense-16x9
       // ticket 38; R1): the invariant (`readCentreViolations`) excuses exactly this set. Both read one distance test (`standsOffFeed`) and one
-      // ownership test (`otherRuleOwns`, as the producer reads, `ahead`): a port another rule owns is not this step's to name.
-      const owns = otherRuleOwns(model, true);
+      // ownership test (`otherRuleOwns`) for the stage its caller reads (`ahead`; review 2): a port another rule owns is not this step's to name.
+      const owns = otherRuleOwns(model, ahead);
       for (const nodeId of group.nodes) for (const port of model.nodes[nodeId]!.ports) {
         const at = portId(port.ref), x = wanted.get(at), feed = seats.get(at);
-        if (x !== undefined && feed !== undefined && !owns(feed, at) && standsOffFeed(port, x)) unresolved.add(at);
+        if (x === undefined || feed === undefined) continue;
+        const other = owns(feed, at);
+        centreCheckTrace.owner?.(model, 'step', ownerRead, ahead, at, other);
+        if (!other && standsOffFeed(port, x)) unresolved.add(at);
       }
       centreCheckTrace.hook?.(model, 'seated', [...unresolved]);
       return { unresolved, group, notes };
@@ -1910,7 +1913,15 @@ function centreDraftFound(model: LayoutModel, budget: CentreBudget, publish?: ()
  * the publication check reads on that draft (`publication`, at stage `centre`), and the ports a seated step names unresolved (`seated`, the
  * group's ports it left off their feeds). Unset in production, so it costs one comparison.
  */
-export const centreCheckTrace: { hook?: (model: LayoutModel, reader: 'producer' | 'publication' | 'seated', found: readonly string[]) => void } = {};
+export const centreCheckTrace: {
+  hook?: (model: LayoutModel, reader: 'producer' | 'publication' | 'seated', found: readonly string[]) => void;
+  /** Each answer of the ownership test (`otherRuleOwns`) for a wanted port, with the phase it was asked for (`ahead`): by the invariant of check
+   * `read`, or by a seated step (`read` is the check that replays it; undefined for a producer step). Review 2 of ticket 38. */
+  owner?: (model: LayoutModel, reader: 'step' | 'invariant', read: number | undefined, ahead: boolean, child: string, owned: boolean) => void;
+} = {};
+/** The check (`readCentreViolations`) whose replay runs now, for `centreCheckTrace.owner`; undefined while a producer step runs. */
+let ownerRead: number | undefined;
+let ownerReads = 0;
 /**
  * A `CENTRE_ALIGNMENT_INFEASIBLE` names a feed that a step, or the parent stand, could not put on one x. A later pass, a parent spread, the parent
  * stand or a move of 7f may still stand the link vertical (architecture-2 ticket 32). Read where the model stands, a warning whose links all stand
@@ -2044,7 +2055,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
           continue;
         }
         const start = geometry(model);
-        const result = centreGroupStep(model, context, tier, list, id, previous, true, tail, seats, undefined, carry);
+        const result = centreGroupStep(model, context, tier, list, id, previous, true, tail, seats, true, undefined, carry);
         carry = result.carry;
         if (!stepped && geometry(model).some((value, i) => Math.abs(value - start[i]!) > 0.5)) stepped = true;
         if (result.unresolved.size) unresolved.add(id);
@@ -2252,6 +2263,8 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
   const context = shared ?? centreContext(model, anchor);
   const owns = otherRuleOwns(model, ahead);
+  const read = centreCheckTrace.owner === undefined ? undefined : ++ownerReads;
+  const asRead = <T>(run: () => T): T => { const outer = ownerRead; ownerRead = read; try { return run(); } finally { ownerRead = outer; } };
   const result: string[] = [];
   // The replay reads placement geometry alone; nothing it calls reads the freeze block, and on a
   // large model that block is more than a third of the JSON the per-group copy below would carry.
@@ -2287,7 +2300,9 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
       const candidates: { child: string; x: number; feed: Feed; port: LayoutPort }[] = [];
       for (const [child, x] of owned.wanted) {
         const feed = ownFeeds.get(child)!;
-        if (owns(feed, child)) continue;
+        const other = owns(feed, child);
+        centreCheckTrace.owner?.(model, 'invariant', read, ahead, child, other);
+        if (other) continue;
         const port = groupPorts.get(child)!;
         if (standsOffFeed(port, x)) candidates.push({ child, x, feed, port });
       }
@@ -2332,13 +2347,13 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
           const fresh = JSON.parse(replayedText!) as Record<string, unknown>;
           trial = Object.assign(fresh, sharedParts, { nodes }) as unknown as LayoutModel;
         }
-        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved, pooled, base) };
+        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved, pooled, ahead, base) };
       };
       let replay: ReturnType<typeof attempt>;
-      try { replay = recordTaps(taps, true, () => attempt(false)); } catch (error) {
+      try { replay = asRead(() => recordTaps(taps, true, () => attempt(false))); } catch (error) {
         if (!(error instanceof TypeError)) throw error;
         attemptCounters.centreCheckFallbacks++;
-        replay = recordTaps(taps, true, () => attempt(true));
+        replay = asRead(() => recordTaps(taps, true, () => attempt(true)));
       }
       const { step, trial } = replay;
       previous = group;
@@ -2364,7 +2379,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
       }
     }
-    result.push(...rowUnitFaults(model, replayed as LayoutModel, context, tier, authority, list, order, seats ??= rowSeats(model, context, tier, list), () => tail ??= tailReservation(model, context, tier, order)));
+    result.push(...asRead(() => rowUnitFaults(model, replayed as LayoutModel, context, tier, authority, list, order, seats ??= rowSeats(model, context, tier, list), () => tail ??= tailReservation(model, context, tier, order), ahead)));
   }
   if (key !== undefined) checkedAnswers.set(model, { ...key, result: [...result], taps });
   return result;
@@ -2380,7 +2395,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
  * The finding names the first own feed of the first moved member, so a spent budget names it as it names an open alignment (ADR-0010).
  */
 function rowUnitFaults(model: LayoutModel, replayed: LayoutModel, context: CentreContext, tier: number, authority: number, list: Feed[], order: readonly string[],
-  seats: ReadonlyMap<string, number>, tail: () => Map<string, number>): string[] {
+  seats: ReadonlyMap<string, number>, tail: () => Map<string, number>, ahead: boolean): string[] {
   if (![...seats].some(([id, seat]) => Math.abs(model.groups[id]!.bounds!.x - seat) > 0.5)) return [];
   const trial = JSON.parse(JSON.stringify(replayed)) as LayoutModel, reserved = tail();
   const feeds = centringFeeds(trial, tier, authority);
@@ -2392,7 +2407,7 @@ function rowUnitFaults(model: LayoutModel, replayed: LayoutModel, context: Centr
       previous = standingBox(trial, group);
       continue;
     }
-    previous = centreGroupStep(trial, context, tier, feeds, id, previous, false, reserved, seats).group;
+    previous = centreGroupStep(trial, context, tier, feeds, id, previous, false, reserved, seats, ahead).group;
   }
   const moved = [...seats.keys()].filter(id => [id, ...model.groups[id]!.nodes].some(item => {
     const was = (model.groups[item] ?? model.nodes[item])!.bounds!, now = (trial.groups[item] ?? trial.nodes[item])!.bounds!;

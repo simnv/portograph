@@ -1,0 +1,27 @@
+# Expected: a seated row (dense-16x9 ticket 36) whose child port `k1.t1` has an ordinary feed (`c1.b`) and is also used by a bundle member
+# (`n1.b`, `n1.b2` to `k1` form a bundle). Until 7e the centre rule answers for the port; from 7e on the bundle owns it. The seated step, its replay
+# in the publication check and the invariant ask the one ownership test for the stage the check reads, so the sheet publishes with both seat
+# sets and no error diagnostic. Review 2 of ticket 38: a replay that read the port one stage ahead (bundle-owned at 7d) refused it at bars.
+# Test-only input owned by dense-16x9 ticket 38; test/pipeline/seated-step-reads-the-invariant.test.ts reads it.
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  up: { tier: 0 }
+  site: { tier: 1, label: "One site in ranks" }
+nodes:
+  t0: { group: up, ports: [{ name: a, side: bottom }, { name: b, side: bottom }] }
+  p1: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  p2: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  c1: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  n1: { group: site, ports: [{ name: b, side: bottom }, { name: b2, side: bottom }] }
+  c2: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  k1: { group: site, ports: [{ name: t1, side: top }, { name: t3, side: top }, { name: t4, side: top }] }
+links:
+  - { from: t0.a, to: p1.up }
+  - { from: t0.b, to: p2.up }
+  - { from: p1.d1, to: c1.u1 }
+  - { from: p2.d1, to: c2.u1 }
+  - { from: c1.b, to: k1.t1 }
+  - { from: c2.b, to: k1.t3 }
+  - { from: n1.b, to: k1.t1 }
+  - { from: n1.b2, to: k1.t4 }
