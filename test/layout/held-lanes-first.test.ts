@@ -14,7 +14,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * the other margin of `zone#2` (5 crossings, not 2).
  */
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
-type Form = { gates: string[]; crossings?: number; threwBefore?: true };
+type Form = { gates: string[]; crossings?: number; threwBefore?: true; throwsYet?: string };
 const forms = (yaml: string): Record<string, string> => {
   const off = yaml.replace(/^layout: \{moveBeforeGrow: true\}\n/m, '');
   const on = `layout: {moveBeforeGrow: true}\n${off}`;
@@ -36,6 +36,18 @@ const sheets: Record<string, { path: string; expect: Record<string, Form> }> = {
     path: '../../goldens/synthetic/a-held-pair-keeps-its-margin-where-no-lane-crosses-its-frame.yaml',
     expect: Object.fromEntries(['off', 'on'].flatMap(mode => ['as written', 'links reversed', 'nodes reversed'].map(order => [`${mode}, ${order}`, { ...none, crossings: 2 }]))),
   },
+  'a held lane on the other margin of its cell is not reserved first': {
+    path: '../fixtures/staged/a-held-lane-on-the-other-margin-of-its-cell-is-not-reserved-first.yaml',
+    expect: {
+      // Main throws in all six forms ("Lane crosses occupied group zone#2"). The forms with the option off publish with a G5 on the router, not asserted.
+      'off, as written': { gates: ['G5'], crossings: 8, threwBefore: true }, 'off, links reversed': { gates: ['G5'], crossings: 8, threwBefore: true },
+      'off, nodes reversed': { gates: ['G5'], threwBefore: true },
+      // Review 2: only the held lane on the right margin is reserved first.
+      'on, nodes reversed': { ...none, crossings: 4, threwBefore: true },
+      // A known defect that stays: after the held lane is reserved first, the seat set of the cell above no longer holds its vertical link.
+      'on, as written': { gates: [], threwBefore: true, throwsYet: 'seat set of site#4' }, 'on, links reversed': { gates: [], threwBefore: true, throwsYet: 'seat set of site#4' },
+    },
+  },
   'a held lane of a second router': {
     path: '../fixtures/staged/a-held-lane-of-a-second-router-keeps-the-order-of-the-passes.yaml',
     expect: {
@@ -49,7 +61,8 @@ const sheets: Record<string, { path: string; expect: Record<string, Form> }> = {
 describe('7a reserves a held lane first only where the order of the passes makes a foreign lane cross its frame (dense-16x9 ticket 46, review 1)', () => {
   for (const [sheet, { path, expect: expected }] of Object.entries(sheets)) for (const [form, text] of Object.entries(forms(read(path)))) {
     const want = expected[form]!;
-    it(`${sheet} (${form}): ${want.threwBefore ? 'publishes where the order threw' : 'draws as the order of the passes draws it'}`, async () => {
+    // A form that still throws is a named expected-fail: the assertion below is what it must reach.
+    (want.throwsYet === undefined ? it : it.fails)(`${sheet} (${form}): ${want.throwsYet !== undefined ? `publishes (expected fail: it throws on the ${want.throwsYet})` : want.threwBefore ? 'publishes where the order threw' : 'draws as the order of the passes draws it'}`, async () => {
       const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
       expect(model.document.layout?.moveBeforeGrow === true).toBe(form.startsWith('on'));
       const snapshot = score(model).snapshot;

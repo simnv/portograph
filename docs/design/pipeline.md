@@ -2274,7 +2274,9 @@ ends in a frame cell and is foreign to no frame (`heldInFrame`). Reserved after 
 a held lane can stand only beyond it, and the frame then grows around the foreign lane ("Lane crosses
 occupied group"). So the passes run in their order, and the one predicate of that crossing
 (`crossesOccupied`, which `validateLanes` reads) names the held lanes of the tier pass that cause it
-(`heldLanesOverForeign`, dense-16x9 ticket 46). Only where it names some is the draft restored and are
+(`heldLanesOverForeign`, dense-16x9 ticket 46): each one that makes the crossing when it alone is put back
+into the cell, or all of them where only together they do (review 2: a held lane on the other margin is
+not named). Only where it names some is the draft restored and are
 those lanes reserved before the foreign loop; the facing pairs then nest on the margins they leave
 (`nestFacingPairs` reads them). Each round names one held lane more. Every other held lane keeps the
 order, so a sheet the order draws is drawn as before. The published list keeps the order of the passes

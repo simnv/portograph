@@ -1106,7 +1106,8 @@ export function crossesOccupied(model: LayoutModel, lane: Lane, link: LayoutLink
 }
 /**
  * The held lanes of the tier pass (`candidates`) that grow a frame over a transit lane foreign to it (dense-16x9 ticket 46, review 1): the lane
- * crosses a cell of its tier with them reserved, and does not with the held lanes of that cell taken out. A crossing they do not cause names none.
+ * crosses a cell of its tier with them reserved, and does not with the held lanes of that cell taken out. Of those, the lanes that make the
+ * crossing alone (review 2), or all of them where only together they do. A crossing they do not cause names none.
  */
 function heldLanesOverForeign(model: LayoutModel, lanes: readonly Lane[], candidates: ReadonlySet<string>): string[] {
   const named = new Set<string>();
@@ -1116,7 +1117,13 @@ function heldLanesOverForeign(model: LayoutModel, lanes: readonly Lane[], candid
     for (const group of Object.values(model.groups)) {
       if (group.tier !== lane.tier || group.bounds === undefined || !crossesOccupied(model, lane, link, group, lanes)) continue;
       const held = lanes.filter(other => candidates.has(other.id) && other.group === group.id && heldLaneReach(model, group.id, link, other, laneLink(model, other)) !== undefined);
-      if (held.length && !crossesOccupied(model, lane, link, group, lanes.filter(other => !held.includes(other)))) for (const other of held) named.add(other.id);
+      const rest = lanes.filter(other => !held.includes(other));
+      if (!held.length || crossesOccupied(model, lane, link, group, rest)) continue;
+      // The held lanes that make the crossing on their own (review 2): each one put back alone into the cell with every other lane. A held lane
+      // on the other margin of the cell grows the frame away from the foreign lane and is not named. Where no one lane makes it, they make it
+      // together, and all of them are named.
+      const alone = held.filter(other => crossesOccupied(model, lane, link, group, [...rest, other]));
+      for (const other of alone.length ? alone : held) named.add(other.id);
     }
   }
   return [...named].sort(compareId);
