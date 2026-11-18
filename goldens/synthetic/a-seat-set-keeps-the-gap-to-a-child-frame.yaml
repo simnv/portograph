@@ -1,0 +1,125 @@
+# Expected: The sheet of a-grid-group-stands-fixed-beside-frames with its nodes declared in reverse order and `layout.moveBeforeGrow`
+# (dense-16x9 ticket 48). The seat set of a parent cell (`d#3`) beside a child frame (`d-zone`) widened the cell into the gap to the child
+# frame; 7f then packed the child back to its gap, and that move closed the gap of frame `d` to the grid group `spares` (G9, short 8.6 px). The
+# seat set reads the separations inside its frame as part of its window: a candidate whose cell box would break one is declined by name, and the
+# 7f pack moves no child that would break or deepen a separation. No G9.
+# Test-only input owned by dense-16x9 ticket 48; test/pipeline/move-keeps-frame-gap.test.ts reads the layout.
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  feeds: { tier: 0, label: Feeds }
+  a: { tier: 1, label: Location A }
+  a-zone: { parent: a, label: Zone A }
+  b: { tier: 1, label: Location B }
+  b-zone: { parent: b, label: Zone B }
+  c: { tier: 1, label: Location C }
+  c-zone: { parent: c, label: Zone C }
+  d: { tier: 1, label: Location D }
+  d-zone: { parent: d, label: Zone D }
+  clients: { tier: 2, label: Clients }
+  spares: { tier: 1, shape: grid, label: Spares }
+nodes:
+  k2: { group: clients, class: server, label: Client two }
+  k1: { group: clients, class: server, label: Client one }
+  sp2: { group: spares, class: server, label: Spare two }
+  sp1: { group: spares, class: server, label: Spare one }
+  d-b1: { group: d-zone, class: switch, label: D balancer }
+  d-t2: { group: d-zone, class: server, label: D time two }
+  d-t1: { group: d-zone, class: server, label: D time one }
+  d-s3: { group: d, class: switch, label: D switch three }
+  d-s2: { group: d, class: switch, label: D switch two }
+  d-s1: { group: d, class: switch, label: D switch one }
+  d-r2: { group: d, class: router, label: D router two }
+  d-r1: { group: d, class: router, label: D router one }
+  c-b1: { group: c-zone, class: switch, label: C balancer }
+  c-t2: { group: c-zone, class: server, label: C time two }
+  c-t1: { group: c-zone, class: server, label: C time one }
+  c-s3: { group: c, class: switch, label: C switch three }
+  c-s2: { group: c, class: switch, label: C switch two }
+  c-s1: { group: c, class: switch, label: C switch one }
+  c-r2: { group: c, class: router, label: C router two }
+  c-r1: { group: c, class: router, label: C router one }
+  b-b1: { group: b-zone, class: switch, label: B balancer }
+  b-t2: { group: b-zone, class: server, label: B time two }
+  b-t1: { group: b-zone, class: server, label: B time one }
+  b-s5: { group: b, class: switch, label: B switch five }
+  b-s4: { group: b, class: switch, label: B switch four }
+  b-s3: { group: b, class: switch, label: B switch three }
+  b-s2: { group: b, class: switch, label: B switch two }
+  b-s1: { group: b, class: switch, label: B switch one }
+  b-r2: { group: b, class: router, label: B router two }
+  b-r1: { group: b, class: router, label: B router one }
+  a-b1: { group: a-zone, class: switch, label: A balancer }
+  a-t2: { group: a-zone, class: server, label: A time two }
+  a-t1: { group: a-zone, class: server, label: A time one }
+  a-s5: { group: a, class: switch, label: A switch five }
+  a-s4: { group: a, class: switch, label: A switch four }
+  a-s3: { group: a, class: switch, label: A switch three }
+  a-s2: { group: a, class: switch, label: A switch two }
+  a-s1: { group: a, class: switch, label: A switch one }
+  a-r2: { group: a, class: router, label: A router two }
+  a-r1: { group: a, class: router, label: A router one }
+  f2: { group: feeds, class: router, label: Feed two }
+  f1: { group: feeds, class: router, label: Feed one }
+links:
+  - [f1, a-r1]
+  - [f1, b-r1]
+  - [f2, c-r1]
+  - [f2, d-r1]
+  - [a-r1, a-s1]
+  - [a-r1, a-s2]
+  - [a-r1, a-s3]
+  - [a-r2, a-s4]
+  - [a-r2, a-s5]
+  - [a-s1, a-t1]
+  - [a-s2, a-t2]
+  - [a-t1, a-b1]
+  - [a-t2, a-b1]
+  - [b-r1, b-s1]
+  - [b-r1, b-s2]
+  - [b-r1, b-s3]
+  - [b-r2, b-s4]
+  - [b-r2, b-s5]
+  - [b-s1, b-t1]
+  - [b-s2, b-t2]
+  - [b-t1, b-b1]
+  - [b-t2, b-b1]
+  - [c-r1, c-s1]
+  - [c-r2, c-s2]
+  - [c-r2, c-s3]
+  - [c-s1, c-t1]
+  - [c-s2, c-t2]
+  - [c-t1, c-b1]
+  - [c-t2, c-b1]
+  - [d-r1, d-s1]
+  - [d-r2, d-s2]
+  - [d-r2, d-s3]
+  - [d-s1, d-t1]
+  - [d-s2, d-t2]
+  - [d-t1, d-b1]
+  - [d-t2, d-b1]
+  - [a-s1, a-s2]
+  - [a-s2, a-s3]
+  - [a-s4, a-s5]
+  - [b-s1, b-s2]
+  - [b-s2, b-s3]
+  - [b-s4, b-s5]
+  - [c-s1, c-s2]
+  - [c-s2, c-s3]
+  - [d-s1, d-s2]
+  - [d-s2, d-s3]
+  - [a-t1, b-t1, { route: overlay }]
+  - [b-t2, c-t1, { route: overlay }]
+  - [c-t2, d-t1, { route: overlay }]
+  - [a-t2, d-t2, { route: overlay }]
+  - [f1, a-s1, { route: overlay }]
+  - [f1, b-s3, { route: overlay }]
+  - [f2, c-s3, { route: overlay }]
+  - [f2, d-s3, { route: overlay }]
+  - [k1, a-t1, { route: overlay }]
+  - [k1, b-t1, { route: overlay }]
+  - [k1, c-t1, { route: overlay }]
+  - [k2, c-t2, { route: overlay }]
+  - [k2, d-t2, { route: overlay }]
+  - [f1, sp1]
+  - [f2, sp2]

@@ -26,6 +26,8 @@ import { BLOCK_CAP } from './block-checks.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
 import { attemptCounters } from './attempt-counters.js';
 import { EPS } from '../geometry/planar.js';
+import { derivedShortfalls, separationsBrokenBy, type Shortfall } from './constraints/separation.js';
+import type { ConstraintKind } from './constraints/types.js';
 
 /**
  * The seat set of a child row (dense-16x9 ticket 36, slice 1; design `36-seats-design.md`, mechanisms III and IV). With
@@ -366,6 +368,9 @@ function faceLinks(model: LayoutModel, faces: Resorted['faces']): Set<string> {
 const fixedKind = (model: LayoutModel, group: LayoutGroup): string | undefined => group.flank !== undefined ? 'the flank'
   : groupShape(model, group.id) !== 'row' ? `the ${groupShape(model, group.id)}` : undefined;
 
+/** The hard separations inside one frame (`xCatalogue`): a column sweep moves a frame whole, so it opens none of them. */
+const INSIDE_FRAME: readonly ConstraintKind[] = ['separation-frame-frames', 'separation-cell-child-frame', 'separation-frame-cells'];
+
 /**
  * The seat set of the cell `group` on `model` (no write): the best assignment that breaks no owner, as a record payload, or why there is
  * none. The model is moved only to read an owner, and is given back exactly.
@@ -406,7 +411,7 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
   const start = { width: group.bounds!.width, heights: blockHeights(blocks), ...groupExtent(model) };
   const gaining = leaves.filter(leaf => leaf.kept.length > now).sort(readOrder);
   const stage: Stage = { model, group, base, open: movable };
-  let first: string | undefined, reads = 0, lost: string | undefined;
+  let first: string | undefined, reads = 0, lost: string | undefined, standingShort: Map<string, Shortfall> | undefined;
   // The reading of each link on the row as it stands, kept for the solve: every candidate's `before` reads the same geometry (review 1 of slice 3).
   const standing = new Map<string, 'vertical' | 'straight' | 'bent'>();
   const baseline = straightLinks(model, base, new Set(), standing), admitted: { leaf: Leaf; cost: Cost; fit: Rect }[] = [];
@@ -416,6 +421,8 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
     const head = admitted[0]?.leaf;
     if (head && (leaf.kept.length < head.kept.length || leaf.width - head.width > PLACEMENT_EPS)) break;
     if (reads >= SEAT_SET_GAIN_READS) break;
+    // The separations as the row stands, read once before the first candidate is staged.
+    standingShort ??= derivedShortfalls(model);
     const box = group.bounds!, staged = stageLeaf(stage, leaf);
     reads++;
     // A face that reads a moved open member and that another owner holds declines the candidate by name (slice 3).
@@ -427,7 +434,14 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
     // The block demands with the candidate staged and the cell box over it, read once for the owner check and the area (review 1 of slice 3: one staging).
     let demands: BlockDemand[] | undefined;
     if (hasBlocks) { group.bounds = fit; try { demands = blockDemands(model).demands; } finally { group.bounds = box; } }
+    // The cell box over the candidate (as `coverInterval` grows it) keeps the hard separations inside its frame (dense-16x9 ticket 48): a box that
+    // grows into the gap to a child frame or a cell beside it leaves a gap that the frame column sweep cannot open (it moves frames whole), and the
+    // later pack that opens it moves the child into the next column. The gaps between columns are the sweep's (`separateFrameColumns`) and, at a
+    // flank, bar or grid, `fixedClearances`. Read with the members staged (`dx: 0`: no body moves again), against the separations as the row stood.
+    const covered = { ...box, x: Math.min(box.x, fit.x), width: Math.max(right(box), right(fit)) - Math.min(box.x, fit.x) };
+    const broken = separationsBrokenBy(model, [{ group, bounds: covered, dx: 0 }], standingShort).filter(id => INSIDE_FRAME.some(kind => id.startsWith(`${kind}:`)));
     staged.undo(); group.bounds = box;
+    if (broken.length) { first ??= `the cell box would break or deepen the minimum separation ${broken[0]}`; continue; }
     const before = also.size ? straightLinks(model, base, also, standing) : baseline;
     const fault = blockOwnerFault(model, blocks, demands);
     if (fault !== undefined) { first ??= fault; continue; }
