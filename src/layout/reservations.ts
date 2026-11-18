@@ -17,6 +17,8 @@ import { openMemberFault, openSlotHeld } from './read/open-member.js';
 import { chainBlockOf } from './read/chain.js';
 import { belowReader } from './feed-order.js';
 import { staleThrough } from './far-end-order.js';
+import { decisionStale, facePositions, farAnchorIndex, routedLinksOf, wrongPairs } from './far-end-faults.js';
+import { unifiedCompare, type UnifiedTally } from './turn-measure.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
@@ -61,14 +63,17 @@ export interface ReservationPayload {
   /**
    * The far-end round declined the far-end order of the face `node`/`side` on a full trial (dense-16x9 ticket 49; owner ruling 2026-11-18: the whole-sheet
    * measure wins). `ports` is the face in engine order as the round judged it, and `pairs` the free ports that stood the wrong way round there (`before`
-   * first on the face, its far ends strictly after those of `after`, by `portId`): the far-end order the decision accepted. `reason` is the clause that
-   * declined (`unified`: worse by the unified order; `other`: a guard of the routed trial, or a stage that refused it), `why` its sentence, and `tallies`
-   * the bent links, turns and crossings of the baseline and of the trial when the trial was routed and scored. G5 accepts the face while the record
-   * holds (`far-end-faults.ts`); a record that no longer matches the face is stale, and G5 judges the face again. An entry for a face replaces an earlier one.
+   * first on the face, its far ends strictly after those of `after`, by `portId`): the far-end order the decision accepted. `reason` is the decline
+   * (`FarEndDeclineReason`, a closed list), `why` its sentence (read by no check), and `tallies` the unified tallies of the baseline and of the trial
+   * (required for `unified`, and the trial must be worse by `unifiedCompare`). `binding` ties the record to what earned it (review 1): the digest of the
+   * input document with its layout options (`inputDigest`), the proposal of the trial (the wanted order of every face it tried), and the digest of the
+   * far-end geometry the judge read (`baselineDigest`: every port anchor and the routed links). G5 accepts the face while the record holds
+   * (`far-end-faults.ts`); production publishes only records that hold, and restore refuses one that does not. An entry for a face replaces an earlier one.
    */
   farEndDecision: {
-    node: string; side: Side; ports: readonly PortRef[]; pairs: readonly (readonly [string, string])[]; reason: 'unified' | 'other'; why: string;
-    tallies?: { base: FarEndTally; trial: FarEndTally };
+    node: string; side: Side; ports: readonly PortRef[]; pairs: readonly (readonly [string, string])[]; reason: FarEndDeclineReason; why: string;
+    tallies?: { base: UnifiedTally; trial: UnifiedTally };
+    binding: { input: string; proposal: readonly { node: string; side: Side; ports: readonly PortRef[] }[]; baseline: string };
   };
   /** A trunk join (or every trunk join) that placement declines. */
   trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
@@ -146,8 +151,13 @@ export interface ReservationPayload {
   bundleNeighbours: { group: string; pairs: readonly (readonly [string, string])[] };
 }
 export type ReservationKind = keyof ReservationPayload;
-/** The counts a far-end decision names (`farEndDecision`): bent links, turns and crossings over both layers. */
-export interface FarEndTally { bent: number; turns: number; crossings: number }
+/**
+ * Why the far-end round declined an order as a decision of the whole-sheet measure (dense-16x9 ticket 49, review 1), a closed list: a completed comparison
+ * worse by the unified order (`unified`), a new error-gate finding of the routed trial (`gate-finding`), the canvas cap (`canvas-cap`), or a 7f refusal of the
+ * trial's geometry (`postcondition-7f`). A worker failure, an ELK fallback, a budget skip, a deadline or an unscored trial decides nothing.
+ */
+export const FAR_END_DECLINE_REASONS = ['unified', 'gate-finding', 'canvas-cap', 'postcondition-7f'] as const;
+export type FarEndDeclineReason = typeof FAR_END_DECLINE_REASONS[number];
 /**
  * One equation of a seat set: x(member) + memberOffset = x(far) + farOffset, the offsets measured from the left body edge. `farOffset` is the
  * value at the decision and is not binding: the ruled boundary is the far port, not the parent body, so a parent body that grows on its face keeps
@@ -455,10 +465,6 @@ export function farEndDecisionEntry(payload: ReservationPayload['farEndDecision'
  */
 export function withFarEndDecisions(ledger: Reservations, decisions: readonly ReservationOf<'farEndDecision'>[]): Reservations {
   return [...ledger.filter(entry => entry.kind !== 'farEndDecision'), ...decisions];
-}
-/** `ledger` without the far-end decisions of `faces`: a trial that proposes a face again decides it again. */
-export function withoutFarEndDecisions(ledger: Reservations, faces: readonly { node: string; side: Side }[]): Reservations {
-  return ledger.filter(entry => entry.kind !== 'farEndDecision' || !faces.some(face => face.node === entry.payload.node && face.side === entry.payload.side));
 }
 export function farEndEntries(faces: readonly { node: string; side: Side; ports: readonly PortRef[] }[], producer: RoundId, revision: number): Reservations {
   return faces.map(face => reservation('farEndOrder', { kind: 'node', id: face.node }, face.side, producer, revision, { node: face.node, side: face.side, ports: face.ports }));
@@ -958,13 +964,17 @@ function shapeFailure(entry: unknown): string | undefined {
       return isString(payload['node']) && sides.includes(payload['side'] as string) && Array.isArray(ports) && ports.length > 1 && ports.every(isPort) && new Set(ports.map(item => JSON.stringify(item))).size === ports.length ? undefined : bad;
     }
     case 'farEndDecision': {
-      const ports = payload['ports'], pairs = payload['pairs'], tallies = payload['tallies'];
-      const tally = (value: unknown): boolean => isObject(value) && ['bent', 'turns', 'crossings'].every(key => Number.isInteger(value[key]) && (value[key] as number) >= 0);
+      const ports = payload['ports'], pairs = payload['pairs'], tallies = payload['tallies'], binding = payload['binding'];
+      const count = (value: unknown): boolean => Number.isInteger(value) && (value as number) >= 0;
+      const layer = (value: unknown): boolean => isObject(value) && count(value['bent']) && count(value['turns']);
+      const tally = (value: unknown): boolean => isObject(value) && layer(value['routed']) && layer(value['overlay']) && count(value['crossings']);
+      const face = (value: unknown): boolean => isObject(value) && isString(value['node']) && sides.includes(value['side'] as string) && Array.isArray(value['ports']) && value['ports'].every(isPort);
       return isString(payload['node']) && sides.includes(payload['side'] as string) && Array.isArray(ports) && ports.length > 1 && ports.every(isPort)
         && new Set(ports.map(item => JSON.stringify(item))).size === ports.length
         && Array.isArray(pairs) && pairs.length > 0 && pairs.every(pair => Array.isArray(pair) && pair.length === 2 && pair.every(isString) && pair[0] !== pair[1])
-        && (payload['reason'] === 'unified' || payload['reason'] === 'other') && isString(payload['why'])
-        && (tallies === undefined || (isObject(tallies) && tally(tallies['base']) && tally(tallies['trial']))) ? undefined : bad;
+        && (FAR_END_DECLINE_REASONS as readonly unknown[]).includes(payload['reason']) && isString(payload['why'])
+        && (tallies === undefined || (isObject(tallies) && tally(tallies['base']) && tally(tallies['trial'])))
+        && isObject(binding) && isString(binding['input']) && isString(binding['baseline']) && Array.isArray(binding['proposal']) && binding['proposal'].length > 0 && binding['proposal'].every(face) ? undefined : bad;
     }
     case 'rowOrder': {
       const order = payload['order'], one = [payload['cell'], payload['frame'], payload['row']].filter(isString).length === 1, open = payload['open'];
@@ -1019,15 +1029,29 @@ function validateLedgerShape(ledger: Reservations): void {
  * it calls it on the models the function admits, and a string says how that reader reads the kind instead, or why the kind does not apply there.
  */
 type ReaderCheck = true | ((model: LayoutModel) => boolean) | string;
-/** Why a far-end decision does not name the face it decides (R5): the face exists and holds exactly the recorded ports, and each pair names two ports of it. */
+/**
+ * Why a far-end decision does not stand in the model (R5, R6; dense-16x9 ticket 49, review 1): the far-end round of the face's node wrote it; the face exists and
+ * holds exactly the recorded ports, and each pair names two ports of it; its evidence fits its reason (`unified`: both tallies, the trial worse by the judge's own
+ * comparator, `unifiedCompare`); every face of the proposal exists with a wanted order of exactly its ports, the decided face among them; and the record holds on
+ * the model (`decisionStale`: the input digest, the baseline digest, the port order and the pairs). Production publishes no record that fails this.
+ */
 function farEndDecisionFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'farEndDecision') return undefined;
-  const { node, side, ports, pairs } = item.payload, face = model.nodes[node]?.ports.filter(port => port.side === side);
+  const { node, side, ports, pairs, reason, tallies, binding } = item.payload, face = model.nodes[node]?.ports.filter(port => port.side === side);
+  if (item.owner.kind !== 'node' || item.owner.id !== node || item.producer !== 'farEnd') return `the decision of the ${side} face of ${node} is not the far-end round's own (owner ${ownerKey(item.owner)}, producer ${item.producer})`;
   if (face === undefined || face.length === 0) return `the ${side} face of ${node} does not exist`;
   const have = new Set(face.map(port => portId(port.ref))), named = new Set(ports.map(ref => portId(ref)));
   if (have.size !== named.size || [...named].some(id => !have.has(id))) return `the ${side} face of ${node} does not hold the recorded ports`;
   if (pairs.some(pair => pair.some(id => !have.has(id)))) return `a recorded pair of the ${side} face of ${node} names a port it does not hold`;
-  return undefined;
+  if (reason === 'unified' && (tallies === undefined || !(unifiedCompare(tallies.base, tallies.trial) > 0))) return `the decision of the ${side} face of ${node} names no trial worse by the unified order`;
+  for (const wanted of binding.proposal) {
+    const ids = model.nodes[wanted.node]?.ports.filter(port => port.side === wanted.side).map(port => portId(port.ref)) ?? [];
+    const asked = wanted.ports.map(ref => portId(ref));
+    if (ids.length === 0 || ids.length !== asked.length || new Set(asked).size !== asked.length || asked.some(id => !ids.includes(id))) return `the proposal of the decision of the ${side} face of ${node} names a face the model does not hold (${wanted.node} ${wanted.side})`;
+  }
+  if (!binding.proposal.some(wanted => wanted.node === node && wanted.side === side)) return `the proposal of the decision of the ${side} face of ${node} does not hold the face`;
+  const stale = decisionStale(model, item, wrongPairs(facePositions(model.nodes[node]!, side, farAnchorIndex(model, routedLinksOf(model)))));
+  return stale === undefined ? undefined : `the decision of the ${side} face of ${node} does not hold: ${stale}`;
 }
 export interface KindCheck { readonly predicate?: (item: Reservation, model: LayoutModel) => string | undefined; readonly at: { readonly round: ReaderCheck; readonly final: ReaderCheck; readonly early: ReaderCheck } }
 const TRANSIENT = 'transient: it lives for one move check and is never stored (`validateLedgerShape` refuses it)';

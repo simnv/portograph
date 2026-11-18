@@ -95,10 +95,41 @@ export type FarEndDecisionEntry = ReservationOf<'farEndDecision'>;
 export const farEndDecisions = (model: LayoutModel): Map<string, FarEndDecisionEntry> =>
   new Map(ofKind(model.reservations ?? [], 'farEndDecision').map(entry => [faceKey(entry.payload.node, entry.payload.side), entry] as const));
 
-/** Why a far-end decision does not hold on the face as it stands, or `undefined`: the ports stand in the recorded order, and exactly the recorded pairs stand wrong. */
+/** A digest of a JSON value, the keys of every object sorted: two FNV-1a 32-bit hashes of the canonical text (no runtime dependency, the same in a browser). */
+export function digestOf(value: unknown): string {
+  const canonical = (item: unknown): unknown => Array.isArray(item) ? item.map(canonical)
+    : item !== null && typeof item === 'object' ? Object.fromEntries(Object.keys(item).sort().map(key => [key, canonical((item as Record<string, unknown>)[key])])) : item;
+  const text = JSON.stringify(canonical(value)) ?? '';
+  let a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    a = Math.imul(a ^ code, 0x01000193) >>> 0;
+    b = Math.imul(b ^ code, 0x01000193) >>> 0;
+    b = (b ^ (b >>> 13)) >>> 0;
+  }
+  return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0');
+}
+/** The input of a command as a far-end decision binds it (dense-16x9 ticket 49, review 1): the document with its layout options. */
+export const inputDigest = (model: LayoutModel): string => digestOf(model.document);
+/**
+ * The far-end geometry a judge read as a decision binds it (review 1): every port anchor and the routed links. The declined trial keeps the baseline, and
+ * stage 9 moves no port, so the published model of that baseline has the same digest; a later kept trial gives another.
+ */
+export function baselineDigest(model: LayoutModel): string {
+  const anchors = Object.values(model.nodes).flatMap(node => node.ports.map(port => [refKey(port.ref), port.side, port.anchor?.x ?? null, port.anchor?.y ?? null] as const))
+    .sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
+  return digestOf({ anchors, routed: [...routedLinksOf(model)].map(link => link.id).sort() });
+}
+
+/**
+ * Why a far-end decision does not hold on the model, or `undefined`: the model is of the input the decision bound (`inputDigest`) and of the baseline
+ * it was judged on (`baselineDigest`), the ports stand in the recorded order, and exactly the recorded pairs stand wrong.
+ */
 export function decisionStale(model: LayoutModel, entry: FarEndDecisionEntry, wrong: readonly WrongPair[]): string | undefined {
-  const { node, side, ports, pairs } = entry.payload;
+  const { node, side, ports, pairs, binding } = entry.payload;
   if (model.nodes[node] === undefined) return 'the face does not exist';
+  if (binding.input !== inputDigest(model)) return 'the record is of another input or other layout options';
+  if (binding.baseline !== baselineDigest(model)) return 'the sheet is not the one the trial was judged against';
   if (JSON.stringify(engineIds(model, node, side)) !== JSON.stringify(ports.map(ref => portId(ref)))) return 'the ports do not stand in the recorded order';
   if (JSON.stringify(wrong) !== JSON.stringify(pairs)) return 'the far ends no longer stand in the recorded order';
   return undefined;

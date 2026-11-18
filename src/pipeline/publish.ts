@@ -79,11 +79,13 @@ export async function publish(env: Env, s: State): Promise<LayoutModel> {
       message: `The link ${failure.link} has ${failure.got === undefined ? 'no route' : `${failure.got} turns`} on its course, ${failure.max} were promised.` });
   }
   lost.push(...turnMissed(published));
-  // A far-end decision that no longer holds on the published sheet buys nothing: G5 judges its face again, and the decision is named (R6, dense-16x9 ticket 49).
-  const decisions = farEndDecisionsOf(s.kept), decided = decisions.length === 0 ? published : { ...published, reservations: withFarEndDecisions(published.reservations ?? [], decisions) };
-  for (const { entry, why } of staleFarEndDecisions(decided, routedLinksOf(decided))) {
+  // A far-end decision that no longer holds on the published sheet buys nothing: it is not published, G5 judges its face again, and the decision is named
+  // (R6, dense-16x9 ticket 49). Restore refuses a record that does not hold, so production publishes none.
+  const kept = farEndDecisionsOf(s.kept), all = kept.length === 0 ? published : { ...published, reservations: withFarEndDecisions(published.reservations ?? [], kept) };
+  const stale = staleFarEndDecisions(all, routedLinksOf(all)), decisions = kept.filter(entry => !stale.some(item => item.entry === entry));
+  for (const { entry, why } of stale) {
     lost.push({ stage: 'placement', severity: 'warning', code: 'FAR_END_DECISION_STALE', owners: [{ kind: 'node', id: entry.payload.node }],
-      message: `The far-end order of the ${entry.payload.side} face of ${entry.payload.node} was declined (${entry.payload.why}), but ${why}; G5 judges the face again.` });
+      message: `The far-end order of the ${entry.payload.side} face of ${entry.payload.node} was declined (${entry.payload.why}), but ${why}; the decision is not published, and G5 judges the face again.` });
   }
   // A hinted link of a kept trial has no more bends than on the baseline (the judgment tested it); this names a break of that rule.
   if (s.routedFinal !== undefined && s.routedBase !== undefined) {

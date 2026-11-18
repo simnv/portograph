@@ -92,41 +92,62 @@ export interface TrialReading { gatesThen: NonNullable<ReturnType<typeof gateFin
  */
 export function guardRoutedTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>,
   canvasRefusal: (base: LayoutModel, trial: LayoutModel) => string | undefined = ownCanvasGrowth): string | TrialReading {
+  const guarded = guardRoutedTrialKind(routedBase, routedTrial, keptPromises, canvasRefusal);
+  return 'kind' in guarded ? guarded.reason : guarded;
+}
+
+/** Which guard of a routed trial refused it (`guardRoutedTrialKind`). */
+export type GuardKind = 'removed-link' | 'span-wall' | 'promise' | 'unscored' | 'gate-finding' | 'constraint' | 'separation' | 'canvas';
+/** The guards of `guardRoutedTrial`, with the guard that refused the trial named: the far-end round records a decision for some of them only (dense-16x9 ticket 49). */
+export function guardRoutedTrialKind(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>,
+  canvasRefusal: (base: LayoutModel, trial: LayoutModel) => string | undefined = ownCanvasGrowth): { kind: GuardKind; reason: string } | TrialReading {
   const was = routedBends(routedBase), now = routedBends(routedTrial);
   const removed = [...was.keys()].filter(id => !now.has(id));
-  if (removed.length > 0) return `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`;
+  if (removed.length > 0) return { kind: 'removed-link', reason: `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps` };
   const blocked = spanBlockedNew(routedBase, routedTrial);
-  if (blocked.length > 0) return `a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})`;
+  if (blocked.length > 0) return { kind: 'span-wall', reason: `a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})` };
   const lost = [...keptPromises].filter(([id, turns]) => (now.get(id) ?? Infinity) > turns).map(([id]) => id);
-  if (lost.length > 0) return `a kept course publishes more turns than it promised (${lost.join(', ')})`;
+  if (lost.length > 0) return { kind: 'promise', reason: `a kept course publishes more turns than it promised (${lost.join(', ')})` };
   const gatesNow = gateFindings(routedTrial), gatesThen = gateFindings(routedBase);
-  if (gatesNow === undefined || gatesThen === undefined) return 'the routed trial does not score';
+  if (gatesNow === undefined || gatesThen === undefined) return { kind: 'unscored', reason: 'the routed trial does not score' };
   const gateNew = namesAdded(gatesNow.findings, gatesThen.findings);
-  if (gateNew.length > 0) return `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})`;
+  if (gateNew.length > 0) return { kind: 'gate-finding', reason: `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})` };
   const constraintNew = namesAdded(constraintFindings(routedTrial), constraintFindings(routedBase));
-  if (constraintNew.length > 0) return `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`;
+  if (constraintNew.length > 0) return { kind: 'constraint', reason: `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})` };
   const separationNew = separationWorse(routedTrial, routedBase);
-  if (separationNew.length > 0) return `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`;
+  if (separationNew.length > 0) return { kind: 'separation', reason: `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})` };
   const canvas = canvasRefusal(routedBase, routedTrial);
-  if (canvas !== undefined) return canvas;
+  if (canvas !== undefined) return { kind: 'canvas', reason: canvas };
   return { gatesThen, gatesNow };
 }
 
-/** The bent links, turns and crossings of a routed baseline and of its routed trial (both layers), or `undefined` when one does not score: what a far-end decision names. */
-export function trialCounts(routedBase: LayoutModel, routedTrial: LayoutModel): { base: Count; trial: Count } | undefined {
+/**
+ * What the unified order reads of a score (`readingOf`), per layer: the bent links and turns of the routed and of the overlay layer, and the crossings (pairs). A far-end
+ * decision stores it for both sides (`farEndDecision.tallies`), so the restore check compares them with the judge's own comparator (`unifiedCompare`, R1).
+ */
+export interface UnifiedTally { routed: { bent: number; turns: number }; overlay: { bent: number; turns: number }; crossings: number }
+const tallyOf = (counts: ScoreCounts): UnifiedTally => ({ routed: { bent: counts.routed.bent, turns: counts.routed.turns }, overlay: { bent: counts.overlay.bent, turns: counts.overlay.turns },
+  crossings: counts.routed.crossings + counts.overlay.crossings.pairs });
+/** The two layers of a tally summed, as a note names them. */
+export const countOfTally = (tally: UnifiedTally): Count => ({ bent: tally.routed.bent + tally.overlay.bent, turns: tally.routed.turns + tally.overlay.turns, crossings: tally.crossings });
+
+/** The tallies of a routed baseline and of its routed trial, or `undefined` when one does not score: what a far-end decision names. */
+export function trialCounts(routedBase: LayoutModel, routedTrial: LayoutModel): { base: UnifiedTally; trial: UnifiedTally } | undefined {
   const then = gateFindings(routedBase), now = gateFindings(routedTrial);
-  return then === undefined || now === undefined ? undefined : { base: countOf(then.counts), trial: countOf(now.counts) };
+  return then === undefined || now === undefined ? undefined : { base: tallyOf(then.counts), trial: tallyOf(now.counts) };
 }
 
-/** The unified reading of a score's counts: the profile the user approved reads it. */
-const readingOf = (counts: ScoreCounts): Reading => {
+/** The unified reading of a tally: the profile the user approved reads it. */
+const readingOf = (tally: UnifiedTally): Reading => {
   const family = (bent: number, turns: number) => ({ straight: 0, bent, turns });
-  return reading({ routed: family(counts.routed.bent, counts.routed.turns), overlay: family(counts.overlay.bent, counts.overlay.turns),
-    crossings: lazyCount(() => counts.routed.crossings + counts.overlay.crossings.pairs), crossingMode: 'pairs', tie: [] });
+  return reading({ routed: family(tally.routed.bent, tally.routed.turns), overlay: family(tally.overlay.bent, tally.overlay.turns),
+    crossings: lazyCount(() => tally.crossings), crossingMode: 'pairs', tie: [] });
 };
+/** The profile order of `trial` against `base` by the unified order (negative: the trial is better). The far-end judge and the restore check of its decision use it (R1). */
+export const unifiedCompare = (base: UnifiedTally, trial: UnifiedTally): number => compare(readingOf(trial), readingOf(base), profiles.unified);
 /** The counts a verdict names, and the profile order of the trial against the baseline (negative: the trial is better). */
 export function unifiedOrder(read: TrialReading): { before: Count; after: Count; order: number } {
-  return { before: countOf(read.gatesThen.counts), after: countOf(read.gatesNow.counts), order: compare(readingOf(read.gatesNow.counts), readingOf(read.gatesThen.counts), profiles.unified) };
+  return { before: countOf(read.gatesThen.counts), after: countOf(read.gatesNow.counts), order: unifiedCompare(tallyOf(read.gatesThen.counts), tallyOf(read.gatesNow.counts)) };
 }
 
 /**

@@ -1,7 +1,8 @@
 import type { Side } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
 import { faceKey } from './turn-order.js';
-import { guardRoutedTrial, trialCounts, unifiedOrder, type Count } from './turn-measure.js';
+import { guardRoutedTrialKind, trialCounts, unifiedOrder, type UnifiedTally } from './turn-measure.js';
+import type { FarEndDeclineReason } from './reservations.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { proposeFarEndOrder, staleFaces, type FarEndFace, type FarEndProposal } from './far-end-order.js';
 import type { FarEndDecisionEntry } from './far-end-faults.js';
@@ -27,12 +28,17 @@ export interface FarEndVerdict {
   canvas?: { from: { width: number; height: number }; to: { width: number; height: number } };
   /**
    * The clause that refused a trial: `unified` (worse by the unified order), `guard` (a guard of the routed trial), `fresh` (a face the baseline had in
-   * order is out of order on the trial) or `open` (the final far ends disagree with the proposed order). A `unified` or `guard` refusal with no `next` is a
-   * decision of the whole-sheet measure (dense-16x9 ticket 49): the round records it (`farEndDecision`).
+   * order is out of order on the trial) or `open` (the final far ends disagree with the proposed order).
    */
   clause?: 'unified' | 'guard' | 'fresh' | 'open';
-  /** The bent links, turns and crossings of the baseline and of the trial, when both score. */
-  tallies?: { base: Count; trial: Count };
+  /**
+   * The refusal as a decision of the whole-sheet measure (dense-16x9 ticket 49, review 1), when it is one: a completed comparison worse by the unified order
+   * (`unified`, with both tallies), a new error-gate finding of the routed trial (`gate-finding`) or the canvas cap (`canvas-cap`). Any other refusal
+   * (an unscored trial, a removed link, a guard of courses, walls, constraints or separations, a fresh face, an open face) decides nothing.
+   */
+  decline?: FarEndDeclineReason;
+  /** The tallies of the baseline and of the trial, when both score. */
+  tallies?: { base: UnifiedTally; trial: UnifiedTally };
 }
 
 /**
@@ -60,25 +66,28 @@ export function judgeFarEndTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   const open = [...asked].filter(face => now.has(face));
   const fresh = [...now].filter(face => !was.has(face));
   // What the next trial reads: the faces of this trial that settled, kept, and every face that is stale on the trial's own final positions, sorted again from them.
-  const refuse = (reason: string, clause: NonNullable<FarEndVerdict['clause']>): FarEndVerdict => {
+  const refuse = (reason: string, clause: NonNullable<FarEndVerdict['clause']>, decline?: FarEndDeclineReason): FarEndVerdict => {
     const next = open.length > 0 || fresh.length > 0 ? proposeFarEndOrder(routedTrial, proposed.filter(face => !now.has(faceKey(face.node, face.side)))).faces : [];
     const tallies = clause === 'unified' || clause === 'guard' ? trialCounts(routedBase, routedTrial) : undefined;
-    return { kept: false, reason, clause, ...(next.length > 0 ? { next } : {}), before, after, ...(tallies === undefined ? {} : { tallies }) };
+    // A unified decline is a completed comparison: it decides only with both tallies read.
+    const decides = decline !== undefined && (decline !== 'unified' || tallies !== undefined);
+    return { kept: false, reason, clause, ...(decides ? { decline } : {}), ...(next.length > 0 ? { next } : {}), before, after, ...(tallies === undefined ? {} : { tallies }) };
   };
   if (fresh.length > 0) return refuse(`the trial leaves faces out of far-end order that the baseline had in order (${fresh.join(', ')})`, 'fresh');
   // The published canvas of both candidates, labels and legend included (R1: the extent that publishes, not the one the route leaves).
-  let grown: FarEndVerdict['canvas'];
+  let grown: FarEndVerdict['canvas'], capped = false;
   const canvasRefusal = (base: LayoutModel, trial: LayoutModel): string | undefined => {
     const was = published(base), now = published(trial);
     if (was === undefined || now === undefined || !(was.width * was.height > 0)) return 'the published canvas of a candidate cannot be read';
     const ratio = (now.width * now.height) / (was.width * was.height);
     if (ratio > 1 + PLACEMENT_EPS) grown = { from: { width: was.width, height: was.height }, to: { width: now.width, height: now.height } };
-    return ratio > FAR_END_CANVAS_GROWTH + PLACEMENT_EPS ? `the published canvas grows from ${Math.round(was.width)}x${Math.round(was.height)} to ${Math.round(now.width)}x${Math.round(now.height)} px` : undefined;
+    capped = ratio > FAR_END_CANVAS_GROWTH + PLACEMENT_EPS;
+    return capped ? `the published canvas grows from ${Math.round(was.width)}x${Math.round(was.height)} to ${Math.round(now.width)}x${Math.round(now.height)} px` : undefined;
   };
-  const guarded = guardRoutedTrial(routedBase, routedTrial, keptPromises, canvasRefusal);
-  if (typeof guarded === 'string') return refuse(guarded, 'guard');
+  const guarded = guardRoutedTrialKind(routedBase, routedTrial, keptPromises, canvasRefusal);
+  if ('kind' in guarded) return refuse(guarded.reason, 'guard', guarded.kind === 'gate-finding' ? 'gate-finding' : guarded.kind === 'canvas' && capped ? 'canvas-cap' : undefined);
   const { before: was3, after: now3, order } = unifiedOrder(guarded);
-  if (order > 0) return refuse(`the routed trial is worse by the unified order (${now3.bent} bent links, ${now3.turns} turns, ${now3.crossings} crossings, against ${was3.bent}, ${was3.turns} and ${was3.crossings})`, 'unified');
+  if (order > 0) return refuse(`the routed trial is worse by the unified order (${now3.bent} bent links, ${now3.turns} turns, ${now3.crossings} crossings, against ${was3.bent}, ${was3.turns} and ${was3.crossings})`, 'unified', 'unified');
   // A face the new order did not settle stays out of order as it was on the baseline: the trial is kept when it settles more faces than it leaves (no face is worse), and the round
   // goes on with the faces left. A trial that settles none is refused.
   if (open.length > 0 && after >= before) return refuse(`the final far ends of ${open.join(', ')} disagree with the proposed order`, 'open');

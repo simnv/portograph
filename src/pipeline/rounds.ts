@@ -25,8 +25,8 @@ import { faceKey, straightFaces } from '../layout/turn-order.js';
 import { linkLabels } from '../layout/link-labels.js';
 import { judgeFarEndTrial, measureFarEndOrder } from '../layout/far-end-measure.js';
 import { engineSequence, farEndOwner, proposalGroups, proposalKey, routedLinksOf, staleFaces, type FarEndFace } from '../layout/far-end-order.js';
-import { farAnchorIndex, farEndDecisions as readDecisions, readFace, type FarEndDecisionEntry } from '../layout/far-end-faults.js';
-import { farEndDecisionEntry, farEndDecisionsOf, farEndEntries, withoutFarEndDecisions, pairGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
+import { baselineDigest, farAnchorIndex, farEndDecisions as readDecisions, inputDigest, readFace, type FarEndDecisionEntry } from '../layout/far-end-faults.js';
+import { farEndDecisionEntry, farEndDecisionsOf, farEndEntries, withFarEndDecisions, type FarEndDeclineReason, pairGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import type { ReservationFailure } from '../layout/reservations.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute } from '../route/plan.js';
@@ -626,18 +626,30 @@ export const overlay: Round<OverlayOffer> = {
 
 type FarEndTrialOffer = { faces: FarEndFace[]; current: LayoutModel; decisions: ReadonlyMap<string, FarEndDecisionEntry>; split: boolean; verdict?: ReturnType<typeof judgeFarEndTrial> };
 /**
- * The far-end decisions of a declined trial (`farEndDecision`): one per proposed face that fails G5 on the baseline the trial was measured on and that no other owner holds,
- * with the face in engine order, the pairs that stand the wrong way round, the clause, its sentence and the tallies the judge read.
+ * The decline reason of a refused far-end trial, when the refusal is a decision of the whole-sheet measure (dense-16x9 ticket 49, review 1): the judge's own
+ * (`verdict.decline`: a completed comparison worse by the unified order, a new error-gate finding, the canvas cap), or a refusal of the trial's geometry at
+ * 7f (`postcondition-7f`: a placement refusal of stage 7f, which the round tolerates). A placement-run refusal, an ELK fallback, a ledger or a predictor
+ * refusal, a trial that did not settle and anything the round does not tolerate (a deadline, a budget, a worker failure) decide nothing.
  */
-function farEndDecisions(env: Env, o: FarEndTrialOffer, r: Refusal): Reservations {
+function farEndDecline(o: FarEndTrialOffer, r: Refusal): FarEndDeclineReason | undefined {
+  if (r.at === 'verdict') return o.verdict?.next === undefined ? o.verdict?.decline : undefined;
+  return r.at === 'bands' && refusedAtBands(r.error) ? 'postcondition-7f' : undefined;
+}
+/**
+ * The far-end decisions of a declined trial (`farEndDecision`): one per proposed face that fails G5 on the baseline the trial was measured on and that no other owner holds,
+ * with the face in engine order, the pairs that stand the wrong way round, the decline reason, its sentence, the tallies the judge read, and the binding (the input, the
+ * proposal of the trial, the baseline it was judged against).
+ */
+function farEndDecisions(env: Env, o: FarEndTrialOffer, r: Refusal, reason: FarEndDeclineReason): Reservations {
   if (o.faces.length === 0) return [];
   const base = o.current, index = farAnchorIndex(base, routedLinksOf(base)), verdict = r.at === 'verdict' ? o.verdict : undefined;
+  const binding = { input: inputDigest(base), proposal: o.faces.map(face => ({ node: face.node, side: face.side, ports: face.ports.map(ref => ({ ...ref })) })), baseline: baselineDigest(base) };
   return o.faces.flatMap(face => {
     if (farEndOwner(base, face.node, face.side) !== undefined) return [];
     const reading = readFace(base, face.node, face.side, index), ports = engineSequence(base, face.node, face.side);
     if (reading.wrong.length === 0 || ports === undefined) return [];
-    return [farEndDecisionEntry({ node: face.node, side: face.side, ports, pairs: reading.wrong, reason: verdict?.clause === 'unified' ? 'unified' : 'other',
-      why: r.why, ...(verdict?.tallies === undefined ? {} : { tallies: verdict.tallies }) }, 'farEnd', env.placements)];
+    return [farEndDecisionEntry({ node: face.node, side: face.side, ports, pairs: reading.wrong, reason,
+      why: r.why, ...(verdict?.tallies === undefined ? {} : { tallies: verdict.tallies }), binding }, 'farEnd', env.placements)];
   });
 }
 const faceNames = (faces: readonly { node: string; side: string }[]): string => faces.map(face => `${face.node} ${face.side}`).join(', ');
@@ -693,8 +705,9 @@ export const farEnd: Round<FarEndTrialOffer> = {
   reserve(env, s, o) {
     // The kept turn order reaches this trial with the faces that hold a straight link on the baseline it reads now, as the overlay round does (docs/design/turn-order.md, Section 3).
     const turn = turnOf(s.kept), straight = [...straightFaces(s.base)];
-    // A face the trial proposes again is decided again: its old decision leaves the trial's ledger (a kept trial publishes none for it).
-    return addReservations(withoutFarEndDecisions(s.kept, o.faces), [...floorEntries(keptFloors(env, s), 'farEnd', env.placements), ...farEndEntries(o.faces, 'farEnd', env.placements),
+    // A decision is bound to the baseline it was judged against (dense-16x9 ticket 49, review 1), and a trial is another placement: no decision enters the
+    // trial's ledger. A declined trial leaves the kept ledger with its decisions; a kept trial is a new baseline, and its ledger holds none.
+    return addReservations(withFarEndDecisions(s.kept, []), [...floorEntries(keptFloors(env, s), 'farEnd', env.placements), ...farEndEntries(o.faces, 'farEnd', env.placements),
       ...(turn.all || turn.links.length > 0 ? turnEntries(turn.all, turn.all ? [] : turn.links, false, 'farEnd', env.placements, straight) : [])]);
   },
   holdsAt7e(_env, _s, _o, ledger, trial7e) {
@@ -734,11 +747,9 @@ export const farEnd: Round<FarEndTrialOffer> = {
       : r.at === 'bands' ? `stage 7f rejected it (${r.why})` : r.why;
     env.options.testSideTrace?.({ ev: 'far-end-refused', faces: o.faces.map(face => `${face.node}.${face.side}`), why });
     const unsettled = r.at === 'verdict' && o.verdict?.next !== undefined;
-    // A decline on a full trial decides the face (dense-16x9 ticket 49; owner ruling 2026-11-18: the whole-sheet measure wins): worse by the unified order, a guard
-    // of the routed trial, or a stage that refused the order. The round records it, and G5 reads the record while it holds. A trial that did not settle
-    // (a next proposal, a fresh face out of order, final far ends that disagree) and a repeated proposal decide nothing.
-    const decides = !unsettled && (r.at !== 'verdict' || o.verdict?.clause === 'unified' || o.verdict?.clause === 'guard');
-    const decided = decides ? farEndDecisions(env, o, r) : [];
+    // A decline of the whole-sheet measure decides the face (dense-16x9 ticket 49; owner ruling 2026-11-18): the reasons of `farEndDecline`, a closed list. The round
+    // records it, and G5 reads the record while it holds. Every other refusal, a trial that did not settle and a repeated proposal decide nothing.
+    const reason = farEndDecline(o, r), decided = reason === undefined ? [] : farEndDecisions(env, o, r, reason);
     if (decided.length > 0) s.kept = addReservations(s.kept, decided);
     s.sideNotes.push({ stage: 'placement', severity: 'info', code: unsettled ? 'FAR_END_ORDER_UNSETTLED' : 'FAR_END_ORDER_DECLINED', owners: o.faces.map(face => ({ kind: 'node' as const, id: face.node })),
       message: `The far-end order of ${faceNames(o.faces)} is ${unsettled ? 'not settled' : 'declined'}: ${why}.` });
