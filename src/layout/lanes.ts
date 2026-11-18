@@ -32,7 +32,7 @@ import { trunkBuses, trunkGeometry, trunkHeads, trunkRing } from './trunk.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { moveBeforeGrow } from './read/move-before-grow.js';
 import { besideGap, frameTiers, type Unit } from './columns.js';
-import { derivedShortfalls, separationsBrokenBy } from './constraints/separation.js';
+import { derivedShortfalls, separationsBrokenBy, type Shortfall } from './constraints/separation.js';
 import { RESIDUAL_TOLERANCE } from './constraints/evaluate.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
@@ -1147,19 +1147,18 @@ export function allocateLanes(model: LayoutModel): void {
    * its gap lacks, and each unit after it by what its own gap then lacks. The grown frame stays: its cells hold the sources of its lanes.
    * A unit that holds a lane source, stands in a sub-tier no link crosses (the lanes rule moves only those) or would reach a reserved lane
    * cannot move. A flank moves with the group it flanks. Every unit the chain does not move bounds its room, a grid, a bar or a unit of
-   * another tier included: the chain is judged whole on the hard separations of the model with every move of it in place (`separationsBrokenBy`, the gaps between a canton and its neighbours included),
-   * against the reading before it. The slot of a held lane reads the chains its frame would need (`commit` false) while it can still choose
-   * (`allocateLanes`); once the held lanes stand, before any lane foreign to a frame is reserved, the chains move (`commit` true). A chain
-   * that cannot take the whole lack takes the largest part of it that its slack gives and that breaks or deepens no separation; it commits
-   * whole or not at all, and `LANE_FRAME_GAP_HELD` names what stays short. Returns the lack no chain takes, in px.
+   * another tier included: the chain is judged whole on the hard separations of the model with every move of it in place (`separationsBrokenBy`, the gaps of a canton included),
+   * against the reading before it. A chain that cannot take the whole lack takes the largest part of it that its slack gives and that breaks
+   * or deepens no separation; it commits whole or not at all, and `LANE_FRAME_GAP_HELD` names what stays short. This runs once the held lanes
+   * stand, before any lane foreign to a frame is reserved; the slot of a held lane reads it on a trial while it can still choose (`slotShort`).
    */
-  const separateHeldFrames = (held: Lane[], commit: boolean): number => {
-    if (!held.length) return 0;
+  const separateHeldFrames = (held: Lane[]): void => {
+    if (!held.length) return;
     const lanes = model.lanes;
     /** Reads with `reserved` as the model's lanes, so a frame derived in `read` holds them. */
     const withLanes = <T>(reserved: Lane[], read: () => T): T => { model.lanes = reserved; try { return read(); } finally { model.lanes = lanes; } };
     const was = deriveFrames(model);
-    if (was === undefined) return 0;
+    if (was === undefined) return;
     const before = new Map(was.map(frame => [frame.id, frame.box]));
     const crossed = new Set(model.links.flatMap(link => transitTiers(model, link)));
     /** The shift committed chains gave each unit, so the frame box before the held lanes moves with it. */
@@ -1180,7 +1179,6 @@ export function allocateLanes(model: LayoutModel): void {
     /** The flanks of the groups of `unit`, each as a unit of its own (`columnTiers` leaves them out). */
     const flanksOf = (unit: Unit): Unit[] => Object.values(model.groups).filter(group => group.flank !== undefined && unit.groups.some(item => item.id === group.flank!.of))
       .map(group => ({ id: group.id, frame: false, groups: [group], low: group.tier!, high: group.tier! }));
-    let left = 0;
     for (const all of frameTiers(model)) {
       // The units the chain may move are the ones the rows rule sweeps (`columnShifts`): the frames and the one-rank row groups.
       const sweep = all.filter(unit => unit.frame || groupShape(model, unit.id) === 'row');
@@ -1216,13 +1214,12 @@ export function allocateLanes(model: LayoutModel): void {
         /** The separations the chain would break or deepen, read with every move of it and the lanes its units host in place. */
         const broken = (moves: ReadonlyMap<Unit, number>): string[] => withLanes(lanesAfter(moves), () => separationsBrokenBy(model,
           [...moves].flatMap(([unit, dx]) => unit.groups.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx }, dx }))),
-          standing, { cantons: 'outer' }));
+          standing, { cantons: 'judged' }));
         const taken = (amount: number): Map<Unit, number> | undefined => {
           const moves = plan(amount);
           return typeof moves !== 'string' && !broken(moves).length ? moves : undefined;
         };
         let moves = taken(need);
-        if (moves === undefined && !commit) { left += need; continue; }
         if (moves === undefined) {
           const whole = plan(need), why = typeof whole === 'string' ? `${whole} cannot move (it holds a lane source, stands in a sub-tier no link crosses or would reach a reserved lane)`
             : `the move would break or deepen the minimum separation ${broken(whole)[0]}`;
@@ -1235,10 +1232,9 @@ export function allocateLanes(model: LayoutModel): void {
           }
           const amount = Math.max(0, low - RESIDUAL_TOLERANCE);
           moves = amount > PLACEMENT_EPS ? taken(amount) : undefined;
-          left += need - (moves === undefined ? 0 : amount);
           placementWarning(model, 'LANE_FRAME_GAP_HELD', `${beyond[0]!.id} stays ${Math.round((need - (moves === undefined ? 0 : amount)) * 100) / 100} px nearer than the beside gap to frame ${grown.id}, which a lane it holds grew: ${why}.`, [beyond[0]!.id], 'group');
         }
-        if (!commit || moves === undefined || !moves.size) continue;
+        if (moves === undefined || !moves.size) continue;
         const moved: string[] = [];
         for (const [unit, dx] of [...moves].sort(([a], [b]) => compareId(a.id, b.id))) {
           for (const group of unit.groups) {
@@ -1252,7 +1248,36 @@ export function allocateLanes(model: LayoutModel): void {
         rebuildNodeGeometry(model, moved, 'current');
       }
     }
-    return left;
+  };
+  /**
+   * What a held slot leaves short (dense-16x9 ticket 48, review 2): the px by which the hard separations of the model stand deeper, with the slot's lanes in
+   * place and the chains of `separateHeldFrames` moved as they would move (the part a blocked chain can take included), than with the held lanes reserved so far.
+   * Every unit counts, a fixed grid, bar or flank included: a frame the slot grows into a fixed neighbour asks for no chain, and the reading still sees the gap.
+   * The trial runs on the model and is put back exactly: the boxes, bodies, anchors, icons, pills, labels and diagnostics it changed.
+   */
+  const slotShort = (slot: readonly Lane[]): number => {
+    const lanes = model.lanes, copy = (lane: Lane): Lane => ({ ...lane, bounds: { ...lane.bounds } });
+    const boxes = Object.values(model.groups).map(group => [group, { ...group.bounds! }] as const);
+    const bodies = Object.values(model.nodes).map(node => [node, { ...node.bounds! }, node.icon, node.ports.map(port => [port, port.anchor, port.pill] as const)] as const);
+    const labels = model.labels, diagnostics = [...model.diagnostics];
+    const reading = (reserved: Lane[]): Map<string, Shortfall> => { model.lanes = reserved; try { return derivedShortfalls(model); } finally { model.lanes = lanes; } };
+    const before = reading(pending), trial = [...pending, ...slot].map(copy);
+    try {
+      separateHeldFrames(trial);
+      const after = reading(trial);
+      return [...after].reduce((sum, [id, item]) => sum + Math.max(0, item.short - (before.get(id)?.short ?? 0)), 0);
+    } finally {
+      for (const [group, box] of boxes) group.bounds = box;
+      for (const [node, box, icon, ports] of bodies) {
+        node.bounds = box;
+        if (icon === undefined) delete node.icon; else node.icon = icon;
+        for (const [port, anchor, pill] of ports) {
+          if (anchor === undefined) delete port.anchor; else port.anchor = anchor;
+          if (pill === undefined) delete port.pill; else port.pill = pill;
+        }
+      }
+      model.labels = labels; model.diagnostics = diagnostics;
+    }
   };
   /** The lane of `link` at `x` in `tier`, hosted in `group`. */
   const laneAt = (link: LayoutLink, tier: number, group: LayoutGroup, x: number): Lane => {
@@ -1295,7 +1320,7 @@ export function allocateLanes(model: LayoutModel): void {
   const heldLinks = new Set(links.filter(holdsLane));
   let separated = false;
   for (const link of [...links.filter(item => heldLinks.has(item)), ...links.filter(item => !heldLinks.has(item))]) {
-    if (!separated && !heldLinks.has(link)) { separateHeldFrames(pending, true); separated = true; }
+    if (!separated && !heldLinks.has(link)) { separateHeldFrames(pending); separated = true; }
     const crossed = transitTiers(model, link), width = laneWidth(model, link), half = width / 2;
     const cellsOf = new Map<string, LayoutGroup[]>();
     for (const group of Object.values(model.groups)) {
@@ -1399,10 +1424,10 @@ export function allocateLanes(model: LayoutModel): void {
         const rigid = [...dxOf.entries()].every(([frame, list]) => list.every(dx => Math.abs(dx - list[0]!) <= PLACEMENT_EPS)
           && (Math.abs(list[0]!) <= PLACEMENT_EPS || list.length === Object.values(model.groups).filter(group => group.frame !== undefined && topFrame(group.frame) === frame).length));
         const feasible = plans.every(entry => entry.shifts !== undefined) && rigid && shifts.every(dx => Math.abs(dx) <= opening + PLACEMENT_EPS);
-        // A held lane grows its frame: the slot reads the beside gaps the grown frame would leave short, which no chain of the units beyond
-        // it can take whole (`separateHeldFrames`, dense-16x9 ticket 48), while it can still choose.
-        const short = !feasible || heldGap === undefined ? 0 : separateHeldFrames([...pending,
-          ...tiers.map((tier, index) => laneAt(link, tier, hostFor(tier, item.x, plans[index]!.groups, plans[index]!.shifts), item.x))], false);
+        // A held lane grows its frame: the slot reads the separations the grown frame would leave short after the chains of the units beyond it
+        // take what they can (`slotShort`, dense-16x9 ticket 48), while it can still choose.
+        const short = !feasible || heldGap === undefined ? 0
+          : slotShort(tiers.map((tier, index) => laneAt(link, tier, hostFor(tier, item.x, plans[index]!.groups, plans[index]!.shifts), item.x)));
         return { ...item, feasible, short, offset: Math.abs(item.x - sx), moved: shifts.reduce((sum, dx) => sum + Math.abs(dx), 0) };
       }).filter(item => item.feasible).sort((a, b) => Math.abs(a.gap - wanted) - Math.abs(b.gap - wanted)
         || (Math.abs(a.short - b.short) > RESIDUAL_TOLERANCE ? a.short - b.short : 0) || a.offset - b.offset || a.moved - b.moved);
@@ -1426,7 +1451,7 @@ export function allocateLanes(model: LayoutModel): void {
       }
     }
   }
-  if (!separated) separateHeldFrames(pending, true);
+  if (!separated) separateHeldFrames(pending);
   for (const tier of model.tierBands.map(band => band.tier)) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x);
     const main = groups.filter(group => !group.flank);

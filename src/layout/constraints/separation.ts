@@ -48,14 +48,15 @@ export function worseSeparations(now: ReadonlyMap<string, Shortfall>, then: Read
  * (`framesAfter`), and an entry that names a frame is judged too: a cell of a child frame that the grid widens grows its top-level frame into the band
  * gap of the next frame, and a reading that kept the published frame box would accept that widening and let G9 find the gap short (ticket 157).
  * An entry that names a frame in a canton (the canton frame or a frame on a chain below one) is left to the close-up of 7f, which packs the cantons and
- * their members to the spacing again after the grid (`closeCantons`, `holdMemberWalls`); no later step packs any other frame. The member walls hold the gaps
- * inside a canton, but the close-up of the cantons closes a wide gap between a canton and its neighbours and does not open a short one. So a move
- * that can close that gap (the 7f pack, the held-lane chains of 7a) reads it: `cantons: 'outer'` judges every entry of a canton but the ones inside a
- * frame (`INSIDE_FRAME`), which the member walls hold (dense-16x9 ticket 48). The callers that leave all of them to the close-up: the linked-group
- * grid (bands.ts) and the seat set (seat-set.ts, which judges only the gaps inside a frame).
+ * their members to the spacing again after the grid (`closeCantons`, `holdMemberWalls`); no later step packs any other frame. The close-up of the cantons
+ * closes a wide gap and does not open a short one, and the member walls skip the members that share a sub-tier, so a move that can close a gap under its
+ * minimum (the 7f pack, the held-lane chains of 7a) reads the canton entries too: `cantons: 'judged'` (dense-16x9 ticket 48). `own` names the owners
+ * (`frame:id`, `group:id`) of the row the move packs: an entry inside a frame (`INSIDE_FRAME`) that names one of them is the pack's own gap, which the
+ * pack itself sets and the member walls hold, and is left out; the gap of a sibling frame is judged. The callers that leave every canton entry to the
+ * close-up: the linked-group grid (bands.ts) and the seat set (seat-set.ts, which judges only the gaps inside a frame).
  */
 export function separationsBrokenBy(model: LayoutModel, proposed: readonly ProposedBox[], standing?: ReadonlyMap<string, Shortfall>,
-  options: { cantons: 'left-to-7f' | 'outer' } = { cantons: 'left-to-7f' }): string[] {
+  options: { cantons: 'left-to-7f' } | { cantons: 'judged'; own?: ReadonlySet<string> } = { cantons: 'left-to-7f' }): string[] {
   const published = model.frames;
   const saved = proposed.map(item => item.group.bounds!);
   const framed = (frames: typeof published): void => { if (frames !== undefined) model.frames = frames; };
@@ -67,8 +68,10 @@ export function separationsBrokenBy(model: LayoutModel, proposed: readonly Propo
     const after = framesAfter(model, proposed);
     for (const item of proposed) item.group.bounds = item.bounds;
     framed(after);
-    const judged = new Map([...separationShortfalls(model)].filter(([id, item]) => (options.cantons === 'outer' && !INSIDE_FRAME.some(kind => id.startsWith(`${kind}:`)))
-      || item.owners.every(owner => !owner.startsWith('frame:') || !inCanton(model, owner.slice('frame:'.length)))));
+    const cantonal = (item: Shortfall): boolean => item.owners.some(owner => owner.startsWith('frame:') && inCanton(model, owner.slice('frame:'.length)));
+    const ownGap = (id: string, item: Shortfall): boolean => options.cantons === 'judged' && INSIDE_FRAME.some(kind => id.startsWith(`${kind}:`))
+      && item.owners.some(owner => options.own?.has(owner) === true);
+    const judged = new Map([...separationShortfalls(model)].filter(([id, item]) => !cantonal(item) || (options.cantons === 'judged' && !ownGap(id, item))));
     return worseSeparations(judged, before);
   } finally {
     proposed.forEach((item, index) => { item.group.bounds = saved[index]!; });

@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse as readYaml, stringify as writeYaml } from 'yaml';
-import { parse } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { resolve } from '../../src/resolve/index.js';
 import { holdColumnsAfterPush } from '../../src/layout/bands.js';
 import { derivedShortfalls, worseSeparations } from '../../src/layout/constraints/separation.js';
-import { deriveFrames } from '../../src/layout/frames.js';
+import { deriveFrames, FRAME_TO_FRAME_GAP } from '../../src/layout/frames.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { rows } from '../../src/layout/rows.js';
@@ -16,6 +16,7 @@ import { sizeNodes } from '../../src/layout/size.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { skeleton } from '../../src/layout/skeleton.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createAvoidAttempt } from '../route/fixture.js';
 
 // Dense-16x9 ticket 48, review 1: a move reads the separations of every unit it does not move.
 // - stage 5: the chain of units that gives way to a frame a held lane grew carries the flanks of its groups, is bounded by every unit it does
@@ -82,11 +83,33 @@ describe('a chain of units that gives way to a grown frame reads every unit it d
   }, 60000);
 });
 
+describe('the slot of a held lane reads the gaps its frame would leave short (dense-16x9 ticket 48, review 2)', () => {
+  // The grid variant with `midg` also linked to `l1`: two slots of link-11 stand at one offset from its source and move no cell. Before the fix both read
+  // as clear and the first won; there frame `mid` stands 18.76 px nearer than the beside gap to the fixed grid `extra`, a gap no chain asks for.
+  const input = (): Sheet => {
+    const base = withSeats(sheet('a-refused-reseat-restores-its-frames'), true);
+    base.groups.extra = { tier: 1, shape: 'grid' };
+    base.nodes.x = { group: 'extra', size: { width: 32, height: 50 } };
+    base.nodes.y = { group: 'extra' };
+    base.links.push(['u0', 'x'], ['y', 'l1'], ['midg', 'l1']);
+    return base;
+  };
+  for (const form of ['as written', 'nodes reversed'] as const) {
+    it(`takes the slot that keeps the gap to a fixed grid: ${form}`, async () => {
+      const yaml = writeYaml(form === 'as written' ? input() : reversed(input()));
+      const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      const gates = score(model).snapshot.gates;
+      expect(gates.G9.violations.map(item => item.message)).toEqual([]);
+      expect(Object.entries(gates).filter(([, gate]) => !gate.passed && gate.severity === 'error').map(([id]) => id)).toEqual([]);
+    }, 120000);
+  }
+});
+
 describe('the 7f pack of the beside rows (dense-16x9 ticket 48, review 1)', () => {
   /** The grid sheet after the rows rule: the frames, the child frame `d-zone` of `d`, and the fixed grid `spares`. */
-  const placed = async (canton: boolean): Promise<LayoutModel> => {
+  const placed = async (canton: boolean, members: readonly string[] = ['d']): Promise<LayoutModel> => {
     const input = withSeats(sheet('a-grid-group-stands-fixed-beside-frames'), true);
-    if (canton) { input.groups.town = { label: 'Town' }; input.groups.d = { ...input.groups.d, canton: 'town' }; }
+    if (canton) { input.groups.town = { label: 'Town' }; for (const id of members) input.groups[id] = { ...input.groups[id], canton: 'town' }; }
     const model = sizeNodes(sidesOne(resolve(parse(writeYaml(input)))));
     await skeleton(model, { createAttempt });
     return clone(rows(sidesTwo(model)));
@@ -120,6 +143,21 @@ describe('the 7f pack of the beside rows (dense-16x9 ticket 48, review 1)', () =
     for (const id of cells) shift(model, id, -50);
     holdColumnsAfterPush(model);
     expect(held(model)).toEqual([]);
+  }, 60000);
+
+  // Review 2: `c` and `d` stand in one canton, frame `c` exactly the sibling gap before frame `d`. The pack of `d-zone` toward the cells of `d` would grow
+  // `d` 33.11 px into that gap (6.89 px left); the pack sets the gaps of its own row only, and the sibling's gap is kept.
+  it('keeps the gap of a sibling frame in a canton', async () => {
+    const model = await placed(true, ['c', 'd']);
+    for (const group of Object.values(model.groups).filter(item => item.frame === 'd-zone')) shift(model, group.id, 50);
+    const c = box(model, 'c'), d = box(model, 'd');
+    for (const group of Object.values(model.groups).filter(item => item.frame === 'c' || item.frame === 'c-zone')) shift(model, group.id, d.x - FRAME_TO_FRAME_GAP - c.x - c.width);
+    const before = derivedShortfalls(model);
+    expect([...before.keys()]).not.toContain('separation-frame-frames:frame:c|frame:d');
+    holdColumnsAfterPush(model);
+    expect(worseSeparations(derivedShortfalls(model), before)).toEqual([]);
+    expect(held(model)).toHaveLength(1);
+    expect(held(model)[0]).toMatch(/^Frame d-zone stays 33.11 px from its packed place: the move would break or deepen the minimum separation separation-frame-frames:frame:c\|frame:d\.$/);
   }, 60000);
 
   it('reads the gaps a canton owns', async () => {

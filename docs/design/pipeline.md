@@ -1731,7 +1731,7 @@ split otherwise. The validator still replays the one 7f room producer.
 
 `topUpBandClearance` rebuilds every moved node's pills and text, including lower-tier cascades, before
 `holdColumnsAfterPush` and `reserveLinkLabelRoom` read them. The pack of `holdColumnsAfterPush` reads every hard separation as part of
-its window (dense-16x9 ticket 48), the gaps between a canton and its neighbours included (the close-up of the cantons after it closes a wide gap and does not open a short one; the member walls hold the gaps inside a canton): a child
+its window (dense-16x9 ticket 48), the gaps of a canton included (the close-up of the cantons after it closes a wide gap and does not open a short one, and the member walls skip members that share a sub-tier). The pack sets the gaps of its own row (the child, its frames and cells); the gap of a sibling frame it keeps: a child
 frame whose move would break or deepen one stays where it stands, named by `FRAME_PACK_SEPARATION_HELD`. The warning goes
 when a later pack moves the child or finds it packed. Placement reserves the gaps; this move only checks.
 
@@ -2274,8 +2274,10 @@ A unit that holds a lane source, stands in a sub-tier no link crosses or would r
 cannot move. A flank moves with the group it flanks. Every unit the chain does not move bounds its
 room, a grid, a bar or a unit of another tier included: the chain is judged whole on the hard
 separations of the model with all its moves in place (`separationsBrokenBy`, the gaps between a
-canton and its neighbours included). The slot of a held lane reads these chains while the allocator can still choose it: a slot
-whose chains take the whole lack wins over a nearer slot whose chains cannot. A chain that cannot take
+canton and its neighbours included). The slot of a held lane reads these chains while the allocator can still choose it: on a
+trial that is put back exactly, it places the slot's lanes, moves the chains as they would move (the part
+a blocked chain can take included) and measures every separation that stands deeper, a fixed grid, bar or
+flank included (`slotShort`, review 2). A slot that leaves less short wins over a nearer slot. A chain that cannot take
 the whole lack takes the largest part that breaks or deepens no separation. It commits whole or not at
 all, and `LANE_FRAME_GAP_HELD` names what stays short.
 
