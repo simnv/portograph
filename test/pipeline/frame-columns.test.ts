@@ -7,9 +7,12 @@ import { deriveFrames } from '../../src/layout/frames.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+/** The sheet read as main read it before the move-before-grow default (dense-16x9 ticket 45); see the grid tests below. */
+const runOld = (name: string) => layout(withTheOldDefault(parse(fixture(name))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
 const overlaps = (a: Rect, b: Rect): boolean => a.x < right(b) - 1e-6 && b.x < right(a) - 1e-6 && a.y < bottom(b) - 1e-6 && b.y < bottom(a) - 1e-6;
@@ -136,7 +139,9 @@ describe('frame columns', () => {
     const west = ['west#0', 'west-zone#1', 'west-zone#2'];
     /** `extra` px beyond the zone cells; a negative `extra` is the room the cells of `east` leave, less that many px. */
     const widened = async (extra: number) => {
-      const model = structuredClone(await run('sibling-frames-pack-as-columns'));
+      // The cells are set by hand from the old default (dense-16x9 ticket 45): with the default the centring moves a node before it grows
+      // one, the zone cells of `west` stand where a 10 px widening reaches `east`, and the grid refuses it.
+      const model = structuredClone(await runOld('sibling-frames-pack-as-columns'));
       const zone = ['west-zone#1', 'west-zone#2'].map(id => model.groups[id]!.bounds!);
       const low = Math.min(...zone.map(box => box.x)), high = Math.max(...zone.map(right));
       const east = Math.min(...['east#0', 'east-zone#1', 'east-zone#2'].map(id => model.groups[id]!.bounds!.x));

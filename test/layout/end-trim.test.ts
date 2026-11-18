@@ -7,6 +7,7 @@ import { trimBodies, trimmedBody, untrimmedModel } from '../../src/layout/end-tr
 import { portEndInsets } from '../../src/layout/port-insets.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from './move-before-grow.js';
 // The group lift (ticket 08) is off in these tests: with it, `far` and the `access`/`near` component rise one band each, so the trimmed
 // group no longer stands under the title it must keep. `lift.test.ts` tests the lift.
 
@@ -19,7 +20,7 @@ const source = (name: string): string => readFileSync(new URL(`../../goldens/syn
 // The golden that these tests trim fails G5 on its stage-5 order, and the far-end round (dense-16x9 ticket 07) repairs it and removes the stretch. The same input with the order of the stale
 // face authored (an authored order is no far-end order, and G5 judges the free ports only) keeps the stretch on the production path.
 const stretched = (name: string): string => readFileSync(new URL(`../fixtures/authored-order/${name}.yaml`, import.meta.url), 'utf8');
-const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
+const run = (text: string): Promise<LayoutModel> => layout(withTheOldDefault(parse(text)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
 const right = (box: { x: number; width: number }): number => box.x + box.width;
 const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string => {
   const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;

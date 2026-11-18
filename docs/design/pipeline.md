@@ -525,7 +525,7 @@ stays and `FEED_ORDER_PAIR_BOUND` names the pair (R6).
   sorts the cell's fed members by their places, and the pair stood them in key order, so the keys keep their order. The earlier joint
   choice is then still a minimum, and it stays. So the second round ends the loop; the cap of one round per judged row and one more
   (R4) withdraws by name any entry still broken.
-- **Open members** (dense-16x9 ticket 36, slice 3; only with `layout.moveBeforeGrow: true`; owner ruling 2 of 2026-11-17: unfed members
+- **Open members** (dense-16x9 ticket 36, slice 3; not with the opt-out `layout.moveBeforeGrow: false`; owner ruling 2 of 2026-11-17: unfed members
   may stand in the gaps the seats leave). After the cells are decided (`orderByFeeds`, and again in `refreshFeedOrders`), `withOpen`
   reads each cell entry once more. A member is **open** when every link of it leaves its bottom face and ends on the top face of a node
   in the sub-tier directly below the cell, no end of its links has an authored port order, and the cell stands in no canton
@@ -865,7 +865,7 @@ reserve the required lane width as their minimum pitch before topology freezes; 
 ports can then own separate source-aligned corridors. Groups are fitted around the resulting
 node bodies and named pills before rows or lane ownership begin.
 
-**The seat set of a child row** (dense-16x9 ticket 36, slice 1; only with `layout.moveBeforeGrow: true`; `src/layout/seat-set.ts`).
+**The seat set of a child row** (dense-16x9 ticket 36, slice 1; not with the opt-out `layout.moveBeforeGrow: false`; `src/layout/seat-set.ts`).
 The rows rule decides it in its last repack, after the levelling: `seatRows`, at the end of `repackOverlaps`, where the parents' rows are
 packed. The first repack decides nothing, because the levelling and the label detours that follow it can widen the parents' rows again,
 and a record made there would break for a reason that is not its own (21 errors of the forced-on corpus had this one cause, a stage-5
@@ -1442,8 +1442,8 @@ the second run strands is kept and named (`CENTRE_GROWTH_KEPT`, info), as is a g
 order; it is kept by every later rule and published, so the 7d to 7f replays and the publication check read the same decline (R1). A
 malformed record, or one before the centre rule, is refused.
 
-**With `layout.moveBeforeGrow: true`** (ADR-0027, an opt-in until ticket 15; dense-16x9 ticket 02). The rules above are the default. With
-the option, each node of a step takes one **seat** (`seatNode`): it slides the body inside the slack of its row (between its siblings,
+**The seat: the default** (ADR-0027, dense-16x9 tickets 02 and 45; the default since 0.3.0). The rules above hold only with the opt-out
+`layout.moveBeforeGrow: false`. By default each node of a step takes one **seat** (`seatNode`): it slides the body inside the slack of its row (between its siblings,
 inside the group box less its insets, clear of the overlay walls) before it grows it, and grows only by what no slide gives, up to the
 alignment cap `ALIGNMENT_CAP_TIMES` = 5 times the width the node needs for itself (`withinAlignmentCap`), in place of
 `ALIGNMENT_MAX_GROWTH` = 12 (`alignmentAllowance`). A seat that slides or grows a body is recorded (`alignmentSeats`, kept through
@@ -1466,7 +1466,7 @@ holds only inside the body the member has: it does not slide or grow the body ba
 of 2026-11-18). A recorded seat the unit's move takes off its feed is withdrawn by name (`ALIGNMENT_SEAT_REFUSED`). Before the freeze the recorded seat moves as on main: the slide back and the region fit return to the
 start geometry.
 At 7e a bent bundle block keeps the start of a face whose seat keeps a port. The publication check refuses a seat record in a model
-without the option, and a seat whose kept port stands off its feed, whatever the centring replay excuses (R5). ADR-0027 states the rule,
+that opts out, and a seat whose kept port stands off its feed, whatever the centring replay excuses (R5). ADR-0027 states the rule,
 its trades, its known failures and its acceptance set.
 
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.

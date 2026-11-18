@@ -12,10 +12,13 @@ import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { withLayoutEntry } from '../aspect-fixture.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 // Dense-16x9 ticket 26: two overlay end runs of different nodes never stand on one track where a free port can take a seat.
 const yaml = readFileSync(new URL('../../goldens/synthetic/an-overlay-end-run-seats-its-port-a-track-pitch-off-a-foreign-end-run.yaml', import.meta.url), 'utf8');
-const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+// The sheet is read as main read it before the move-before-grow default (dense-16x9 ticket 45): with the default the centring moves a node before
+// it grows one, the two end runs no longer stand 1.1 px apart, and the seat has nothing to judge. The pair is the premise of every test here.
+const run = (text: string): Promise<LayoutModel> => layout(withTheOldDefault(parse(text)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const pointsOf = (segments: readonly { from: Point; to: Point }[]): Point[] => (segments.length ? [segments[0]!.from, ...segments.map(segment => segment.to)] : []);
 const overlays = (model: LayoutModel) => model.links.filter(link => link.layer === 'overlay' || link.family === 'overlay');
 const shares = (model: LayoutModel, path: (link: LayoutModel['links'][number]) => Point[]): number =>

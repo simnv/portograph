@@ -8,6 +8,7 @@ import { ofKind } from '../../src/layout/reservations.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 // Dense-16x9 ticket 32: a rank cell and the row below it that only it feeds are ordered together, to the fewest crossings of the links
 // between them (an exact search, bounded); the members the row above feeds keep their feed keys, the unfed members are free.
@@ -51,9 +52,16 @@ describe('two rank rows of one frame are ordered together (dense-16x9 ticket 32)
   }, 120000);
 
   it('refuses a model whose lower row no longer stands in the order the upper row read (the premise)', async () => {
-    const model = structuredClone(await run(sheet(PLANAR)));
+    // Read as main read it before the move-before-grow default (dense-16x9 ticket 45): there the router row has no open member, and the entry of
+    // the upper row reads it in the order it stands.
+    const model = structuredClone(await layout(withTheOldDefault(parse(sheet(PLANAR))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
     model.groups['core#1']!.rowOrder = [...order(model, 'core#1')].reverse();
     expect(validateFeedOrders(model).join('\n')).toContain('the feeding row core#1 no longer stands in the order the entry read');
+    // With the default the router row has proved open members: a feeding row with open members is read in the order stage 4 recorded
+    // (dense-16x9 ticket 36, slice 3), so the row's own entry refuses the reversal.
+    const seated = structuredClone(await run(sheet(PLANAR)));
+    seated.groups['core#1']!.rowOrder = [...order(seated, 'core#1')].reverse();
+    expect(validateFeedOrders(seated)).toEqual(['Reservation rowOrder:group:core#1:cell does not hold: core#1 does not stand in the order its feeds give']);
   }, 120000);
 
   it('reaches 2 crossings on the competition case: the unfed members and the free row below move together', async () => {

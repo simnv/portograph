@@ -12,6 +12,7 @@ import { rebuildRegions } from '../../src/layout/regions.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 /**
  * Dense-16x9 ticket 27: the groups of one row that the packing pushes together and are fed by the same parents stand as one unit
@@ -19,7 +20,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * order and packed it after the one before: the first site stood under the hubs and grew to reach both, the other four stacked to its right.
  */
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-row-fed-by-two-hubs-stands-centred-under-them.yaml', import.meta.url), 'utf8');
-const run = (source: string): Promise<LayoutModel> => layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (source: string): Promise<LayoutModel> => layout(withTheOldDefault(parse(source)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const SITES = ['site-1', 'site-2', 'site-3', 'site-4', 'site-5'];
 
 /** The x span of the site row, and the mean x of the hub ports its links leave. */
@@ -51,8 +52,10 @@ describe('a row the packing pushes together stands centred as one unit (dense-16
 
   // Review 1 of ticket 27: the replay of one group runs where the others stand, so a member of a whole unit shifted off its seat was held by its
   // shifted neighbours, and the free end member's step was given back because it moved away from its own feeds. The unit is checked as a unit.
+  // Read as main read it before the move-before-grow default (dense-16x9 ticket 45). With the default the centring records alignment seats, and
+  // the restore refuses the shifted unit by its seat record first (the last check of this test).
   it('refuses at restore the whole unit shifted 5 px off its seat either way, hubs unchanged', async () => {
-    const model = centre(flanks(lanes(rows(await placed(yaml)))));
+    const model = centre(flanks(lanes(rows(await placed(withTheOldDefault(parse(yaml)))))));
     expect(centreViolations(model)).toEqual([]);
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
     for (const dx of [5, -5]) {
@@ -61,6 +64,14 @@ describe('a row the packing pushes together stands centred as one unit (dense-16
       rebuildNodeGeometry(forged, Object.keys(forged.nodes), 'current'); rebuildBands(forged); rebuildRegions(forged);
       expect([dx, centreViolations(forged).some(item => item.includes('stands off its seat'))]).toEqual([dx, true]);
       expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/the row unit of .* stands off its seat/);
+    }
+    const seated = centre(flanks(lanes(rows(await placed(yaml)))));
+    expect(() => restoreLayoutModel(JSON.stringify(seated))).not.toThrow();
+    for (const dx of [5, -5]) {
+      const forged = JSON.parse(JSON.stringify(seated)) as LayoutModel;
+      for (const id of SITES) moveGroup(forged, forged.groups[id]!, dx, 0);
+      rebuildNodeGeometry(forged, Object.keys(forged.nodes), 'current'); rebuildBands(forged); rebuildRegions(forged);
+      expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/The alignment seat record is forged/);
     }
   }, 60000);
 

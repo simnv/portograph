@@ -6,7 +6,8 @@
  * Each sheet is laid out as written, with its `links` in the reverse order and with its `nodes` in the
  * reverse order, the way `portograph render` lays out (the built library; `corpus` does the same). For
  * each reversal one line is printed: `<sheet>\t<links|nodes>\tSAME`, or the first differing JSON path of
- * the layout without `runtime` and without `document` (the echoed input), with the two values.
+ * the layout without `runtime` and without `document` (the echoed input), with the two values. An order that fell back to the option-off
+ * run of `layout.moveBeforeGrow` prints `FALLBACK <code>` (dense-16x9 tickets 45 and 56), unless `FALLBACK_SHEETS` lists the sheet.
  * The `nodes` reversal lists the members of a group in the reverse order; R3 allows that, so the path
  * skips `groups.*.nodes`, `groups.*.rowOrder` and `groups.*.rowOrderDecision`, and `SAME (group member order only)` says that was all.
  * A sheet that cannot be read or laid out prints `ERROR`; a block that cannot be reversed
@@ -17,9 +18,9 @@
  * place of a link in it (ticket DR-04). On `nodes` it may be a change of the author's input order; a refusal is a defect (decision review D-Q1).
  */
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, relative, resolve } from 'node:path';
 import process from 'node:process';
-import { elapsed, failure, openPipeline, withGateLock } from './gate-lib.mjs';
+import { elapsed, failure, FALLBACK_SHEETS, openPipeline, ROOT, withGateLock } from './gate-lib.mjs';
 import { checkSheet, comparable } from './r3-lib.mjs';
 
 async function main(sheets) {
@@ -32,7 +33,9 @@ async function main(sheets) {
     for (const [index, sheet] of sheets.entries()) {
       process.stderr.write(`r3: ${index + 1}/${sheets.length} ${sheet}\n`);
       const lay = async (text) => comparable(pipeline.api, await pipeline.layout(pipeline.api.parse(text)));
-      const checked = await checkSheet({ read: () => readFileSync(resolve(sheet), 'utf8'), lay, describe: failure });
+      // A corpus sheet is listed by its path, a sweep sheet by its name (`FALLBACK_SHEETS`, dense-16x9 ticket 56).
+      const listed = FALLBACK_SHEETS.has(relative(ROOT, resolve(sheet))) || FALLBACK_SHEETS.has(basename(sheet, '.yaml'));
+      const checked = await checkSheet({ read: () => readFileSync(resolve(sheet), 'utf8'), lay, describe: failure, listed });
       bad += checked.bad;
       for (const [kind, text] of checked.lines) say(sheet, kind, text);
     }

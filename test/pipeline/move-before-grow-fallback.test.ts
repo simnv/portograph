@@ -20,7 +20,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * Dense-16x9 ticket 56 (owner ruling 2026-11-18, general fallback): a sheet that does not write `layout.moveBeforeGrow` runs with it on while the
  * default is on; when that run fails for a placement reason, the whole input runs once more with the option off, and that result publishes with
  * a named warning (`MOVE_BEFORE_GROW_FALLBACK`). A sheet that writes `true` is strict and throws; one that writes `false` is off. The default is
- * off until ticket 45, so these tests reach the default-on mode through the test switch of the one reader (`moveBeforeGrowDefaultTest`).
+ * on since ticket 45 (`DEFAULT_MEANS_ON`), so these tests read it as it ships; the test switch of the one reader (`moveBeforeGrowDefaultTest`)
+ * turns it off for the one test of the default-off mode.
  */
 const factories = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 afterEach(() => { delete moveBeforeGrowDefaultTest.on; });
@@ -116,17 +117,18 @@ function withoutMode(model: LayoutModel): unknown {
 }
 
 describe('the one reader of layout.moveBeforeGrow gives the mode (dense-16x9 ticket 56)', () => {
-  it('reads strict, off and default, and the default is off until ticket 45', () => {
+  it('reads strict, off and default, and the default is on since ticket 45', () => {
     const base = parse(S21);
     expect(moveBeforeGrowMode(base)).toBe('default');
     expect(moveBeforeGrowMode(written(base, true))).toBe('strict');
     expect(moveBeforeGrowMode(written(base, false))).toBe('off');
-    expect(defaultMeansOn()).toBe(false);
-    expect(moveBeforeGrow({ document: base })).toBe(false);
-    moveBeforeGrowDefaultTest.on = true;
     expect(defaultMeansOn()).toBe(true);
     expect(moveBeforeGrow({ document: base })).toBe(true);
     expect(moveBeforeGrow({ document: written(base, false) })).toBe(false);
+    moveBeforeGrowDefaultTest.on = false;
+    expect(defaultMeansOn()).toBe(false);
+    expect(moveBeforeGrow({ document: base })).toBe(false);
+    expect(moveBeforeGrow({ document: written(base, true) })).toBe(true);
   });
 
   it('falls back on a placement refusal with time left, and on nothing else', () => {
@@ -157,7 +159,6 @@ describe('the one reader of layout.moveBeforeGrow gives the mode (dense-16x9 tic
   };
   for (const [kind, make] of Object.entries(throwing)) {
     it(`does not fall back on a ${kind} of the ELK worker under the tier fallback`, async () => {
-      moveBeforeGrowDefaultTest.on = true;
       let made = 0;
       const createElkAttempt: typeof createAttempt = () => (++made <= 2 ? { terminateWorker() {}, layout() { throw make(); } } as unknown as ReturnType<typeof createAttempt> : createAttempt());
       const error = await layout(parse(TWO), { ...factories, createElkAttempt }).then(() => undefined, (caught: unknown) => caught);
@@ -168,8 +169,9 @@ describe('the one reader of layout.moveBeforeGrow gives the mode (dense-16x9 tic
   }
 });
 
-describe('a default sheet runs as before while the default is off (dense-16x9 ticket 56)', () => {
+describe('a default sheet runs as before when the default is off (dense-16x9 ticket 56, the test switch)', () => {
   it('writes no record and leaves the document as parsed', async () => {
+    moveBeforeGrowDefaultTest.on = false;
     const model = await layout(parse(S21), factories);
     expect(model.moveBeforeGrowRun).toBeUndefined();
     expect(model.document.layout?.moveBeforeGrow).toBeUndefined();
@@ -179,13 +181,13 @@ describe('a default sheet runs as before while the default is off (dense-16x9 ti
 
 describe('a default-on sheet whose option-on run fails publishes the option-off run (dense-16x9 ticket 56)', () => {
   for (const [name, yaml] of Object.entries(orders(S21))) {
-    it(`s21 ${name}: ${STRICT_THROWS[name] ? 'written true throws; unset, the option-off run plus the warning' : 'written true draws; unset, the option-on run'}`, async () => {
+    // Since ticket 45 this is the default: s21 as written and with links reversed draws by the fallback, the option-off run with the warning.
+    it(`s21 ${name}: ${STRICT_THROWS[name] ? 'written true throws; under the default it draws by the fallback (the option-off run plus the warning)' : 'written true draws; under the default, the option-on run'}`, async () => {
       const base = parse(yaml);
       let refusal: unknown;
       const strict = await layout(written(base, true), factories).catch((error: unknown) => { refusal = error; return undefined; });
       expect(strict === undefined).toBe(STRICT_THROWS[name]);
       const off = await layout(written(base, false), factories);
-      moveBeforeGrowDefaultTest.on = true;
       const model = await layout(base, factories);
       if (strict === undefined) {
         expect(refusal).toBeInstanceOf(PlacementRefusal);
@@ -207,7 +209,6 @@ describe('a default-on sheet whose option-on run fails publishes the option-off 
   it('does not fall back when the command budget has no time left', async () => {
     let spent = false;
     const budget: Budget = { remainingMs: () => spent ? 0 : Number.POSITIVE_INFINITY, share: stageMs => spent ? 0 : stageMs };
-    moveBeforeGrowDefaultTest.on = true;
     // The budget runs out once 7c is done, so the refusal of 7e, or a later deadline, finds no time for the option-off run.
     await expect(layout(parse(S21), { ...factories, budget, onProgress: progress => { if (progress.stage === 'centre') spent = true; } })).rejects.toThrow();
   }, 300000);
@@ -219,7 +220,6 @@ describe('a default-on sheet whose option-on run draws publishes it (dense-16x9 
     const base = parse(text);
     expect(moveBeforeGrowMode(base)).toBe('default');
     const strict = await layout(written(base, true), factories);
-    moveBeforeGrowDefaultTest.on = true;
     const model = await layout(base, factories);
     expect(model.moveBeforeGrowRun).toEqual({ requested: 'default', effective: 'on' });
     expect(model.document.layout?.moveBeforeGrow).toBe(true);
@@ -233,7 +233,6 @@ describe('a default-on sheet whose option-on run draws publishes it (dense-16x9 
 
 describe('the restore refuses a run record the command cannot have written (dense-16x9 ticket 56, R5)', () => {
   it('checks the effective mode against the document and the failure against the warning', async () => {
-    moveBeforeGrowDefaultTest.on = true;
     const model = await layout(parse(S21), factories);
     expect(model.moveBeforeGrowRun?.effective).toBe('off');
     const forge = (change: (forged: LayoutModel) => void): string => { const forged = JSON.parse(serializeLayoutModel(model)) as LayoutModel; change(forged); return JSON.stringify(forged); };
@@ -290,7 +289,6 @@ describe('a refusal built from a caught value does not fall back unless that val
   });
 
   it('does not fall back on an ELK rejection with no reason under the tier fallback (the reviewer\'s Promise.reject())', async () => {
-    moveBeforeGrowDefaultTest.on = true;
     let made = 0;
     const createElkAttempt: typeof createAttempt = () => (++made <= 2 ? { terminateWorker() {}, layout: () => Promise.reject() } as unknown as ReturnType<typeof createAttempt> : createAttempt());
     const error = await layout(parse(TWO_GROUPS), { ...factories, createElkAttempt }).then(() => undefined, (caught: unknown) => caught);
@@ -316,7 +314,6 @@ describe('a refusal built from a caught value does not fall back unless that val
       expect(strict).toBeInstanceOf(PostconditionRefusal);
       expect((strict as PostconditionRefusal).caught).toBe(true);
       expect((strict as PostconditionRefusal).cause).toBeInstanceOf(TypeError);
-      moveBeforeGrowDefaultTest.on = true;
       const error = await layout(parse(TWO_GROUPS), factories).then(() => undefined, (caught: unknown) => caught);
       expect(error).toBeInstanceOf(PostconditionRefusal);
       expect((error as PostconditionRefusal).cause).toBeInstanceOf(TypeError);

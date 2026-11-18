@@ -15,6 +15,9 @@ import * as trunk from '../../src/layout/trunk.js';
 import { PostconditionRefusal } from '../../src/layout/placement-refusal.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): the tests marked below count what one run does, and the growth choice of the default runs
+// a sheet that leaves a seat short a second time, with the option off. They write the option, which is the first run of the default.
 
 // Dense-16x9 ticket 49 (owner ruling 2026-11-18: the whole-sheet measure wins): a far-end order that a full trial measures worse is declined once and
 // recorded (`farEndDecision`); G5, the far-end round and the publication read the face through one reader (`readFace`).
@@ -140,7 +143,8 @@ describe('a far-end decision excuses a face only with the evidence that earned i
     const reserve = farEnd.reserve;
     const spy = vi.spyOn(farEnd, 'reserve').mockImplementation((...args: Parameters<typeof reserve>) => { armed = true; return reserve(...args); });
     try {
-      const model = await layout(parse(text(FIXTURE)), { ...options, testSideTrace: (event: Record<string, unknown>) => { if (String(event.ev).startsWith('far-end')) events.push(`${String(event.ev)} ${String(event.why ?? '')}`); },
+      // One run (ticket 60): the option written, so the growth choice runs no second command whose far-end round would trace again.
+      const model = await layout(withMoveBeforeGrow(parse(text(FIXTURE))), { ...options, testSideTrace: (event: Record<string, unknown>) => { if (String(event.ev).startsWith('far-end')) events.push(`${String(event.ev)} ${String(event.why ?? '')}`); },
         createElkAttempt: () => {
           if (armed && !failed) { failed = true; return { layout: async () => { throw new Error('one-time worker failure'); }, terminateWorker() {} } as unknown as ReturnType<typeof createAttempt>; }
           return createAttempt();
@@ -314,12 +318,18 @@ describe('a far-end decision holds only the proposal the far-end round generates
       expect(farEndDecisionsOf(on.reservations ?? [])).toEqual([]);
       expect(g5(on)).toEqual(['port-order snk1', 'port-order snk1', 'port-order snk1']);
       expect(g5(await run(withOption(sweep(name), false)))).toEqual([]);
+      // The sheet does not write the option: the default leaves a seat short with it on, so the growth choice (ticket 60) keeps the option-off run.
+      const byDefault = await run(sweep(name));
+      expect(byDefault.moveBeforeGrowRun?.choice).toBeDefined();
+      expect(g5(byDefault)).toEqual([]);
     }, 120000);
   }
-  it('ticket 59: a-corridor-moves-after-the-grid-settles with nodes reversed declines only a follow-up and keeps G5 on its four faces', async () => {
+  // Since the move-before-grow default (dense-16x9 ticket 45) the sheet runs with the option on: the follow-up is declined as before and records
+  // nothing, and G5 stands on three faces (lab6slb002 passes; four faces with the option off).
+  it('ticket 59: a-corridor-moves-after-the-grid-settles with nodes reversed declines only a follow-up and keeps G5 on its three faces', async () => {
     const model = await run(reversedNodes(text('a-corridor-moves-after-the-grid-settles')));
     expect(farEndDecisionsOf(model.reservations ?? [])).toEqual([]);
-    expect(g5(model).sort()).toEqual(['port-order lab3wrp001', 'port-order lab3wrp003', 'port-order lab6slb002', 'port-order sa-edge3']);
+    expect(g5(model).sort()).toEqual(['port-order lab3wrp001', 'port-order lab3wrp003', 'port-order sa-edge3']);
   }, 240000);
 
   it('review 4: a follow-up proposal equal to a split of the first proposal decides nothing, also on a measured 7f refusal', async () => {
@@ -356,7 +366,28 @@ describe('a far-end decision holds only the proposal the far-end round generates
       expect({ changed, injected }).toEqual({ changed: true, injected: true });
       expect(origins).toContain(`next ${wanted}.top`);
       expect(farEndDecisionsOf(model.reservations ?? [])).toEqual([]);
-      expect(g5(restoreFinalLayout(JSON.stringify(model))).sort()).toEqual(['port-order lab3wrp001', 'port-order lab3wrp003', 'port-order lab6slb002', 'port-order sa-edge3']);
+      // Three faces since the move-before-grow default (dense-16x9 ticket 45); lab6slb002 as well with the option off.
+      expect(g5(restoreFinalLayout(JSON.stringify(model))).sort()).toEqual(['port-order lab3wrp001', 'port-order lab3wrp003', 'port-order sa-edge3']);
     } finally { judged.mockRestore(); reserved.mockRestore(); }
   }, 240000);
+});
+
+// Ticket 54 (parked, a known defect of 0.3.0): one link joins two faces that one far-end proposal re-orders. Each face is sorted against the far
+// end as it stands, so the trial mirrors the fault and the next proposal mirrors it back; the round stays unsettled. With the option on
+// (dense-16x9 ticket 45) the two sweep rows keep a G5 that the option-off run does not have; under the default the growth choice (ticket 60)
+// keeps the option-off run. These pins change when ticket 54 is fixed.
+describe('a single link between two re-ordered faces can leave the far-end round unsettled (dense-16x9 ticket 54, parked)', () => {
+  const withOption = (yaml: string, on: boolean): string => { const sheet = readYaml(yaml) as Record<string, unknown>; sheet.layout = { ...(sheet.layout as object ?? {}), moveBeforeGrow: on }; return writeYaml(sheet); };
+  for (const [name, form, faces] of [['v6-3-3', 'as written', ['snk0', 'src1']], ['v7-3-1', 'nodes reversed', ['snk1', 'src0']]] as const) {
+    const formed = (yaml: string): string => form === 'as written' ? yaml : reversedNodes(yaml);
+    it(`ticket 54: ${name}, ${form}, with the option on keeps three G5 findings on each of ${faces.join(' and ')}; the option off and the default have no G5`, async () => {
+      const on = await run(formed(withOption(sweep(name), true)));
+      expect(on.diagnostics.some(item => item.code === 'FAR_END_ORDER_UNSETTLED')).toBe(true);
+      expect(g5(on).sort()).toEqual(faces.flatMap(node => Array(3).fill(`port-order ${node}`)));
+      expect(g5(await run(formed(withOption(sweep(name), false))))).toEqual([]);
+      const byDefault = await run(formed(sweep(name)));
+      expect(byDefault.moveBeforeGrowRun?.choice).toBeDefined();
+      expect(g5(byDefault)).toEqual([]);
+    }, 120000);
+  }
 });

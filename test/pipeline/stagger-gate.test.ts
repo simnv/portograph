@@ -28,10 +28,11 @@ import { withLayoutEntry } from '../aspect-fixture.js';
 import { restoreFinalLayout } from '../../src/internal.js';
 import { declineStagger } from '../../src/layout/reservations.js';
 import { holds } from '../../src/layout/reservation-checks.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 // Dense-16x9 ticket 22: the acceptance gate judges each stagger on the complete placement, aspect aim first; the stage-5 canvas judges nothing.
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-top-row-staggers-when-a-lower-tier-sets-the-stage-5-width.yaml', import.meta.url), 'utf8');
-const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (text: string): Promise<LayoutModel> => layout(withTheOldDefault(parse(text)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const AIM = 16 / 9;
 const gap = (model: LayoutModel): number => aspectGap(model.canvas!.width, model.canvas!.height, AIM);
 const failed = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id);

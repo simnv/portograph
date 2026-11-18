@@ -11,6 +11,9 @@ import { course } from '../../src/pipeline/rounds.js';
 import type { State } from '../../src/pipeline/state.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow, withTheOldDefault } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): the tests marked below count what one run does, and the growth choice of the default runs
+// a sheet that leaves a seat short a second time, with the option off. They write the option, which is the first run of the default.
 
 const threeCantonYaml = readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8');
 const spineLeafYaml = readFileSync(new URL('../../goldens/real/private-datacenter-spine-leaf.yaml', import.meta.url), 'utf8');
@@ -71,7 +74,9 @@ describe('course 7e preflight', () => {
 
   it('refuses the doomed course trial at 7e on goldens/real/private-datacenter-spine-leaf.yaml with an identical layout hash', async () => {
     resetAttemptCounters();
-    const model = await layout(parse(spineLeafYaml), options);
+    // Read as main read it before the move-before-grow default (dense-16x9 ticket 45): with the default the centring moves a node before it
+    // grows one, and the sheet asks for no course trial that 7e refuses. The doomed trial is the premise here.
+    const model = await layout(withTheOldDefault(parse(spineLeafYaml)), options);
     expect(attemptCounters.coursePreflight.checked).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.coursePreflight.refusedAt7e).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.attempts).toBe(1);
@@ -81,12 +86,15 @@ describe('course 7e preflight', () => {
     // as interacting-blocks): twelve members straight, 9 px taller (f6e67a88cd23 before). Dense-16x9 ticket 32, review 1: the pair of the
     // firewall row and the spine row is already a minimum and records its joint premise (two rowOrder entries); the geometry is the same
     // (58164b95287a before).
-    expect(layoutHash(model)).toBe('5d3e4b78ae7e');
+    // Dense-16x9 ticket 45: the document echoes the opt-out the test writes (`layout.moveBeforeGrow: false`); without that echo the layout is main's.
+    const document = { ...model.document };
+    delete document.layout;
+    expect(layoutHash({ ...model, document })).toBe('5d3e4b78ae7e');
   }, 60000);
 
   it('refuses the doomed course trial at 7e on goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml identically to bypassing preflight', async () => {
     resetAttemptCounters();
-    const withPreflight = await layout(parse(threeCantonYaml), options);
+    const withPreflight = await layout(withMoveBeforeGrow(parse(threeCantonYaml)), options);
     expect(attemptCounters.coursePreflight.checked).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.coursePreflight.refusedAt7e).toBe(1);
     expect(attemptCounters.attempts).toBe(1);
@@ -95,7 +103,7 @@ describe('course 7e preflight', () => {
     course.preflight = async () => undefined;
     let withoutPreflight: LayoutModel;
     try {
-      withoutPreflight = await layout(parse(threeCantonYaml), options);
+      withoutPreflight = await layout(withMoveBeforeGrow(parse(threeCantonYaml)), options);
     } finally {
       if (savedPreflight !== undefined) course.preflight = savedPreflight;
       else delete course.preflight;

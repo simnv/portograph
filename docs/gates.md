@@ -33,7 +33,7 @@ Stuck lock: a message says that the processes of the previous job will not die. 
 | `npm run corpus -- <out.tsv>` | Lays out and scores every `goldens/**/*.yaml` (`goldens/synthetic/stage-inputs.yaml` is test data and is skipped). One TSV line per sheet. |
 | `npm run sweep -- <out.txt> [--only a,b]` | Lays out every `test/fixtures/sweep/*.yaml`. One line per sheet with the removed links. Prints `N removed of M`. |
 | `npm run gate:compare -- <base.tsv> <head.tsv>` | Reads two corpus files. Prints the changed cells side by side and flags every sheet that is worse. |
-| `npm run r3 -- <sheet.yaml>...` | The R3 check (see `CODING_STANDARDS.md`): lays each sheet out as written, with `links` reversed and with `nodes` reversed. Prints `SAME` or the first differing JSON path. |
+| `npm run r3 -- <sheet.yaml>...` | The R3 check (see `CODING_STANDARDS.md`): lays each sheet out as written, with `links` reversed and with `nodes` reversed. Prints `SAME` or the first differing JSON path. An order that falls back to the option-off run of `layout.moveBeforeGrow` prints `FALLBACK <code>` unless `FALLBACK_SHEETS` lists the sheet (dense-16x9 tickets 45 and 56). |
 
 The corpus file has a header line and these columns: `file Q X Xf W gates warn routed fb edge ob bends side removed labelBorder track fallback choice hash`. Every number is the scorer's. `Q` is the score; it is printed and never judged. `gates` lists the error gates with a violation, or `-`. `bends` counts the real bends of every kept link. `removed` counts the links that stage 8 removed. `fallback` is 1 when a sheet that writes no `layout.moveBeforeGrow` ran with the default on and published the option-off run (dense-16x9 ticket 56), else 0; the corpus script also prints the count. A base written before the column is reused, and its missing column reads as 0. `choice` is 1 when such a sheet completed both runs and the growth choice kept the option-off run (dense-16x9 ticket 60), else 0; a choice is no fallback, `gate:compare` prints a changed `choice` cell and judges it by nothing, and the sheet is judged on its geometry columns as any other. A base written before `choice` is reused too: the compare reads only the columns both files have. `hash` is 12 hex digits of the sha256 of the layout JSON; any geometry change moves it.
 
@@ -51,7 +51,7 @@ npm run gate:branch -- [--skip-tests] [--allow-canvas] [--strict]
 
 It refuses a dirty tree and merges `main` into the branch (a conflict stops it). Then it runs typecheck, lint and `npm test`. It measures `main` and the branch with `corpus` and `sweep`, prints the `gate:compare` result and the sweep difference, and runs R3 on the sheets whose hash changed. It ends with exactly `GATE PASS` or `GATE FAIL: <reasons>`.
 
-It fails on any `WORSE` row (a row that only changes the canvas passes unless `--strict`), on any link that the sweep removes and `main` keeps, on an R3 `links` difference, and on a typecheck, lint or test failure. Use `--skip-tests` for a change that touches only documents.
+It fails on any `WORSE` row (a row that only changes the canvas passes unless `--strict`), on any link that the sweep removes and `main` keeps, on an R3 `links` difference, on an R3 `FALLBACK` line of any order, and on a typecheck, lint or test failure. Use `--skip-tests` for a change that touches only documents.
 
 ## Measure a branch by hand
 

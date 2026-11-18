@@ -160,10 +160,11 @@ export interface NormalisedDocument {
      */
     feedOrder?: boolean;
     /**
-     * When true, the alignment of stage 7c moves a node inside the slack of its row before it grows one, and the seat it takes owns the body
-     * (ADR-0027, dense-16x9 ticket 02): the cap is 5 times the width the node needs for itself, and a growth no seat keeps is given back by the
-     * seat. Default false: a body grows in place up to 12 times that width, and the centre rule gives back a stranded growth (ticket 71). An
-     * opt-in until ticket 15 (the joint seat plan) passes the acceptance set.
+     * On by default (since 0.3.0, dense-16x9 tickets 45 and 56): not written, a run that fails for a placement reason is laid out again with
+     * the option off and warns `MOVE_BEFORE_GROW_FALLBACK`; `true` is strict (the failure throws). On, the alignment of stage 7c moves a node inside the slack of its row before it grows one,
+     * and the seat it takes owns the body (ADR-0027, dense-16x9 ticket 02): the cap is 5 times the width the node needs for itself, and a growth
+     * no seat keeps is given back by the seat. `false` is the opt-out: a body grows in place up to 12 times that width, and the centre rule gives
+     * back a stranded growth (ticket 71). Read only through `moveBeforeGrow` (`src/layout/read/move-before-grow.ts`).
      */
     moveBeforeGrow?: boolean;
     /**

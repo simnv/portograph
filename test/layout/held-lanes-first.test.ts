@@ -16,8 +16,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 type Form = { gates: string[]; crossings?: number; threwBefore?: true; throwsYet?: string };
 const forms = (yaml: string): Record<string, string> => {
-  const off = yaml.replace(/^layout: \{moveBeforeGrow: true\}\n/m, '');
-  const on = `layout: {moveBeforeGrow: true}\n${off}`;
+  // The option is the default since dense-16x9 ticket 45, so the off forms write the opt-out.
+  const bare = yaml.replace(/^layout: \{moveBeforeGrow: true\}\n/m, '');
+  const off = `layout: {moveBeforeGrow: false}\n${bare}`, on = `layout: {moveBeforeGrow: true}\n${bare}`;
   return Object.fromEntries((['off', 'on'] as const).flatMap(mode => {
     const text = mode === 'on' ? on : off;
     return [[`${mode}, as written`, text], [`${mode}, links reversed`, reversed(text, 'links') as string], [`${mode}, nodes reversed`, reversed(text, 'nodes') as string]];

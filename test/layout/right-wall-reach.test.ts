@@ -5,6 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { laneSidesHold, laneWallsBeside, rightWallReach } from '../../src/layout/lanes.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 // Ticket DR-04 review: the centre rule's tail (7c) reserves the right edge `rightWallReach` gives, and the move guard `laneSidesHold` refuses a box
 // past it. Both read one wall set (`laneWallsBeside`, an aligned perimeter lane of another tier included) and the occupied reach toward each lane.
@@ -12,7 +13,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const sheet = 'a-link-past-a-canton-runs-in-the-margin';
 
 it('the tail reach at a wall of another tier is the edge the move guard allows, and 1 px more is refused', async () => {
-  const model: LayoutModel = await layout(parse(readFileSync(new URL(`../../goldens/synthetic/${sheet}.yaml`, import.meta.url), 'utf8')),
+  const model: LayoutModel = await layout(withTheOldDefault(parse(readFileSync(new URL(`../../goldens/synthetic/${sheet}.yaml`, import.meta.url), 'utf8'))),
     { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   const walled = Object.values(model.groups).filter(group => group.bounds && laneWallsBeside(model, group)
     .some(lane => lane.kind === 'perimeter' && lane.tier !== group.tier && lane.x > group.bounds!.x));

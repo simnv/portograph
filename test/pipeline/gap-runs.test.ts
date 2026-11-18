@@ -16,6 +16,8 @@ import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
+import { parse } from '../../src/index.js';
 
 const read = (name: string): string =>
   withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8'));
@@ -26,6 +28,12 @@ const place = async (fixture: string): Promise<LayoutModel> =>
 /** The model 7f receives: every placement rule before it, and no group label yet. */
 const beforeBands = async (fixture: string): Promise<LayoutModel> =>
   bundles(bars(centre(flanks(lanes(rows(await placed(fixture)))))));
+/**
+ * The same, read as main read it before the move-before-grow default (dense-16x9 ticket 45). The two plan tests below derive their heights
+ * by hand from the rows of the parts; with the default the centring moves a node before it grows one and the parts stand elsewhere.
+ */
+const beforeBandsOld = async (fixture: string): Promise<LayoutModel> =>
+  bundles(bars(centre(flanks(lanes(rows(await placed(withTheOldDefault(parse(fixture)))))))));
 
 /**
  * Stress-test reproducers. ADR-0015 rule 1 allocates the runs that
@@ -253,7 +261,7 @@ it('plans a tier gap whose nested stems stand close without the 2k pocket a rout
   // needs at its far checkpoint. Every link of the fixture is a planned part now (tier-gap-rows.md Section 5: the drop and residual
   // terms replace `stemShortfall`): its stems are claimed and its rows and legs reserved, so no pocket is needed and the plan asks
   // for 58.25 px, under the 60 px band gap. Nothing grows.
-  const before = await beforeBands(read('a-stem-tip-clears-the-tip-that-faces-it.yaml'));
+  const before = await beforeBandsOld(read('a-stem-tip-clears-the-tip-that-faces-it.yaml'));
   const after = bands(before);
   expect(after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN')).toEqual([]);
   const busy = tierGapPlans(after).filter(item => item.plan.parts.length);
@@ -278,7 +286,7 @@ it('grows the gap of the band that sets the group edge to the rows of its 25 par
   // (G4 18, G6 47 on main); they are reserved now, and the gap grows 187 px, the height the published plan asks: 7f replaces the growth of
   // each round by `H - room` and does not accumulate it (ticket 51; the rounds added 198.5 px while they accumulated). Since ticket 57 the one solve
   // reads it once, after the last move in x, and asks the same 187 px.
-  const before = await beforeBands(orthogonalLinks(read('a-band-holds-the-group-that-set-its-edge.yaml')));
+  const before = await beforeBandsOld(orthogonalLinks(read('a-band-holds-the-group-that-set-its-edge.yaml')));
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
   // The plan is read once (ticket 57): link-17 and link-37 ask the same height, and the first part in the plan's order names it (link-37 since

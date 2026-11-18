@@ -21,9 +21,12 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // DR-04 re-baselined m1-sip-edge (70e112a3... before): link ids and anonymous port ordinals follow the canonical link order; every
 // node box, port, path and the canvas are byte-identical (user approval, 2026-11-09). The parser fix for structured endpoints changed the ids
 // once more (e124d93a... before), again with the same geometry (user approval).
+// Dense-16x9 ticket 45 (the move-before-grow default) re-baselined both: the centring moves a node before it grows one, so the bodies and the
+// paths change (44413304... and 2f8dee6c... before). The m1-sip-edge geometry waits for the owner's re-approval, as its golden does. On ticket 56
+// both layouts gain the record `moveBeforeGrowRun` and the document echo `layout.moveBeforeGrow: true` of ticket 56 (07a7f1bf... and 2796ac17... before).
 const baselines = {
-  'm1-sip-edge': '44413304d477acb120c1cc29753338b7c794f18a669d4b52c7d0bd4769bb89da',
-  'synthetic/drawio-constructs': '2f8dee6c7b7047b40bf5a1619e6d7f35e61c80fbbd3c0bbd97dcbb25f6ebab96',
+  'm1-sip-edge': '7437eded032a9cf026ce17948f878e476b66bb0e3769fdde25f89d087332cc61',
+  'synthetic/drawio-constructs': 'c8f4a56a213c0640de420ee70e1a60d163a9da4d388c6d3a3321a6976a1912c6',
 };
 
 for (const [fixture, baseline] of Object.entries(baselines)) {

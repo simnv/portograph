@@ -14,6 +14,7 @@ import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { rows } from '../../src/layout/rows.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
@@ -152,8 +153,10 @@ links: [${pairs.map(([x, y]) => `[a.a${x}, b.b${y}]`).join(', ')}]
  * port's stem and the later link has a reserved turn no route can reach.
  */
 it('stress ticket 08: a leg that travels over another port of its own side turns one pitch beyond it', async () => {
+  // Read as main read it before the move-before-grow default (dense-16x9 ticket 45): with the default the seat caps w1 (census class D), the leg
+  // of m1 no longer travels over the other port, and the side is not nested.
   const yaml = readFileSync(new URL('../../goldens/synthetic/widened-child-packs-tier.yaml', import.meta.url), 'utf8');
-  const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
+  const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(withTheOldDefault(parse(yaml))))))))));
   const node = model.nodes['m1']!;
   const plan = sidePlan(model, 'm1', 'top')!;
   const ports = node.ports.filter(port => port.side === 'top').sort((a, b) => a.anchor!.x - b.anchor!.x);

@@ -8,6 +8,7 @@ import { withLayoutMutation } from '../../src/layout/mutation.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 /**
  * Ticket 75. A centring run ends when a pass changes no geometry. A group whose alignment is infeasible has its
@@ -42,7 +43,7 @@ describe('centring ends at a fixed point (ticket 75)', () => {
   }, 60000);
 
   it('the whole layout of the fixture reports no stall and no group with a spent budget', async () => {
-    const model = await layout(parse(golden('a-one-node-title-over-a-skewed-leg-widens-the-group')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(withTheOldDefault(parse(golden('a-one-node-title-over-a-skewed-leg-widens-the-group'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'CENTRE_INVARIANT_UNVERIFIED')).toEqual([]);
   }, 120000);
@@ -61,8 +62,10 @@ links: [[a.p, c.p], [b.p, d.p]]`)))));
   }, 60000);
 
   it('geometry that really oscillates still spends the budget and reports the stall', async () => {
-    // Two ordered child ports whose parents stand in the opposite order: the group jumps 42.75 px on every pass.
-    const input = flanks(lanes(rows(await placed(withoutJointOrder(`portograph: 2
+    // Two ordered child ports whose parents stand in the opposite order: the group jumps 42.75 px on every pass. Read as main read it before the
+    // move-before-grow default (dense-16x9 ticket 45): with the default the centring moves a node before it grows one, the alignment settles in
+    // two passes, and nothing oscillates.
+    const input = flanks(lanes(rows(await placed(withTheOldDefault(parse(withoutJointOrder(`portograph: 2
 groups: {up: {tier: 0}, low: {tier: 1}}
 nodes:
   a: {group: up, ports: [{name: p, side: bottom}]}
@@ -73,7 +76,7 @@ nodes:
     ports:
       - {name: p, side: top, order: 0}
       - {name: q, side: top, order: 1}
-links: [[a.p, c.q], [b.p, c.p]]`)))));
+links: [[a.p, c.q], [b.p, c.p]]`)))))));
     const budget = createCentreBudget();
     const model = withLayoutMutation(input, 'centre', draft => centreDraft(draft, budget));
     expect(budget).toEqual({ remaining: 0, passes: 8 });
@@ -89,7 +92,7 @@ links: [[a.p, c.q], [b.p, c.p]]`)))));
     read.off = true;
     try {
       // Architecture-2 ticket 54: three-continents converges since titles are placed last, so the stall is read on a sheet whose centring still stalls (three calls).
-      await layout(parse(golden('a-frame-pack-stops-at-a-riser-lane')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      await layout(withTheOldDefault(parse(golden('a-frame-pack-stops-at-a-riser-lane'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     } finally { read.off = false; }
     const kept = calls.filter(call => call.off! > 0 && call.remaining! > 0);
     expect(kept.length).toBeGreaterThan(0);

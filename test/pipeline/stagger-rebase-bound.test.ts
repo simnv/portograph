@@ -8,6 +8,7 @@ import type { AnyRound } from '../../src/pipeline/round.js';
 import { declinedStaggersOf, declineTrunk, reserve } from '../../src/layout/reservations.js';
 import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 /**
  * Dense-16x9 ticket 22, review 3: a round whose 7f trial refuses a kept stagger by name declines that row and places the baseline again without it
@@ -34,7 +35,7 @@ ${ids.map(id => `  - [core, h${id}]\n${members.map(n => `  - [h${id}, ${id}${n}]
 
 describe('a declined stagger costs one placement outside the cap, once per row (dense-16x9 ticket 22, review 3)', () => {
   it('declines each refused row once, by one placement outside the cap each, and never throws the placement cap', async () => {
-    const env = createEnv(parse(yaml), { createElkAttempt: createAttempt });
+    const env = createEnv(withTheOldDefault(parse(yaml)), { createElkAttempt: createAttempt });
     const s = await firstState(env);
     expect(s.kept7e.staggerRows?.map(row => row.group)).toEqual(['g-a', 'g-b', 'g-c', 'g-d']);
     // A trial carries this marker in its ledger; the baseline placed again from the kept ledger does not.

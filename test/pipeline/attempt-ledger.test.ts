@@ -6,6 +6,9 @@ import type { AttemptTraceEvent } from '../../src/layout/placement-attempt.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): this file counts what one run does, and the growth choice of the default runs a
+// sheet that leaves a seat short a second time, with the option off. The sheets write the option, which is the first run of the default.
 
 /**
  * Architecture ticket 13, phase 1: the ledger. It reads the counts of section 2 of the design (main 78dcc8b, before any change of 7f) and pins them.
@@ -25,7 +28,7 @@ const golden = (name: string): string =>
   withoutJointOrder(readFileSync(new URL(`../../goldens/${name === 'm1-sip-edge' ? '' : 'synthetic/'}${name}.yaml`, import.meta.url), 'utf8'));
 
 interface Row {
-  name: string; counters: string | undefined; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: 'none' | 'refused';
+  name: string; counters: string | undefined; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: 'none' | 'refused' | 'adopted';
   probe: number; preChords: number; preCentre: number; base7f: string;
 }
 const row = (name: string, counters: string | undefined, runs: number, attempts: number, rounds: number, open: number, chord: number,
@@ -54,20 +57,25 @@ const ROWS: Row[] = [
   // Ticket 65: the settle after the rounds puts src back at the spec's x, a direct member then crowds a planned part, and the attempt body runs
   // once more with it refused (two bodies of one round each, one settle and its eight passes each): 2/48/14/3 and 2 rounds (1/24/10/3 and 1 before).
   // DR-04: the copy that declares `access` before `src`, so the canonical link order lays the shape of the spec out again.
-  row('a-tier-gap-plan-orders-every-part-middle-tier-first', '2/48/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
-  row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/6/7/3', 1, 1, 1, 0, 0),
+  // Dense-16x9 ticket 45 (the move-before-grow default): the centring moves a node before it grows one. a-tier-gap-plan places three times, adopts the re-seat
+  // and runs one round (2/48/14/3, 1 run, 2 rounds, refused, pre-7f chords 1 before); two-interleaved runs a second attempt (1/6/7/3, one of each before).
+  row('a-tier-gap-plan-orders-every-part-middle-tier-first', '1/50/10/3', 3, 1, 1, 0, 0, { reseat: 'adopted', preChords: 3 }),
+  row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '2/11/10/4', 2, 2, 2, 0, 0),
   row('a-tier-gap-grows-to-its-rows', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 54: one centring pass fewer (1/5/7/3 before).
-  row('a-re-seated-band-carries-its-bar-and-flank', '1/4/7/3', 1, 1, 1, 0, 0),
-  row('sync-links-do-not-stack-a-tier', '1/4/7/3', 1, 1, 1, 0, 0),
+  // Dense-16x9 ticket 45 (the move-before-grow default): the band sheet runs a second attempt (1/4/7/3, one of each before); sync-links places twice (1/4/7/3, 1 run before).
+  row('a-re-seated-band-carries-its-bar-and-flank', '2/8/12/5', 2, 2, 2, 0, 0),
+  row('sync-links-do-not-stack-a-tier', '1/6/7/3', 2, 1, 1, 0, 0),
   row('an-overlay-leaves-a-lateral-side-past-a-sibling-body', '2/7/12/5', 2, 2, 2, 0, 0),
   // Ticket 22: a long, flat chord never joins perpendicular faces, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
   // The far-end pull (ticket 22) stands lb next to fe4, so its link is a chord (1/14/7/3 before).
   // Ticket 75: the pull is idempotent, so the 7f held-axes probe moves nothing (probe 1 before).
-  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/13/7/3', 4, 1, 1, 0, 0),
+  // Dense-16x9 ticket 45 (the move-before-grow default): one centring pass fewer (1/13/7/3 before).
+  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/12/7/3', 4, 1, 1, 0, 0),
   // Dense-16x9 ticket 04 (slice 2) adds a spare node to the core rank so that the fan is no solid block; main counts the same on the new input
   // (1/7/7/3, 2 runs, no pre-7f chord before).
-  row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/24/7/3', 3, 1, 1, 0, 0, { preChords: 1 }),
+  // Dense-16x9 ticket 45 (the move-before-grow default): a second attempt and a fourth place run (1/24/7/3, 3 runs, pre-7f chords 1 before).
+  row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '2/19/12/5', 4, 2, 2, 0, 0, { preChords: 3 }),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 162 (a diagonal may cross a title): the two feeds the canton titles refused are chords before centring, which takes them off (pre-7f chords
   // lost 2), and the sheet needs two centring passes less (1/10/7/3 before).
@@ -88,7 +96,8 @@ const ROWS: Row[] = [
   // (the reservation `laneOwner` reads the anchor, not the flag), where it was refused after 7f for no fewer bends. The second 7f attempt never starts: attempts and rounds 2 to 1. The published layout and score are the same.
   // The 9 px pills need three placement runs instead of four; the other decisions are unchanged.
   row('a-canton-column-is-not-pulled-into-a-flank', undefined, 3, 1, 1, 0, 0),
-  row('a-flank-link-around-a-neighbour-runs-along-the-core-edge', '1/4/7/3', 1, 1, 1, 0, 0),
+  // Dense-16x9 ticket 45 (the move-before-grow default): a second attempt (1/4/7/3, one of each before).
+  row('a-flank-link-around-a-neighbour-runs-along-the-core-edge', '2/8/12/5', 2, 2, 2, 0, 0),
   // Ticket 156: protected x separation restores five centring passes; every other count is unchanged.
   row('m1-sip-edge', '1/5/7/3', 1, 1, 1, 0, 0),
   // The phase-1 fixture: the base 7f chord step moves a group (before this, only NTP among the named sheets did).
@@ -106,7 +115,7 @@ async function ledger(text: string, on = true): Promise<Reading> {
   resetAttemptCounters(); attemptCounters.ledger = on;
   const events: AttemptTraceEvent[] = [];
   // The group lift (ticket 08) is off: the ledger counts one command, and each lift trial is one more whole command run.
-  await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true, ...(on ? { attemptTrace: event => events.push(event) } : {}) });
+  await layout(withMoveBeforeGrow(parse(text)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true, ...(on ? { attemptTrace: event => events.push(event) } : {}) });
   const c = attemptCounters, i = c.invalidations, placed = c.placements.slice(0, 1 + i.fanReruns), base = c.attemptLog[0]!;
   return { counters: [c.settleCalls, c.centringPasses, c.candidateCopies, c.validationReplays].join('/'),
     runs: c.placeRuns, attempts: c.attempts, rounds: c.rounds, open: c.openRounds, chord: c.chordRoundsMoved, baseChord: base.chordRoundsMoved,
@@ -154,12 +163,13 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
   // and no settle round replays for a growth: three-continents 41/19 (43/21 and 25 gap rounds before), the others 0/0 (5, 2, 2, 1 gap
   // rounds), the chord-step fixture 10/10 (13 gap rounds).
   // DR-04: three-continents 26/16 (41/19 in the written order; see its row above).
+  // Dense-16x9 ticket 45 (the move-before-grow default): a-tier-gap-plan 1/0/1 (2/0/2: one body, no retry); two-interleaved 0/0/2 (0/0/1: two attempts).
   it.each([
-    ['three-continents', 26, 16, 2], ['a-tier-gap-plan-orders-every-part-middle-tier-first', 2, 0, 2], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 1],
+    ['three-continents', 26, 16, 2], ['a-tier-gap-plan-orders-every-part-middle-tier-first', 1, 0, 1], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
     ['a-tier-gap-grows-to-its-rows', 0, 0, 1], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 1], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 3],
   ] as const)('derives once: %s replays %i, settled copies %i, gap solves %i', async (name, replays, trials, solves) => {
     resetAttemptCounters(); attemptCounters.ledger = true;
-    await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true });
+    await layout(withMoveBeforeGrow(parse(golden(name))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true });
     expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapSolves]).toEqual([replays, trials, solves]);
     // Exactly one solve per 7f attempt body: an attempt and its retries (a crowded direct member runs the body again, ticket 22), each body one
     // entry of the attempt log. Since ticket 65 a-tier-gap-plan retries once (its replays are the settle after the rounds, once per body).
@@ -168,7 +178,7 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
 
   it('reads nothing of the model when the ledger and the trace are off', async () => {
     resetAttemptCounters(); attemptCounters.ledger = false;
-    await layout(parse(golden('a-member-title-widens-a-beside-row')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
+    await layout(withMoveBeforeGrow(parse(golden('a-member-title-widens-a-beside-row'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
     const i = attemptCounters.invalidations;
     // The cheap counters run; the ones that need a read of the links stay at zero and the logs hold no entry. (With the ledger on this fixture loses 1 routed aligned link.)
     // Two 7f runs: the baseline and the course trial that gives link-3 the L of a step (architecture-2 ticket 09, follow-up; one trial, kept).

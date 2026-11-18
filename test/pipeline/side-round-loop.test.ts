@@ -6,6 +6,9 @@ import type { SideOffer } from '../../src/layout/side-measure.js';
 import { portKey } from '../../src/layout/sides-one.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow, withTheOldDefault } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): the tests marked below count what one run does, and the growth choice of the default runs
+// a sheet that leaves a seat short a second time, with the option off. They write the option, which is the first run of the default.
 
 /** Ticket 115: the rules of the round loop, driven by a scripted measure (the real measure never offers these hints). */
 type Script = ((call: number, real: () => SideOffer) => SideOffer) | undefined;
@@ -23,9 +26,14 @@ const PAST_SIBLING = 'an-overlay-leaves-a-lateral-side-past-a-sibling-body';
 const BLOCKED = 'an-overlay-keeps-its-natural-side-when-the-lateral-segment-is-blocked';
 const TWO_TIERS = 'members-of-two-tiers-stand-as-two-rows';
 const FAN = 'a-fan-spreads-its-ports-so-its-chords-hold-clearance';
-const run = async (name: string, script?: Script, testMaxReruns?: number): Promise<LayoutModel> => {
+/**
+ * `old` reads the sheet as main read it before the move-before-grow default (dense-16x9 ticket 45). The tests of the cap need a sheet that
+ * makes one fan re-run; with the default the fan fixture places four times in two attempts, so its own re-runs, not the side round, spend the cap.
+ */
+const run = async (name: string, script?: Script, testMaxReruns?: number, old = false): Promise<LayoutModel> => {
   state.script = script; state.calls = 0;
-  return layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(testMaxReruns === undefined ? {} : { testMaxReruns }) });
+  const document = parse(fixture(name));
+  return layout(old ? withTheOldDefault(document) : withMoveBeforeGrow(document), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(testMaxReruns === undefined ? {} : { testMaxReruns }) });
 };
 const withoutNotes = (model: LayoutModel): string => JSON.stringify({ ...model, diagnostics: model.diagnostics.filter(item => !item.code.startsWith('SIDE_')) },
   (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
@@ -55,20 +63,20 @@ describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
 
   it('skips a side round once the command has made its placement re-runs: a note, no placement run, no clock', async () => {
     // The fan fixture makes one fan re-run; with the cap at 1 the first offer finds the count spent.
-    const model = await run(FAN, call => bogus(call), 1);
+    const model = await run(FAN, call => bogus(call), 1, true);
     const codes = model.diagnostics.map(item => item.code);
     expect(codes.filter(code => code === 'SIDE_ROUND_SKIPPED')).toHaveLength(1);
     expect(codes).not.toContain('SIDE_HINT_REFUSED');
     expect(state.calls).toBe(1);
-    expect(withoutNotes(model)).toBe(withoutNotes(await run(FAN)));
+    expect(withoutNotes(model)).toBe(withoutNotes(await run(FAN, undefined, undefined, true)));
   }, 60000);
 
   it('refuses a hint whose placement run is rejected, and offers again in the retry round', async () => {
-    const model = await run(FAN, call => bogus(call));
+    const model = await run(FAN, call => bogus(call), undefined, true);
     // 2 before dense-16x9 ticket 04 (slice 2) added the spare core-rank node to the fan input; main gives 1 on the new input too.
     expect(model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED')).toHaveLength(1);
     expect(state.calls).toBe(2);
-    expect(withoutNotes(model)).toBe(withoutNotes(await run(FAN)));
+    expect(withoutNotes(model)).toBe(withoutNotes(await run(FAN, undefined, undefined, true)));
   }, 60000);
 
   it('refuses a scripted hint on a link that 7f straightens by itself: the routed trial gives no gain (review M1; crossings are no criterion)', async () => {

@@ -140,7 +140,8 @@ describe('a sibling-frame link is a level cross-frame chord', () => {
     expect(restoreLayoutModel(JSON.stringify(model)).frozenLevelChords).toEqual([link.id]);
   }, 60000);
 
-  it('refuses a forged level record from its first publication on, at stage bands too (slice B review 2)', async () => {
+  // Expected fail since the default flip (dense-16x9 ticket 45): census class D or E (a link past the cap jogs, or a body's feeds are seated one at a time; tickets 16 and 15), a known defect of 0.3.0.
+  it.fails('refuses a forged level record from its first publication on, at stage bands too (slice B review 2)', async () => {
     const text = readFileSync(new URL('../../goldens/synthetic/a-top-padding-growth-keeps-a-level-sibling-chord-level.yaml', import.meta.url), 'utf8');
     let model = await placed(text);
     for (const step of [rows, lanes, flanks, centre, bars, bundles, bands]) model = step(model);

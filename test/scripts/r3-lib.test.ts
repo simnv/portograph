@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { MEMBER_ORDER, checkSheet, differences, firstDifference, reversed } from '../../scripts/r3-lib.mjs';
+import { MEMBER_ORDER, checkSheet, differences, fallbackOf, firstDifference, reversed } from '../../scripts/r3-lib.mjs';
 
 describe('reversed', () => {
   const sheet = ['portograph: 2', 'nodes:', '  a: { group: g }', '  b: { group: g }', '  c: { group: g }', 'links:', '  - [a, b]', '  - [b, c]', '  - [c, a]', ''].join('\n');
@@ -132,5 +132,23 @@ describe('checkSheet', () => {
     let calls = 0;
     const lay = async () => { if (calls++ === 1) throw new Error('boom'); return {}; };
     expect(await checkSheet({ read: () => sheet, lay, describe: describe_ })).toEqual({ lines: [['links', 'ERROR boom'], ['nodes', 'SAME']], bad: 1 });
+  });
+
+  // Dense-16x9 tickets 45 and 56: no order of a sheet takes the fallback to the option-off run unless `FALLBACK_SHEETS` lists it.
+  it('names an order that fell back to the option-off run of moveBeforeGrow, unless the sheet is listed', async () => {
+    const off = { moveBeforeGrowRun: { requested: 'default', effective: 'off', failure: { code: 'centring', message: 'x' } } };
+    const on = { moveBeforeGrowRun: { requested: 'default', effective: 'on' } };
+    // The nodes reversal alone falls back.
+    const nodes = async (text: string) => (text.indexOf('b: {}') < text.indexOf('a: {}') ? off : on);
+    expect(await checkSheet({ read: () => sheet, lay: nodes, describe: describe_ })).toEqual({ lines: [['links', 'SAME'], ['nodes', 'FALLBACK centring']], bad: 1 });
+    // Every order falls back: one written line, and the reversals compare as before.
+    expect(await checkSheet({ read: () => sheet, lay: async () => off, describe: describe_ })).toEqual({ lines: [['written', 'FALLBACK centring'], ['links', 'SAME'], ['nodes', 'SAME']], bad: 1 });
+    // A listed sheet: no FALLBACK line; the nodes reversal is then a plain difference.
+    const listed = await checkSheet({ read: () => sheet, lay: nodes, describe: describe_, listed: true });
+    expect(listed.lines.map(([kind, text]) => [kind, text.startsWith('FALLBACK')])).toEqual([['links', false], ['nodes', false]]);
+    // A growth choice (dense-16x9 ticket 60) is no fallback: it reads a failure, not the effective mode.
+    const choice = { moveBeforeGrowRun: { requested: 'default', effective: 'off', choice: {} } };
+    expect(fallbackOf(choice)).toBeUndefined();
+    expect(fallbackOf(off)).toBe('centring');
   });
 });

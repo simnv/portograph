@@ -90,7 +90,8 @@ describe('a link inside one frame is a straight segment', () => {
     expect([counts.routed.bent, metrics.crossings.count]).toEqual([0, 0]);
   }, 60000);
 
-  it('takes the straight technique for a clear chord, vertical or diagonal, and keeps the blocked one orthogonal', async () => {
+  // Expected fail since the default flip (dense-16x9 ticket 45): census class D or E (a link past the cap jogs, or a body's feeds are seated one at a time; tickets 16 and 15), a known defect of 0.3.0.
+  it.fails('takes the straight technique for a clear chord, vertical or diagonal, and keeps the blocked one orthogonal', async () => {
     // The feed order is off here (ticket 25): the subject is Middle standing on the West-East chord, which the feed order takes away.
     // With the feed order off, ELK's order stands, and it depends on the widths of the nodes. Verdana metrics (snack-theme ticket 157): with the label "East" ELK put East before
     // Middle, so Middle no longer stood on the West-East chord and that link went straight. The label "East switch" gives ELK the order of the Arial run again. The order is

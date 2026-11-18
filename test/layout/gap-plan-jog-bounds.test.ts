@@ -48,7 +48,8 @@ describe('a jogged drop holds the frame edges on both sides of its gap, on a she
   for (const on of [false, true]) {
     for (const [name, text] of [['as written', yaml], ['nodes reversed', reversed(yaml, 'nodes') as string]] as const) {
       it(`clears G6 and grows the gap by name (${name}, moveBeforeGrow ${on ? 'on' : 'off'})`, async () => {
-        const parsed = parse(text), document = on ? { ...parsed, layout: { ...parsed.layout, moveBeforeGrow: true } } : parsed;
+        // The off form writes the opt-out: since dense-16x9 ticket 45 a sheet that writes nothing runs with the option on.
+        const parsed = parse(text), document = { ...parsed, layout: { ...parsed.layout, moveBeforeGrow: on } };
         const model = await layout(document, { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
         expect(model.document.layout?.moveBeforeGrow === true).toBe(on);
         expect(score(model).snapshot.gates.G6.violations).toEqual([]);

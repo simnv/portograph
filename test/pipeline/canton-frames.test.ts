@@ -8,9 +8,12 @@ import { drawio } from '../../src/render/drawio.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+// Read as main read it before 0.3.0 (dense-16x9 ticket 45): the test pins the geometry of the rule before the flip, a growth in place.
+const runOld = (name: string) => layout(withTheOldDefault(parse(fixture(name))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
 const centreX = (box: Rect): number => box.x + box.width / 2;
@@ -62,7 +65,7 @@ describe('canton frames and the unit (canton-groups ticket 2)', () => {
   }, 60000);
 
   it('two members of one tier stand beside each other, 40 px apart, in declaration order', async () => {
-    const model = await run('a-canton-holds-two-members-on-one-tier');
+    const model = await runOld('a-canton-holds-two-members-on-one-tier');
     expect(model.diagnostics.filter(d => d.severity === 'error')).toEqual([]);
     const alpha = frameOf(model, 'alpha'), beta = frameOf(model, 'beta'), lab = frameOf(model, 'lab'), west = frameOf(model, 'west');
     // A `row` member is a one-cell frame too.

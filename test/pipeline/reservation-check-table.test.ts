@@ -9,6 +9,7 @@ import { declineStagger, RESERVATION_CHECKS, reserve, type Reservation } from '.
 import { holds } from '../../src/layout/reservation-checks.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 /**
  * Dense-16x9 ticket 22, review 4: every reservation kind is listed once with its per-entry predicate (`RESERVATION_CHECKS`), and the round check,
@@ -36,7 +37,7 @@ describe('one check table for every reservation kind (dense-16x9 ticket 22, revi
   });
 
   it('refuses at an early restore a declined stagger that the carried stagger contradicts', async () => {
-    const env = createEnv(parse(yaml), { createElkAttempt: createAttempt }), s = await firstState(env), step = env.step;
+    const env = createEnv(withTheOldDefault(parse(yaml)), { createElkAttempt: createAttempt }), s = await firstState(env), step = env.step;
     let early: LayoutModel | undefined;
     env.step = ((stage, run) => {
       const result = step(stage, run);
@@ -56,7 +57,7 @@ describe('one check table for every reservation kind (dense-16x9 ticket 22, revi
   // only it names links; every link it names is a link of the model. Each forgery is refused at an early restore and at a final one, and the
   // round check names the unknown link.
   it('refuses at both restores a decline that names no link, an unknown link, or links on another clause', async () => {
-    const env = createEnv(parse(yaml), { createElkAttempt: createAttempt }), s = await firstState(env), step = env.step;
+    const env = createEnv(withTheOldDefault(parse(yaml)), { createElkAttempt: createAttempt }), s = await firstState(env), step = env.step;
     let early: LayoutModel | undefined;
     env.step = ((stage, run) => {
       const result = step(stage, run);
@@ -64,7 +65,7 @@ describe('one check table for every reservation kind (dense-16x9 ticket 22, revi
       return result;
     }) as typeof env.step;
     await env.place(s.kept);
-    const final = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const final = await layout(withTheOldDefault(parse(yaml)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     for (const model of [early!, final]) {
       const row = Object.keys(model.groups).find(id => !(model.staggerRows ?? []).some(item => item.group === id) && model.groupArrangements?.[id]?.chosen !== 'stagger')!;
       const link = model.links[0]!.id;

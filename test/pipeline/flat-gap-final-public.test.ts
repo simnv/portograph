@@ -8,6 +8,9 @@ import type { LayoutModel } from '../../src/model/layout.js';
 import type { FitLimits } from '../../src/pipeline/publication-fit.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): the tests marked below count what one run does, and the growth choice of the default runs
+// a sheet that leaves a seat short a second time, with the option off. They write the option, which is the first run of the default.
 
 // Dense-16x9 ticket 42, review 1, through the public `layout` call: the final flat-gap choice runs once per command, and it judges the sheet
 // the command publishes. The driver is wrapped to count its calls and their placements, and to skip it for an A/B run.
@@ -103,7 +106,7 @@ describe('the final flat-gap choice and the published sheet of the run (review 2
 
   it('does not decorate again a picked run whose fit changed nothing (P3b)', async () => {
     trace.calls = []; trace.decorated = 0;
-    await layout(parse(synthetic('a-float-component-rises-beside-a-tall-block')), options);
+    await layout(withMoveBeforeGrow(parse(synthetic('a-float-component-rises-beside-a-tall-block'))), options);
     expect(trace.calls.map(({ placements }) => placements)).toEqual([0]);
     expect(trace.decorated).toBe(0);
   }, 120000);

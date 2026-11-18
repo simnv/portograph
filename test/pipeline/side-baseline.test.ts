@@ -9,6 +9,9 @@ import { RouteDeadlineError } from '../../src/index.js';
 import { portKey } from '../../src/layout/sides-one.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): this file counts what one run does, and the growth choice of the default runs a
+// sheet that leaves a seat short a second time, with the option off. The sheets write the option, which is the first run of the default.
 
 /**
  * Ticket 133 (docs/design/side-faces.md, Section 19, Q109a): the side round reads the baseline (7f of the kept model) and judges a trial on its
@@ -42,7 +45,7 @@ async function run(name: string, extra: Partial<Parameters<typeof layout>[1]> = 
   state.script = script; state.calls = 0; state.tamper = tamper; state.routes = 0; state.measured = [];
   let places = 0;
   const labels: string[] = [];
-  const model = await layout(parse(fixture(name)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
+  const model = await layout(withMoveBeforeGrow(parse(fixture(name))), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
     testTiming: label => { labels.push(label); }, ...extra });
   return { model, places, labels };
 }
@@ -142,7 +145,7 @@ describe('the trial deadline (Section 19.5, ticket 141)', () => {
       if (++places !== 2) return real;
       return { layout: async () => { real.terminateWorker(); throw new ElkDeadlineError(1); }, terminateWorker: () => real.terminateWorker() };
     };
-    await expect(layout(parse(fixture(PAST_SIBLING)), { createElkAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false })).rejects.toBeInstanceOf(ElkDeadlineError);
+    await expect(layout(withMoveBeforeGrow(parse(fixture(PAST_SIBLING))), { createElkAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false })).rejects.toBeInstanceOf(ElkDeadlineError);
     expect(places).toBe(2);
   }, 60000);
 

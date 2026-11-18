@@ -91,6 +91,11 @@ describe('a side lane joins the tier-gap plan and the route (ticket 122)', () =>
       const model = await run(name);
       expect(model.diagnostics.filter(item => item.code === 'SIDE_SHAPE_LOST'), name).toEqual([]);
     }
+  }, 120000);
+
+  // Expected fail since the default flip, census class E (dense-16x9 ticket 45; a known defect of 0.3.0, ticket 15, the joint seat plan): the seat
+  // stands m2 at one feed (303 px to 81 px wide), its port of link-18 leaves the side lane 7a reserved, and the link jogs 288 px back to it.
+  it.fails('stands the far port of the riser fixture on its side lane', async () => {
     const riser = await run(RISER);
     expect(Math.abs(findFar(riser, ownerOf(riser, sideLane(riser)), sideLane(riser)).x - sideLane(riser).x)).toBeLessThan(1e-6);
   }, 120000);

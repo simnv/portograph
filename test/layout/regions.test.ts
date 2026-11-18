@@ -22,6 +22,8 @@ import { rebuildBands, moveGroup, union } from '../../src/layout/skeleton-geomet
 import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { placed } from './phase-two-fixture.js';
+import { parse } from '../../src/parse/index.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 const fixture = (name: string) => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
@@ -322,7 +324,8 @@ nodes:
   spare: {group: parents}
   child: {group: children, ports: [{name: p, side: top, order: 0}, {name: q, side: top, order: 1}]}
 links: [[parent.p, child.q], [parent.q, child.p]]`;
-    const input = flanks(lanes(rows(await placed(yaml)))), budget = createCentreBudget();
+    // The growth in place of the rule before 0.3.0 oscillates here; the seat settles it (ADR-0027). Read as before the flip (ticket 45).
+    const input = flanks(lanes(rows(await placed(withTheOldDefault(parse(yaml)))))), budget = createCentreBudget();
     const model = withLayoutMutation(input, 'centre', draft => centreDraft(draft, budget));
     expect(budget).toEqual({ remaining: 0, passes: 8 });
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
@@ -391,7 +394,8 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     expect(right(box) - box.x).not.toBe(box.width);
   });
   it('ticket 01: packs the tier when a widened child swallows the group beside it', async () => {
-    const input = flanks(lanes(rows(await placed(fixture('widened-child-packs-tier')))));
+    // The growth in place of the rule before 0.3.0, read as before the flip (dense-16x9 ticket 45): with the seat, w1 keeps its own width.
+    const input = flanks(lanes(rows(await placed(withTheOldDefault(parse(fixture('widened-child-packs-tier')))))));
     const model = bands(bundles(bars(centre(input))));
     const tier = Object.values(model.groups).filter(group => group.tier === 1).sort((a, b) => a.bounds!.x - b.bounds!.x);
     expect(tier.map(group => group.id)).toEqual(['wide', 'middle', 'edge']);

@@ -1,9 +1,13 @@
 # ADR-0027: Alignment moves a node before it grows one
 
-Status: opt-in until ticket 15 (owner ruling, 2026-11-16). The rule ships behind `layout.moveBeforeGrow: true`; the default
-stays the rule before this ADR (a body grows in place up to `ALIGNMENT_MAX_GROWTH` = 12 times its own width, and the centre rule
-gives back a stranded growth, architecture-2 ticket 71). It becomes the default when ticket 15 (the joint seat plan) passes the
-acceptance set. Accepted for implementation 2026-11-15. Tickets: `.scratch/dense-16x9/`.
+Status: the default since 0.3.0 (owner ruling 2026-11-18, dense-16x9 ticket 45), in three modes (owner ruling 2026-11-18, ticket 56). A
+sheet that does not write `layout.moveBeforeGrow` runs with it on; when that run fails for a placement reason, the sheet is laid out with
+it off and the warning `MOVE_BEFORE_GROW_FALLBACK` names the failure. `true` runs it on and strict: a failure throws. `false`
+opts out and keeps the rule before this ADR (a body grows in place up to `ALIGNMENT_MAX_GROWTH` = 12 times its own width, and the
+centre rule gives back a stranded growth, architecture-2 ticket 71). Accepted for implementation 2026-11-15; an opt-in from
+2026-11-16 (owner ruling 18) until the census of ticket 45. Tickets: `.scratch/dense-16x9/`.
+
+The two paragraphs below record the opt-in, when the option was off by default.
 
 With the option off, every corpus sheet lays out as on main dc568f88 (0 layout-hash changes on the full corpus, 510 sheets). With
 the option on, every sheet lays out as the branch before the opt-in (e95b4aea merged with dc568f88). Every part of the branch reads
@@ -19,23 +23,43 @@ shows that main needs it (review 1 of ticket 02), so they read the option too. E
 A sixth, the end-trim replay that dropped the removed links, changed nothing on the corpus or on 103 hand variants, with the option on or off, and is deleted.
 The face recentring of 7c (81f108fd) also reads the option; it changes 7 corpus sheets with the option off.
 
-## Known failures: why the rule is an opt-in (ruling 18, 2026-11-16)
+## Known failures (the census of ticket 45 and the owner rulings of 2026-11-18)
 
-On inputs off the defaults, with a bundle beside a seated body, the rule removes a link or throws where main draws the
-sheet. These are not trades: a removed link or a refused layout is never the price of a width cap. They keep the rule off by
-default:
+Ruling 18 (2026-11-16) kept the rule an opt-in while off-default inputs with a bundle beside a seated body removed a link or threw.
+The census of ticket 45 (on d664bc10: 565 corpus sheets, 72 sweep sheets, 6 staged sheets and their reversals, option on against
+off) found 0 throws and 0 removed links as written, two throws with nodes reversed, and 72 worse sheets in 11 classes. The owner
+ruled on 2026-11-18:
 
-- A removed link. With the 5 times cap a body cannot reach the common start of a bundle block (main grows it to 280.75 px; the
-  cap stops near 250 px), so the block is bent. Its envelope covers the column of a foreign feed, and the drop of that feed to the
-  same node has no way down: the router removes the link (`ROUTE_CHECKPOINT_SKIPPED` on a stem checkpoint). On the
-  `feedOrder: false` case main draws 6 links and the rule draws 5. The outside dense sheet loses two links at the left-face ports
-  of two sibling nodes 51 px apart in the same way (no seat, no bundle; with ticket 01 merged it loses none).
-- A throw. On a hand variant with a bundle split beside a seated body, the publication refuses the layout ("Centring invariant
-  violated": a port of the bundle's node stands off its feed), where main draws it.
+- **Blocking, fixed before the default flipped:** the two throws with nodes reversed (ticket 46), class K, a group moved with no
+  recorded target (3 sheets, ticket 47), class B, a G9 minimum separation (2 sheets, ticket 48), and class A, a G5 port order
+  (9 sheets, ticket 49).
+- **Shipped in 0.3.0 as known defects, each with a ticket after the flip:**
+  - D, a link past the cap jogs where it was a chord or straight (20 sheets; ticket 16 and the census item 6).
+  - E, a body's feeds are seated one at a time, not by one plan (9 sheets; ticket 15).
+  - F, a capped parent loses the course or the turn order of its flank links (3 sheets; census item 8).
+  - I, the centring passes spend their budget (2 sheets; census item 9).
+  - C, a faces-away link that ends on a face beside a slanted chord (G6, one fixture,
+    `a-seated-row-and-the-row-below-stand-together`; ticket 50, parked).
+  - A follow-up far-end decline is not recorded as a far-end decision, so G5 still judges its face: a G5 port-order finding with
+    the option on only (2 sheets; ticket 59).
+  - A single link between two faces of one far-end proposal can leave the far-end round unsettled: a G5 port-order finding with the
+    option on only (2 sheets; ticket 54, parked after one attempt).
+- **Accepted trades:** G, a G5 cleared for 2 to 4 crossings and a 4 to 8 percent wider sheet (8 sheets); H, a taller tier gap for a
+  vertical (4 sheets); J, a wider sheet for a vertical (11 sheets). H and J get a limit after the flip: a move that grows the
+  sheet by more than a set share for one link is declined.
 
-Owners: dense-16x9 ticket 19 (placement reserves the drop, or refuses the bent block, before routing) and ticket 15 (one joint
-alignment plan that decides the seats of a group together). The rule becomes the default only when ticket 15 passes the
-acceptance set with neither failure.
+The tests of each known defect stand as named expected-fails that cite the class, or as named pins that cite the ticket (`test/`,
+ticket 45 report). The opt-out keeps the
+old rule for a sheet whose author does not want the trade.
+
+**With the growth choice (ticket 60, the owner rulings of 2026-11-19).** The default keeps the option-off run where the option-on run
+leaves a seat short and the off run is better on the whole sheet (the amendment below). The census of ticket 45 on that default (main
+f8ee8dc3; corpus and sweep, the default against the option off): as written 41 sheets keep the off run, 37 are better and 20 worse,
+with no fallback and no skipped trial; links reversed the same; nodes reversed 43 and 27. The 20 worse are 10 trades (the default
+keeps fewer bent links: classes A, D and G), 1 miss of the trigger (`v7-3-0`) and 9 fixtures that write the option `true`. The
+classes D, E, F and C stay with the option on: their expected-fails that the default now passes are plain tests, and the rest still
+fail under the default; so do tickets 50, 54, 58, 59, 61 and 62. The cost is one more run on the sheets that leave a seat short: +74 % of layout time
+on the census as written.
 
 ## Decision
 
@@ -206,7 +230,7 @@ false` keeps the clauses above for every row, for tests whose subject is one of 
 ## Amendment: the default mode falls back to the option-off run (dense-16x9 ticket 56, owner ruling 2026-11-18)
 
 The option has three modes, read by one reader (`moveBeforeGrowMode`, `src/layout/read/move-before-grow.ts`): written `true` is strict and throws as
-before, written `false` is off, and a sheet that writes nothing takes the default (`DEFAULT_MEANS_ON`, false until ticket 45 flips it). In the
+before, written `false` is off, and a sheet that writes nothing takes the default (`DEFAULT_MEANS_ON`, true since ticket 45). In the
 default-on mode `layout` runs the whole command with the option on and writes the effective mode into the document of the run. When that run fails
 with a `PlacementRefusal` (any code of the closed set `REFUSAL_CODES`, the centring invariant included; a refusal that wraps another exception, the
 `SkeletonError` of a tier attempt, only when that cause qualifies too) while the command budget has time left, it runs the complete input once more

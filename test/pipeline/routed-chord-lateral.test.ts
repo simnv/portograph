@@ -7,6 +7,9 @@ import { chordTrace, pitchRefused, tooClose } from '../../src/layout/side-chords
 import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): this file counts what one run does, and the growth choice of the default runs a
+// sheet that leaves a seat short a second time, with the option off. The sheets write the option, which is the first run of the default.
 // The group lift (ticket 08) is off in these tests: every lift trial of `providers` is declined, but each trial is one more whole run,
 // and the tests count the side-round runs of one command. `lift.test.ts` tests the lift.
 
@@ -17,7 +20,7 @@ type Link = LayoutModel['links'][number];
 interface Counted { model: LayoutModel; places: number }
 async function run(extra: Partial<Parameters<typeof layout>[1]> = {}): Promise<Counted> {
   let places = 0;
-  const model = await layout(parse(source), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, ...extra });
+  const model = await layout(withMoveBeforeGrow(parse(source)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, ...extra });
   return { model, places };
 }
 const strip = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
@@ -73,7 +76,7 @@ describe('a routed chord leaves a lateral side', () => {
     const name = 'a-routed-link-between-frames-draws-straight';
     const text = readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
     const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true };
-    const one = await layout(parse(text), options), two = await layout(parse(text), { ...options, testMaxReruns: 0 });
+    const one = await layout(withMoveBeforeGrow(parse(text)), options), two = await layout(withMoveBeforeGrow(parse(text)), { ...options, testMaxReruns: 0 });
     expect(strip(one)).toBe(strip(two));
   }, 60000);
 });

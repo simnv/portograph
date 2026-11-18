@@ -9,6 +9,7 @@ import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 /**
  * Architecture-2 ticket 69, the close-up: after the end trim, a leaf top-level group moves toward its sibling on its left by at most the width
@@ -35,7 +36,7 @@ const AUTHORED_ORDER: Record<string, { node: string; order: number[] }> = {
   'a-stretched-body-is-trimmed-to-its-ports': { node: 'sink-near', order: [0, 2, 1] },
 };
 const authored = (name: string) => {
-  const document = parse(source(name)), authoredFace = AUTHORED_ORDER[name];
+  const document = withTheOldDefault(parse(source(name))), authoredFace = AUTHORED_ORDER[name];
   if (authoredFace !== undefined) document.nodes[authoredFace.node]!.ports.forEach((port, index) => { port.order = authoredFace.order[index]!; });
   return document;
 };
@@ -175,7 +176,7 @@ describe('a close-up keeps the stem depth record', () => {
     const lines = tierGap.split('\n'), at = lines.indexOf('links:');
     const reversed = [...lines.slice(0, at + 1), ...lines.slice(at + 1).filter(line => line.startsWith('  - ')).reverse()].join('\n') + '\n';
     for (const text of [sweep, reversed]) {
-      const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      const model = await layout(withTheOldDefault(parse(text)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
       expect(stemDepthsFault(model)).toBeUndefined();
     }
   }, 120000);

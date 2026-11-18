@@ -110,7 +110,7 @@ describe('the P-05 F2 cases', () => {
     { name: 'two-skirts-from-one-face-nest', link: 'link-6', options: { testTurnOrder: true } },
     { name: 'a-fan-track-keeps-the-group-edge-margin', link: 'link-3', options: {} },
   ] as const;
-  it.each(cases)('$name: refuses the planned row of $link moved four pixels', async ({ name, link, options }) => {
+  for (const { name, link, options } of cases) it(`${name}: refuses the planned row of ${link} moved four pixels`, async () => {
     const model = await built(name, synthetic(name), options);
     expect(() => restore(clone(model))).not.toThrow();
     const copy = moved(model, link, 'tier-gap', 4);

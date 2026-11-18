@@ -11,6 +11,9 @@ import { judgeLift } from '../../src/layout/lift-judge.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): the tests marked below count what one run does, and the growth choice of the default runs
+// a sheet that leaves a seat short a second time, with the option off. They write the option, which is the first run of the default.
 
 // Group lift (decision review 2026-11, D-Q5, ticket 08): a float component rises as a whole by whole bands, up and in beside the wide block
 // below; a routed feed from above becomes a level side entry, and the units below a hanging component move down. Decided on whole command
@@ -26,7 +29,7 @@ const area = (model: LayoutModel): number => model.canvas!.width * model.canvas!
 // The key sheet is laid out once for the tests that read it (each layout is up to 1 + LIFT_TRIALS command runs).
 const traces: { entry: unknown; reason: string | undefined }[] = [];
 let keyModel: Promise<LayoutModel> | undefined;
-const keyRun = (): Promise<LayoutModel> => keyModel ??= layout(parse(fixture(KEY)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+const keyRun = (): Promise<LayoutModel> => keyModel ??= layout(withMoveBeforeGrow(parse(fixture(KEY))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
   testLiftTrace: event => traces.push({ entry: event.entry, reason: event.reason }) });
 
 // Three tiers: `top` feeds `mid`; `float` (tier 1) feeds `low` (tier 2) and has an overlay link down to `mid2` (tier 2).

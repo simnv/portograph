@@ -6,6 +6,9 @@ import { layout, parse } from '../../src/index.js';
 import { verdictTap } from '../../src/layout/objective.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from './move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): this file counts what one run does, and the growth choice of the default runs a
+// sheet that leaves a seat short a second time, with the option off. The sheets write the option, which is the first run of the default.
 
 /**
  * Architecture ticket 04: every judge (window, rank, side, fan, close-up, pull, keep-out, step-out, centre step) reads its verdict from the
@@ -63,6 +66,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * the recorded digests exactly, so the new ones follow from the order alone. `three-canton-groups-close-up-to-a-band-gap` is replaced by its
  * copy `-canton-b-first`, which declares canton `b` first (the canton order ELK gave before) and calls the ten judges main called on the
  * original (`judgeTrial` and `pickRankMove` included; the original now calls eight); its digests are recorded from the copy.
+ *
+ * Six fixtures were re-recorded for dense-16x9 ticket 45 (the move-before-grow default): the centring moves a node before it grows one, so the
+ * geometry the judges read changed, and the centre step asks more often (for example 20 to 33 calls). No judge changed.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',
@@ -80,7 +86,7 @@ async function record(source: string): Promise<string[]> {
   verdictTap.sink = (name, value) => { lines.push(`${name} ${value}`); };
   // The group lift (ticket 08) is off: the digests pin the judges of one command, and each lift trial is one more whole command run whose
   // judges would join the stream. The lift's own judge is tested in `lift.test.ts`.
-  try { await layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true }); } finally { delete verdictTap.sink; }
+  try { await layout(withMoveBeforeGrow(parse(source)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true }); } finally { delete verdictTap.sink; }
   return lines;
 }
 

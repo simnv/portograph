@@ -7,6 +7,9 @@ import { systemElkClock } from '../../src/layout/elk-worker.js';
 import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow, withTheOldDefault } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): the tests marked below count what one run does, and the growth choice of the default runs
+// a sheet that leaves a seat short a second time, with the option off. They write the option, which is the first run of the default.
 // The group lift (ticket 08) is off in these tests: they pin the bytes main makes, and main has no lift. `lift.test.ts` tests the lift.
 
 /** Ticket 115 (docs/design/side-faces.md, Q109): the side round straightens an overlay link from a lateral side. */
@@ -22,9 +25,19 @@ const hash = (model: LayoutModel): string => createHash('sha256').update(without
 interface Counted { model: LayoutModel; places: number }
 async function run(name: string, extra: Partial<Parameters<typeof layout>[1]> = {}): Promise<Counted> {
   let places = 0;
-  const model = await layout(parse(fixture(name)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testOverlayCourses: false, ...extra });
+  const model = await layout(withMoveBeforeGrow(parse(fixture(name))), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testOverlayCourses: false, ...extra });
   return { model, places };
 }
+/**
+ * The sheet read as main read it before the move-before-grow default (dense-16x9 ticket 45), and its hash without the echo of the opt-out in the
+ * document: with the default the fan input gets a side hint (`SIDE_HINT_TAKEN`) and is no input without a side candidate.
+ */
+async function runOld(name: string): Promise<Counted> {
+  let places = 0;
+  const model = await layout(withTheOldDefault(parse(fixture(name))), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testOverlayCourses: false });
+  return { model, places };
+}
+const withoutEcho = (model: LayoutModel): LayoutModel => { const document = { ...model.document }; delete document.layout; return { ...model, document }; };
 const codes = (model: LayoutModel): string[] => model.diagnostics.map(item => item.code);
 
 describe('the side round takes a lateral side for an overlay link past a sibling body', () => {
@@ -73,7 +86,7 @@ describe('the side round takes a lateral side for an overlay link past a sibling
 describe('a diagram with no side candidate is the layout main makes', () => {
   // Hashes of the layout JSON without `runtime`, and the number of placement runs, measured on main at 964d77f.
   it('a fan-only input: same bytes, same number of placement runs, nothing offered, no side diagnostic', async () => {
-    const { model, places } = await run(FAN);
+    const { model, places } = await runOld(FAN);
     // 2 before dense-16x9 ticket 04 (slice 2) added the spare core-rank node to the fan input (the fan is no solid block); main places 3 times on it too.
     expect(places).toBe(3);
     // The hash moved from 6e2c23e8fd517290 with the message rewrite (ticket 02): the only difference in the layout JSON is the text of
@@ -88,7 +101,7 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // pitch stays the base pitch; the nodes, ports, paths and labels are byte-identical (90ec7d9b78710dd1 before). Review 1 of slice 1 writes
     // the fan floor on every pair of the face's ports, not only on neighbours: again only the records move (b81cb20be4a70512 before).
     // Slice 2 of ticket 04 adds the spare core-rank node to the input; main lays the new input out with the same hash (d6114bdfe765f40a before).
-    expect(hash(model)).toBe('e373421ae6a994a1');
+    expect(hash(withoutEcho(model))).toBe('e373421ae6a994a1');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
@@ -113,7 +126,10 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // Architecture-2 ticket 73: without `feedSplits` the hash is the old 7149b9a576a2ee40.
     // Ticket DR-04: link-2 and link-3 change ids in the canonical link order (and so in their anonymous port ordinals); an id-free diff against
     // the layout before DR-04 shows the same canvas, bodies, ports, paths, boxes and labels (79188b2a83e27b6e before).
-    expect(hash(model)).toBe('32e6ad72742765ec');
+    // Dense-16x9 ticket 45 (the move-before-grow default): the centring moves a node before it grows one (32e6ad72742765ec before); still no hint.
+    // On ticket 56 the layout gains the record `moveBeforeGrowRun` and the document echo `layout.moveBeforeGrow: true` of ticket 56 (70646233bf1e68bf before).
+    // Ticket 60: the sheet writes the option here (one run), so the layout has the echo and no record (84e41709e6ccbc4c with the record of the default).
+    expect(hash(model)).toBe('14b5b8e99f246c25');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
@@ -133,7 +149,7 @@ describe('the probe', () => {
     // A narrow client stands near: the straight segment from the server's right face is clear but nearly parallel to that face (review L1).
     const yaml = fixture(PAST_SIBLING).replace('label: Client, size: { width: 170', 'label: Client, size: { width: 90');
     let places = 0;
-    const model = await layout(parse(yaml), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testOverlayCourses: false });
+    const model = await layout(withMoveBeforeGrow(parse(yaml)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testOverlayCourses: false });
     expect(model.links.find(item => item.layer === 'overlay')!.path!.segments.length).toBeGreaterThan(1);
     expect(places).toBe(1);
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);

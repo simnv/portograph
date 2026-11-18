@@ -16,6 +16,7 @@ import * as guards from '../../src/layout/label-room-guard.js';
 import * as targets from '../../src/layout/alignment-targets.js';
 import { rowRoomHolds, rowRoomKeptByStep, rowRoomShortNow } from '../../src/layout/label-room-guard.js';
 import { deriveFrames } from '../../src/layout/frames.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 const right = (box: { x: number; width: number }): number => box.x + box.width;
 
@@ -42,7 +43,7 @@ it('reserves a long row label before the freeze and keeps the overlay straight',
 
 it('grows a held row chord window on x instead of lengthening its tier gap', async () => {
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-held-row-chord-reserves-label-room-without-detour-stems.yaml', import.meta.url), 'utf8');
-  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = await layout(withTheOldDefault(parse(yaml)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   const link = model.links[0]!, line = link.path!.segments[0]!, boxes = labelBorders(model);
   const growth = labelGrowth(model, link);
   expect(growth.axis).toBe('x');
@@ -54,7 +55,7 @@ it('grows a held row chord window on x instead of lengthening its tier gap', asy
 });
 
 it('keeps the long-label overlay straight through the complete pipeline', async () => {
-  const model = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = await layout(withTheOldDefault(parse(fixture)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   const peer = model.links.find(link => model.document.links[link.sourceIndex]?.label === '1G access trunk')!;
   expect(pathBends(peer)).toBe(0);
   expect(pathBends(model.links.find(link => link.layer === 'overlay')!)).toBe(0);
@@ -85,7 +86,7 @@ it.each([
   'bgplab/policy-a-locpref-route-map.yaml',
 ])('a centring replay keeps a cross-group label window: %s', async name => {
   const yaml = readFileSync(new URL(`../../goldens/${name}`, import.meta.url), 'utf8');
-  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = await layout(withTheOldDefault(parse(yaml)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(model.stage).toBe('link-labels');
   expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
   expect(score(model).snapshot.passed).toBe(true);
@@ -102,7 +103,7 @@ const rowShortfalls = (model: LayoutModel): LinkLabelShortfall[] => {
 it('refuses a step whose unlabelled sibling grows a border into a cross-group label window (review 10b F1)', async () => {
   // Both ends of the labelled zone-4 -> zone-5 link stand still. An unlabelled grid sibling below the end body, inside the group's box,
   // widens past the end body, and the region fit moves zone-4's right border into the window the label rides.
-  const model = structuredClone(await layout(parse(crossGroup()), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
+  const model = structuredClone(await layout(withTheOldDefault(parse(crossGroup())), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
   const group = model.groups['zone-4']!;
   const sibling = { ...structuredClone(model.nodes['unit-4']!), id: 'spare', ports: [], bounds: { x: 48, y: 278, width: 27, height: 17 } };
   delete sibling.icon;
@@ -146,7 +147,7 @@ it('a refused centring step leaves no growth of its own in the alignment record 
     prior = undefined;
   });
   try {
-    await layout(parse(crossGroup()), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    await layout(withTheOldDefault(parse(crossGroup())), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   } finally { guard.mockRestore(); writer.mockRestore(); }
   expect(refusals).toBeGreaterThan(0);
   expect(found).toEqual([]);
@@ -155,7 +156,7 @@ it('a refused centring step leaves no growth of its own in the alignment record 
 it('refuses a step or a move whose cell on another tier grows a frame into the label window (review 10b-2)', async () => {
   // zone-2 (tier 0) and zone-4 (tier 1) become cells of one frame. The labelled zone-4 -> zone-5 link keeps both ends; zone-2 widens on
   // tier 0, the frame's right edge follows it, and the frame border cuts the tier-1 window. Both guard entry points must read it.
-  const model = structuredClone(await layout(parse(crossGroup()), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
+  const model = structuredClone(await layout(withTheOldDefault(parse(crossGroup())), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
   const cell = model.nodes['unit-2']!, group = model.groups['zone-2']!;
   group.frame = 'west-frame';
   model.groups['zone-4']!.frame = 'west-frame';

@@ -16,6 +16,7 @@ import { legReservation } from '../../src/layout/sides-two.js';
 import { preRoute } from '../../src/route/validate.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
 import { withoutJointOrderOn } from './joint-off.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 /**
  * The tier-gap row plan (`docs/design/tier-gap-rows.md`, ranked-groups ticket 48) on the four shapes of Section 2.4, read from the
@@ -25,9 +26,16 @@ import { withoutJointOrderOn } from './joint-off.js';
 const read = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const place = async (name: string): Promise<LayoutModel> =>
   bands(bundles(bars(centre(flanks(lanes(rows(await placed(read(name)))))))));
+
+/**
+ * The shapes of the spec read as main read them before the move-before-grow default (dense-16x9 ticket 45): the centring then moves a node
+ * where it grew one, and the rows of Section 2.4 stand elsewhere. The spec's numbers are the premise of these tests, so they keep the old rule.
+ */
+const placeOld = async (name: string): Promise<LayoutModel> =>
+  bands(bundles(bars(centre(flanks(lanes(rows(await placed(withTheOldDefault(parse(read(name)))))))))));
 /** The same input with every link authored `route: orthogonal`: Q108 gives a link between frames its chord, and the plan of the orthogonal parts is the subject here. */
-const placeBent = async (name: string): Promise<LayoutModel> =>
-  bands(bundles(bars(centre(flanks(lanes(rows(await placed(orthogonalLinks(read(name))))))))));
+const placeBentOld = async (name: string): Promise<LayoutModel> =>
+  bands(bundles(bars(centre(flanks(lanes(rows(await placed(withTheOldDefault(parse(orthogonalLinks(read(name))))))))))));
 
 /** `link-4#0a` is `link-4a`; the spec names the halves of a Z part so. */
 const short = (id: string): string => id.replace('link-', '').replace('#0', '').replace(/#(\d)/, '.$1');
@@ -66,7 +74,7 @@ function busy(model: LayoutModel): Busy[] {
 
 describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () => {
   it('orders the ticket 36 shape 8, 5, 6, 7, 4 and asks for 45 px of growth', async () => {
-    const [first, ...rest] = busy(await place('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row')).filter(({ plan }) => plan.order.length);
+    const [first, ...rest] = busy(await placeOld('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row')).filter(({ plan }) => plan.order.length);
     expect(rest).toEqual([]);
     const { plan, gap } = first!;
     expect(plan.residual).toEqual([]);
@@ -89,7 +97,7 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
   });
 
   it('gives the ticket 41 shape a Z part: 4a 264, 3 275.5, 4b 287, one crossing on the middle drop, no growth', async () => {
-    const [{ plan }] = busy(await place('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips')).filter(({ plan }) => plan.order.length) as [Busy];
+    const [{ plan }] = busy(await placeOld('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips')).filter(({ plan }) => plan.order.length) as [Busy];
     expect(plan.residual).toEqual([]);
     expect(plan.order.map(short)).toEqual(['4a', '3', '4b']);
     expectRows(plan, { 4: [264, 287], 3: [275.5] }); // Verdana metrics (snack-theme ticket 157): 263, 286 and 274.5 with Arial.
@@ -123,7 +131,7 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
   it('plans both gaps of the v5-4-0 shape: rows, forced crossings, link-5 planned clear of the label, growth 0 after 7f', async () => {
     // DR-04: the copy that declares `access` before `src`; with it the canonical link order lays the shape of the spec out again. The
     // spec's link-3 is link-5 here (written 1 to 12 are canonical 1, 3, 5, 7, 9, 2, 4, 6, 8, 10, 11, 12).
-    const model = await placeBent(V540);
+    const model = await placeBentOld(V540);
     const [upper, lower] = tierGapPlans(model).filter(({ plan }) => plan.order.length);
     // The spec's link-3 (row 179.5, the term that asked for 9.25 px) stands 102.5 under the `access` group label. Ticket 50 declined it
     // (`leg-blocked`); since ticket 62 the label is nudged along its edge off the leg at placement, so the plan lays it as the spec does.
@@ -456,7 +464,7 @@ describe('the follow-ups of ticket 48 (ticket 51)', () => {
   }, 60000);
 
   it('names the kind of every forced crossing of the v5-4-0 shape, not only the pair', async () => {
-    const model = await placeBent(V540);
+    const model = await placeBentOld(V540);
     const [upper, lower] = tierGapPlans(model).filter(({ plan }) => plan.order.length);
     const kinds = (plan: GapPlan): string[] => plan.crossings.map(item => `${short(item.run)}|${short(item.vertical)}|${item.kind}`).sort();
     expect(kinds(upper!.plan)).toEqual(KINDS_UPPER);

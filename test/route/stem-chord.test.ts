@@ -53,7 +53,9 @@ describe('the chord splits a batch but does not open a pending stem', () => {
     expect(plan.order.map(id => id.replace('link-', '').replace('#0', ''))).toEqual(['9a', '10', '11', '8', '7', '6', '9b']);
     // Verdana metrics (snack-theme ticket 157): 223.75 with Arial. Dense-16x9 ticket 04 (slice 2) added the spare core-rank node that keeps the
     // fan from being a solid block: the cores moved, link-9 is now the Z part (middle drop at 108.94) and the order is 9a, 10, 11, 8, 7, 6, 9b.
-    expect(plan.parts.find(part => part.link === 'link-9')!.middle).toBeCloseTo(108.93505859375, 6);
+    // Dense-16x9 ticket 45 (the move-before-grow default): the centring moves a core before it grows one, and the middle drop stands at 68.00
+    // (108.94 before); the order is the same.
+    expect(plan.parts.find(part => part.link === 'link-9')!.middle).toBeCloseTo(67.99674479166666, 6);
     expect(model.removedLinks ?? []).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'ROUTE_CHECKPOINT_SKIPPED' || item.code === 'ROUTE_GAP_REJECTED')).toEqual([]);
     for (const link of model.links) expect(link.path, link.id).toBeDefined();

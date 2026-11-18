@@ -735,7 +735,9 @@ it('stress ticket 18: a corridor that crosses a labelled row link\'s split keeps
   expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(true);
   // Ticket 65: the child the corridor follows stands 32.04 px further right (a step keeps the verticals it reached; -409.72 before).
   // Dense ticket 10: stage 5 reserves the row's label room before lanes, and the child stands 150.44 px further right (-377.69 before).
-  expect(model.lanes.map(lane => lane.x)).toEqual([98.22314453125, -227.24510696811876]); // Verdana metrics (snack-theme ticket 157).
+  // Dense-16x9 ticket 45 (the move-before-grow default): the centring moves the child before it grows a node, and it stands 199.47 px further
+  // right (-227.25 before).
+  expect(model.lanes.map(lane => lane.x)).toEqual([98.22314453125, -27.77685546875]); // Verdana metrics (snack-theme ticket 157).
   // The claim itself: the replay asks for nothing more.
   const shortfalls: LinkLabelShortfall[] = [];
   expect(reserveLinkLabelRoom(copy(model), shortfalls)).toBe(false);

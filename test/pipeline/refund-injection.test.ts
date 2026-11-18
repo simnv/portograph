@@ -8,6 +8,7 @@ import { MAX_RERUNS } from '../../src/pipeline/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
 // The group lift (ticket 08) is off in these tests: they count the placements, rebuilds or budget of one pipeline run, and each lift trial is one
 // more whole run. `placement-budget.test.ts` bounds the runs of a command with the lift.
 
@@ -40,7 +41,9 @@ const FAN_SHEET = 'goldens/synthetic/a-fan-spreads-its-ports-so-its-chords-hold-
 const run = async (at: number, sheet = SHEET, bundlesAt = 0): Promise<{ starts: number; runs: number; stage: string | undefined }> => {
   injected.at = at; injected.calls = 0; injected.bundlesAt = bundlesAt; injected.bundlesCalls = 0;
   resetAttemptCounters();
-  const model = await layout(parse(withoutJointOrder(readFileSync(sheet, 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true }).catch(() => undefined);
+  // Written on (strict): with the default the injected refusal is a placement reason, and the fallback would lay the whole input out once more
+  // with the option off (dense-16x9 tickets 45 and 56). The test counts the starts of one command in one mode.
+  const model = await layout(withMoveBeforeGrow(parse(withoutJointOrder(readFileSync(sheet, 'utf8')))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true }).catch(() => undefined);
   return { starts: attemptCounters.placeStarts, runs: attemptCounters.placeRuns, stage: model?.stage };
 };
 

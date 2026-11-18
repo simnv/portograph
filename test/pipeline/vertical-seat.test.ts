@@ -8,6 +8,7 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder, withoutJointOrderOn } from '../layout/joint-off.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 /**
  * Architecture-2 ticket 65: a feed that owes a vertical keeps a vertical it has reached. A centring step that would stand fewer verticals than it found
@@ -17,6 +18,8 @@ import { reversed } from '../../scripts/r3-lib.mjs';
 const source = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const pinned = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+// Read as main read it before 0.3.0 (dense-16x9 ticket 45): the test pins the geometry of the rule before the flip, a growth in place.
+const runOld = (text: string): Promise<LayoutModel> => layout(withTheOldDefault(parse(text)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const bends = (model: LayoutModel): number => { const { routed, overlay } = score(model).snapshot.counts; return routed.turns + overlay.turns; };
 const violations = (model: LayoutModel, gate: 'G6'): number => score(model).snapshot.gates[gate].violations.length;
 const count = (model: LayoutModel, code: string): number => model.diagnostics.filter(item => item.code === code).length;
@@ -94,7 +97,7 @@ describe('the settle after the 7f rounds and the kept verticals', () => {
   // `a-face-aligns-one-port-and-leaves-a-chord-port-in-place` whose canonical link order gives each node its links in the written order. They are read with
   // the joint order off, as their originals are (`JOINT_REORDERED`).
   it('leaves the transit port of src0 on its lane in a-group-shift-leaves-a-chord-clear-of-a-lane (5 bends)', async () => {
-    const model = await run(pinned('a-group-shift-leaves-a-chord-clear-of-a-lane-lower-groups-first'));
+    const model = await runOld(pinned('a-group-shift-leaves-a-chord-clear-of-a-lane-lower-groups-first'));
     expect(bends(model)).toBe(5);
     // src0 to snk1, the transit link.
     const link = model.links.find(item => item.id === 'link-12')!;

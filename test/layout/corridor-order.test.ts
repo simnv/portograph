@@ -12,12 +12,15 @@ import { readDraft, reseatRow } from '../../src/layout/overlay-order.js';
 import { createColdAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from './joint-off.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-row-turns-to-clear-a-corridor.yaml', import.meta.url), 'utf8');
 /** The same sheet with every row in its declared order. */
 const declared = fixture.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
+// Read as main read it before 0.3.0 (dense-16x9 ticket 45): the test pins the geometry of the rule before the flip, a growth in place.
+const runOld = (yaml: string): Promise<LayoutModel> => layout(withTheOldDefault(parse(yaml)), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
 /** Stage 4 only: the skeleton with its row order decisions. */
 const skeletonOf = async (yaml: string): Promise<LayoutModel> => {
   const model = sizeNodes(sidesOne(resolve(parse(yaml))));
@@ -28,7 +31,7 @@ const bends = (model: LayoutModel): number => { const { routed, overlay } = scor
 
 describe('the row order counts the corridors through the row (architecture-2 ticket 17)', () => {
   it('turns the two rows whose order the corridors cross, and the sheet gains on crossings, bends and canvas', async () => {
-    const [turned, kept] = await Promise.all([run(fixture), run(declared)]);
+    const [turned, kept] = await Promise.all([runOld(fixture), runOld(declared)]);
     expect(turned.groups.top!.rowOrderDecision).toEqual({ rule: 'corridor-crossings', before: ['t0', 't1'], after: ['t1', 't0'] });
     expect(turned.groups.upper!.rowOrderDecision).toEqual({ rule: 'corridor-crossings', before: ['u0', 'u1'], after: ['u1', 'u0'] });
     expect(turned.groups.middle!.rowOrderDecision).toEqual({ rule: 'kept', before: ['m0', 'm1'], after: ['m0', 'm1'] });

@@ -29,7 +29,8 @@ const inputs = { 'as written': yaml, 'links reversed': reversed(yaml, 'links') a
  */
 const parsed = (text: string, on: boolean) => {
   const document = parse(text);
-  return on ? { ...document, layout: { ...document.layout, moveBeforeGrow: true } } : document;
+  // The off form writes the opt-out: since dense-16x9 ticket 45 a sheet that writes nothing runs with the option on.
+  return { ...document, layout: { ...document.layout, moveBeforeGrow: on } };
 };
 
 /** The links between `a` and `b` in x order of their ends at `at`. */

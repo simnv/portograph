@@ -12,6 +12,7 @@ import { rows } from '../../src/layout/rows.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 // The group lift (ticket 08) is off in these tests: every lift trial on these sheets is declined, but each trial is one more whole run,
 // and the tests count the alignment declines of one run. `lift.test.ts` tests the lift.
 
@@ -22,7 +23,7 @@ import { reversed } from '../../scripts/r3-lib.mjs';
  */
 const NAME = 'a-kept-vertical-leaves-a-straight-overlay-straight';
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
+const run = (text: string): Promise<LayoutModel> => layout(withTheOldDefault(parse(text)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
 /** Runs `work` with a tap on the record's events, and returns them with its result. */
 async function tapped<T>(work: () => Promise<T>): Promise<{ result: T; verdicts: [string, string][] }> {
   const verdicts: [string, string][] = [];

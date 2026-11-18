@@ -4,14 +4,17 @@ import { layout, parse } from '../../src/index.js';
 import { score } from '../../src/score/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 type Segment = { from: { x: number; y: number }; to: { x: number; y: number } };
 
 describe('a piece whose ends stand under a run clearance apart holds no row (ranked-groups ticket 42)', () => {
   it('routes the near-vertical link with no run of its own, removes nothing and passes every gate', async () => {
     const text = readFileSync(new URL('../../goldens/synthetic/a-near-vertical-piece-holds-no-row.yaml', import.meta.url), 'utf8');
-    // On main this input fails with PIPELINE_FAILED (a routed path retraces itself): the piece held a row 1.1 px wide.
-    const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    // On main this input fails with PIPELINE_FAILED (a routed path retraces itself): the piece held a row 1.1 px wide. It is read as main read it
+    // before the move-before-grow default (dense-16x9 ticket 45): with the default the centring moves a node before it grows one, the ends of
+    // link-5 stand 65.5 px apart, and there is no near-vertical piece to test.
+    const model = await layout(withTheOldDefault(parse(text)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
     expect(model.removedLinks ?? []).toEqual([]);
     for (const [id, gate] of Object.entries(score(model).snapshot.gates)) expect(gate.passed, id).toBe(true);

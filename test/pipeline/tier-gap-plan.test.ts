@@ -69,8 +69,9 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
     expect(tierGapPlans(model).flatMap(({ plan }) => plan.residual.map(item => `${item.link}:${item.reason}`))).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_PART_RESIDUAL').map(item => item.message)).toEqual([]);
     expect(routed.removedLinks ?? []).toEqual([]);
-    // Placement's own finding, also on main: the port order of `isp0`. The two G6 findings of the residual row are gone with it.
-    expect(failing(routed)).toEqual(['G5:port-order', 'G5:port-order']);
+    // Placement's own finding, also on main: the port order of `isp0`. The two G6 findings of the residual row are gone with it. With the
+    // move-before-grow default and the far-end decision of ticket 49 one of the two G5 findings is gone (dense-16x9 ticket 45; two before).
+    expect(failing(routed)).toEqual(['G5:port-order']);
   }, 120000);
 
   // The same shape with the course round on (the published path): the round may take a course here, and the result must not be worse than the shape without it.
@@ -80,7 +81,9 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
     const model = await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.removedLinks ?? []).toEqual([]);
     expect(failing(model).filter(item => !plain.includes(item))).toEqual([]);
-    expect(score(model).snapshot.counts.routed.crossings).toBeLessThanOrEqual(13);
+    // 15 since the move-before-grow default (dense-16x9 ticket 45; 13 before): census class G, an accepted trade, in which a G5 finding clears
+    // for two more crossings.
+    expect(score(model).snapshot.counts.routed.crossings).toBeLessThanOrEqual(15);
   }, 120000);
 
   it('asks for nothing on a second measure of any of the four shapes, and a second bands pass grows nothing', async () => {

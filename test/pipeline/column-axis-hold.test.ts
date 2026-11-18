@@ -6,6 +6,7 @@ import { COLUMN_AXIS_HELD, holdColumnAxes } from '../../src/layout/columns.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 /** Feeds four nodes apart (`west-5`, `west-9`): the two frames can both stand under their feed. */
 const reachable = readFileSync(new URL('../../goldens/synthetic/two-locations-keep-their-feed-axis.yaml', import.meta.url), 'utf8');
@@ -13,7 +14,7 @@ const reachable = readFileSync(new URL('../../goldens/synthetic/two-locations-ke
 // The feeds stand where the test puts them: the far-end pull (ticket 22) is off, or it would move them under their locations.
 const forcedInput = reachable.replace('[west-5, one-gw]', '[west-6, one-gw]').replace('[west-9, two-gw]', '[west-8, two-gw]')
   .replace('portograph: 2\n', 'portograph: 2\nlayout: { farEndPull: false }\n');
-const run = (source: string): Promise<LayoutModel> => layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (source: string): Promise<LayoutModel> => layout(withTheOldDefault(parse(source)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const portX = (model: LayoutModel, node: string, side: 'top' | 'bottom'): number => model.nodes[node]!.ports.find(port => port.side === side)!.anchor!.x;
 const jog = (model: LayoutModel, from: string, to: string): number => Math.abs(portX(model, from, 'bottom') - portX(model, to, 'top'));
 /** The jog of a routed link between its two ports, read from the ends of its path. */
@@ -99,7 +100,7 @@ describe('columns hold their feed axis after rows and centre', () => {
     // bend `ntp1` to `b-edge` is the reason named. The sheet on disk is unchanged; the titles are shortened here.
     const sheet = readFileSync(new URL('../../goldens/synthetic/an-overlay-frame-reorder-is-refused-with-six-sync-links.yaml', import.meta.url), 'utf8')
       .replaceAll('label: Zone A', 'label: A').replaceAll('label: Zone B', 'label: B').replaceAll('label: Zone C', 'label: C');
-    const model = await layout(parse(sheet), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
+    const model = await layout(withTheOldDefault(parse(sheet)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
     const ntp = model.links.find(link => link.layer === 'overlay' && [link.attachments!.from.node, link.attachments!.to.node].sort().join() === 'b-edge,ntp1')!;
     expect(ntp.path!.segments).toHaveLength(1);
     const held = model.diagnostics.filter(diagnostic => diagnostic.code === COLUMN_AXIS_HELD && diagnostic.owners?.some(owner => 'id' in owner && owner.id === 'a'));

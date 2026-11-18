@@ -62,13 +62,17 @@ describe.each(FIXTURES)('%s', name => {
     expect(g5(forged)).toBeGreaterThan(0);
   });
 
-  it('is the same layout on a second run and whatever the order of the links (R3); the order of the nodes is author input and the round still repairs it', async () => {
+  it('is the same layout on a second run and whatever the order of the links (R3)', async () => {
     const text = sheet(name);
     const json = async (source: string): Promise<string> => JSON.stringify((await layout(parse(source), options)).links.map(link => [link.id, link.path?.segments.map(segment => [segment.from, segment.to])]));
     const base = await json(text);
     expect(await json(text)).toBe(base);
     expect(await json(reversed(text, 'links') as string)).toBe(base);
-    expect(g5(await layout(parse(reversed(text, 'nodes') as string), options))).toBe(0);
+  });
+
+  // Ticket 49 (the far-end decision) repairs it with the default on too; it failed with the default before (census class A).
+  it('repairs the order of the far ends whatever the order of the nodes, which is author input', async () => {
+    expect(g5(await layout(parse(reversed(sheet(name), 'nodes') as string), options))).toBe(0);
   });
 
   it('spends starts of its own: at most FAR_END_ORDER_RUNS, and the command keeps its MAX_RERUNS', async () => {

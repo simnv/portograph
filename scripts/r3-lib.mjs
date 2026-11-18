@@ -163,8 +163,17 @@ export function firstDifference(a, b, allowed) {
  * The R3 lines of one sheet: `{ lines: [[kind, text]], bad }`. `read()` gives the sheet text and `lay(text)` the comparable layout;
  * `describe(error)` words a failure. An unreadable sheet or a failed first layout is one `written` line, so the run goes on to the next sheet.
  * A reversal that cannot be made is `SKIP <reason>`; `bad` counts the reversals that differ and the failures.
+ *
+ * A layout of any order that fell back to the option-off run of `layout.moveBeforeGrow` (dense-16x9 tickets 45 and 56: `moveBeforeGrowRun`
+ * with a `failure`) is the line `FALLBACK <code>` for that order (`written`, `links` or `nodes`) and counts as bad, unless `listed` (the sheet is
+ * in `FALLBACK_SHEETS`). The corpus column sees the written order only; this sees the two reversals too. A growth choice (ticket 60: effective
+ * `off` with a `choice`, no failure) is no fallback: its order compares as any other.
  */
-export async function checkSheet({ read, lay, describe }) {
+export const fallbackOf = (layout) => {
+  const failure = layout?.moveBeforeGrowRun?.failure;
+  return failure === undefined ? undefined : typeof failure?.code === 'string' ? failure.code : '?';
+};
+export async function checkSheet({ read, lay, describe, listed = false }) {
   const lines = [];
   let bad = 0;
   let source;
@@ -175,6 +184,8 @@ export async function checkSheet({ read, lay, describe }) {
   } catch (error) {
     return { lines: [['written', describe(error)]], bad: 1 };
   }
+  const writtenFallback = fallbackOf(written);
+  if (writtenFallback !== undefined && !listed) { bad++; lines.push(['written', `FALLBACK ${writtenFallback}`]); }
   for (const key of ['links', 'nodes']) {
     let text;
     try {
@@ -185,6 +196,8 @@ export async function checkSheet({ read, lay, describe }) {
     }
     try {
       const reordered = await lay(text);
+      const fallback = fallbackOf(reordered);
+      if (fallback !== undefined && !listed && fallback !== writtenFallback) { bad++; lines.push([key, `FALLBACK ${fallback}`]); continue; }
       // Reversed nodes list the members of a group in the reverse order, which R3 allows: look past it for a real difference.
       const found = firstDifference(written, reordered, key === 'nodes' ? MEMBER_ORDER : undefined);
       if (found !== undefined) bad++;

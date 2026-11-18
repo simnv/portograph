@@ -11,7 +11,7 @@ import { reversed } from '../../scripts/r3-lib.mjs';
 import { attemptCounters } from '../../src/layout/attempt-counters.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { withMoveBeforeGrow } from './move-before-grow.js';
+import { withMoveBeforeGrow, withoutMoveBeforeGrow } from './move-before-grow.js';
 
 /**
  * Dense-16x9 ticket 36, slice 1: the rows rule (stage 6) seats a child row under its parents' ports as one seat set (`seatSet`), and 7c applies it.
@@ -178,8 +178,9 @@ describe('a seated row that also feeds the row below (dense-16x9 ticket 36, slic
     expect(findings(model)).toEqual([]);
   }, 60000);
 
-  it('is a sheet of the default without the option: no seat set, no gate finding', async () => {
-    const model = await run(sheet('a-seated-row-and-the-row-below-stand-together'));
+  // Since 0.3.0 the seat sets are the default (dense-16x9 ticket 45): the opt-out `layout.moveBeforeGrow: false` makes none.
+  it('is a sheet with the opt-out: no seat set, no gate finding', async () => {
+    const model = await layout(withoutMoveBeforeGrow(parse(sheet('a-seated-row-and-the-row-below-stand-together'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(seatSets(model)).toEqual([]);
     expect(findings(model)).toEqual([]);
   }, 60000);

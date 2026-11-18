@@ -14,11 +14,12 @@ import {
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 const synthetic = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 
 const runSynthetic = (name: string): Promise<LayoutModel> =>
-  layout(parse(synthetic(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  layout(withTheOldDefault(parse(synthetic(name))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
 describe('deferring redundant centre-flag reads in 7f and lazy sharedNodes copy', () => {
   beforeEach(() => {

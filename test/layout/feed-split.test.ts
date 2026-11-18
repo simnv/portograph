@@ -13,6 +13,7 @@ import { feedPairRoom } from '../../src/layout/feed-split.js';
 import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 /**
  * Architecture-2 ticket 73, the feed split: two sibling groups whose feeds stand apart, but closer than the two reaches and the band gap, get
@@ -22,9 +23,9 @@ const sheet = (name: string): string => readFileSync(new URL(`../../goldens/synt
 const SPLIT = sheet('a-feed-split-stands-each-group-under-its-feeds');
 const TITLES = sheet('two-titles-over-skewed-legs-each-widen-their-group');
 const STRETCH = sheet('overlay-links-reorder-an-indifferent-tier');
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string): Promise<LayoutModel> => layout(withTheOldDefault(parse(yaml)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const stageFive = async (yaml: string): Promise<LayoutModel> => {
-  const model = sizeNodes(sidesOne(resolve(parse(yaml))));
+  const model = sizeNodes(sidesOne(resolve(withTheOldDefault(parse(yaml)))));
   await skeleton(model, { createAttempt });
   return sidesTwo(model);
 };

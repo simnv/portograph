@@ -15,6 +15,8 @@ import { findPort } from '../../src/layout/row-paths.js';
 import { equal } from '../../src/model/json-equality.js';
 import { score } from '../../src/score/index.js';
 import { placed } from './phase-two-fixture.js';
+import { parse } from '../../src/parse/index.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 const fixture = (name: string) => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
@@ -22,8 +24,8 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
 
-async function throughCentre(yaml: string): Promise<LayoutModel> {
-  return centre(flanks(lanes(rows(await placed(yaml)))));
+async function throughCentre(yaml: string, oldDefault = false): Promise<LayoutModel> {
+  return centre(flanks(lanes(rows(await placed(oldDefault ? withTheOldDefault(parse(yaml)) : yaml)))));
 }
 
 function ref(text: string): PortRef {
@@ -121,7 +123,8 @@ describe('bar geometry and drop reservations', () => {
   });
 
   it('pins mirrored top and bottom feeds and records only their intervening bar', async () => {
-    const input = stageInput(await throughCentre(fixture('bar-both-sides')), {
+    // The stage input moves the bodies by hand, off the seats 7c records by default: it reads the sheet as before 0.3.0 (dense-16x9 ticket 45).
+    const input = stageInput(await throughCentre(fixture('bar-both-sides'), true), {
       above: [70, 0, 100, 40], below: [72, 300, 100, 40],
     }, {
       'above.p#1': [100, 40], 'above.p#2': [120, 40],

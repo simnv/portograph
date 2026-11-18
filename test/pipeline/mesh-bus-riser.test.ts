@@ -11,6 +11,7 @@ import { routedStrokeWidth } from '../../src/theme/geometry.js';
 import { BUS_RUN_CLEARANCE } from '../../src/layout/bus-room.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -173,7 +174,9 @@ describe('the riser in placement (ticket 96)', () => {
   });
 
   it('refuses a move of a member row that puts a routed port within the riser keep-out', async () => {
-    const model = await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'));
+    // Read as main read it before the move-before-grow default (dense-16x9 ticket 45): with the default the centring moves a node before it
+    // grows one, and the move below also crosses a lane side, so `laneSidesHold` refuses it for a reason that is not the keep-out.
+    const model = await layout(withTheOldDefault(parse(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     const upper = model.meshBuses![0]!, x = upper.riser!.x;
     const used = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
       .flatMap(link => [link.attachments!.from, link.attachments!.to]).map(ref => `${ref.node}:${ref.ordinal}`));

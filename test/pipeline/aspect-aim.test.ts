@@ -47,7 +47,8 @@ describe('a plain row staggers only on a sheet wider than the aspect aim', () =>
     expect(failedGates(square)).toEqual([]);
     expect(() => restoreLayoutModel(JSON.stringify(square))).not.toThrow();
     const plain = await run(source(OVERRIDE).replace('layout: { aspect: "1:1" }\n', ''));
-    expect(plain.document.layout).toBeUndefined();
+    // The document echoes only the mode the run had (dense-16x9 tickets 45 and 56): no aspect.
+    expect(plain.document.layout).toEqual({ moveBeforeGrow: true });
     expect(lines(plain, 'leaves')).toBe(1);
     expect(reason(plain, 'leaves')).toMatch(/^aspect: the sheet is [\d.]+ x [\d.]+ px, not wider than the aim 1\.778$/);
   }, 120000);
@@ -69,7 +70,7 @@ describe('a plain row staggers only on a sheet wider than the aspect aim', () =>
   it('a stated 16:9 is the default: the layout does not change', async () => {
     const stated = await run(withAspect(source(NARROW), '16:9'));
     const absent = await run(source(NARROW));
-    expect(stated.document.layout).toBeUndefined();
+    expect(stated.document.layout).toEqual({ moveBeforeGrow: true });
     expect(JSON.stringify(stated.nodes)).toBe(JSON.stringify(absent.nodes));
   }, 120000);
 

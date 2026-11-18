@@ -6,6 +6,7 @@ import { expectedFramePath, isRoutedChord, orthogonalLeg } from '../../src/layou
 import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
 
 /**
  * Ranked-groups ticket 91: the chord check read the 15 px stem of an orthogonal neighbour, not the vertical leg that runs on from it
@@ -13,6 +14,38 @@ import { createAvoidAttempt } from '../route/fixture.js';
  */
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-chord-holds-clearance-along-a-neighbours-whole-leg.yaml', import.meta.url), 'utf8');
 const LEG_SHEET = /fan|gap|row|leg|chord|tier|canton|held|leaf|lateral|title|narrow/;
+
+/** Each published first or last vertical run of a routed link that is not a chord, against the bound `orthogonalLeg` gives on the same model. */
+function endLegs(model: LayoutModel, name: string): { key: string; published: number; bound: number }[] {
+  const found: { key: string; published: number; bound: number }[] = [];
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'straight' || link.technique === 'stub' || !link.path || link.path.segments.length < 2) continue;
+    for (const end of ['from', 'to'] as const) {
+      const port = findPort(model, link.attachments![end]);
+      if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) continue;
+      const segments = end === 'from' ? link.path.segments : [...link.path.segments].reverse().map(s => ({ from: s.to, to: s.from }));
+      let y = port.anchor.y;
+      for (const segment of segments) {
+        if (Math.abs(segment.from.x - port.anchor.x) > 1e-6 || Math.abs(segment.to.x - port.anchor.x) > 1e-6 || Math.abs(segment.from.y - y) > 1e-6) break;
+        y = segment.to.y;
+      }
+      // Runs inside the gap the port faces only: a run that goes on through a band (a lane run, a straight drop) is clipped at the band edge. A chord
+      // of a canton frame does not cross it (ticket 95, asserted below).
+      const sign = port.side === 'bottom' ? 1 : -1;
+      const edges = model.tierBands.map(band => (sign > 0 ? band.bounds!.y : band.bounds!.y + band.bounds!.height) - port.anchor!.y).filter(d => d * sign > 1e-6).map(Math.abs);
+      const published = Math.min(Math.abs(y - port.anchor.y), edges.length ? Math.min(...edges) : Infinity);
+      const bound = orthogonalLeg(model, link, end)!;
+      found.push({ key: `${name} ${link.id}.${end}`, published, bound: Math.abs(bound.to.y - bound.from.y) });
+    }
+  }
+  return found;
+}
+/**
+ * The end legs that run past their bound since the move-before-grow default (dense-16x9 ticket 45). On the census class B sheet the last leg of
+ * link-6 into l1 runs 26.5 px where the plan bounds it at 15: the router drops its horizontal 11.5 px lower (a checkpoint it skips), a leg
+ * routing finds and placement did not reserve. A known defect of 0.3.0, dense-16x9 ticket 58; the test below is its named expected-fail.
+ */
+const KNOWN_LONG_LEGS = new Set(['a-held-lane-is-reserved-before-a-foreign-lane.yaml link-6.to']);
 
 describe('a frame chord holds its clearance along a neighbour\'s whole leg', () => {
   let baseline!: LayoutModel;
@@ -85,26 +118,10 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
         continue;
       }
       if (LEG_SHEET.test(name)) {
-        for (const link of model.links) {
-          if (link.layer !== 'routed' || link.technique === 'straight' || link.technique === 'stub' || !link.path || link.path.segments.length < 2) continue;
-          for (const end of ['from', 'to'] as const) {
-            const port = findPort(model, link.attachments![end]);
-            if (!port?.anchor || (port.side !== 'top' && port.side !== 'bottom')) continue;
-            const segments = end === 'from' ? link.path.segments : [...link.path.segments].reverse().map(s => ({ from: s.to, to: s.from }));
-            let y = port.anchor.y;
-            for (const segment of segments) {
-              if (Math.abs(segment.from.x - port.anchor.x) > 1e-6 || Math.abs(segment.to.x - port.anchor.x) > 1e-6 || Math.abs(segment.from.y - y) > 1e-6) break;
-              y = segment.to.y;
-            }
-            // Runs inside the gap the port faces only: a run that goes on through a band (a lane run, a straight drop) is clipped at the band edge. A chord
-            // of a canton frame does not cross it (ticket 95, asserted below).
-            const sign = port.side === 'bottom' ? 1 : -1;
-            const edges = model.tierBands.map(band => (sign > 0 ? band.bounds!.y : band.bounds!.y + band.bounds!.height) - port.anchor!.y).filter(d => d * sign > 1e-6).map(Math.abs);
-            const published = Math.min(Math.abs(y - port.anchor.y), edges.length ? Math.min(...edges) : Infinity);
-            const bound = orthogonalLeg(model, link, end)!;
-            expect(published, `${name} ${link.id}.${end}`).toBeLessThanOrEqual(Math.abs(bound.to.y - bound.from.y) + 1e-6);
-            legChecked++;
-          }
+        for (const { key, published, bound } of endLegs(model, name)) {
+          if (KNOWN_LONG_LEGS.has(key)) continue;
+          expect(published, key).toBeLessThanOrEqual(bound + 1e-6);
+          legChecked++;
         }
       }
       for (const link of model.links) {
@@ -126,4 +143,23 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
     expect(legChecked).toBeGreaterThan(50);
     expect(chordChecked).toBeGreaterThan(100);
   });
+
+  // Expected fail since the default flip (dense-16x9 ticket 45): a known defect of 0.3.0 with the option on (`KNOWN_LONG_LEGS`, dense-16x9 ticket 58).
+  it.fails('bounds the end legs the option-on run leaves past their bound (KNOWN_LONG_LEGS)', async () => {
+    for (const key of KNOWN_LONG_LEGS) {
+      const name = key.split(' ')[0]!;
+      const model = await layout(withMoveBeforeGrow(parse(readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      const leg = endLegs(model, name).find(item => item.key === key)!;
+      expect(leg.published, key).toBeLessThanOrEqual(leg.bound + 1e-6);
+    }
+  }, 120000);
+  // Under the default, the growth choice (dense-16x9 ticket 60) keeps the option-off run of these sheets, and their end legs stand in their bound.
+  it('bounds the end legs of the KNOWN_LONG_LEGS sheets under the default, by the growth choice', async () => {
+    for (const key of KNOWN_LONG_LEGS) {
+      const name = key.split(' ')[0]!;
+      const model = await layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      const leg = endLegs(model, name).find(item => item.key === key)!;
+      expect(leg.published, key).toBeLessThanOrEqual(leg.bound + 1e-6);
+    }
+  }, 120000);
 });

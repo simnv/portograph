@@ -297,11 +297,15 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // layout without that key hashes to the new value, so the geometry is unchanged.
   // With both (DR-04 ids, ticket 07 without `groupArrangements`): the DR-04 layout of that sheet less the key hashes to f9b8916c527c5f88
   // (f0a31e77eb97590d with main's ids).
+  // Dense-16x9 ticket 45 (the move-before-grow default) re-baselined all four: the centring moves a node before it grows one, so the bodies
+  // and the paths change. The no-hint claim is the second check and holds. The hashes were 7fb6875900425312, 92a03918704346a8,
+  // f9b8916c527c5f88 and fbe95e96d87d86e8. On ticket 56 all four gain the record `moveBeforeGrowRun` and the document echo `layout.moveBeforeGrow: true` of ticket 56 (d2a05733bdf3d861,
+  // 6b6ee37a9e52791d, 2570b2e72f145008 and cb2daf6b290d2bb6 before).
   const main: Record<string, string> = {
-    'a-group-holds-both-ends-of-a-bundle': '7fb6875900425312',
-    'a-bus-in-a-rank-gap-grows-the-gap': '92a03918704346a8',
-    'a-linked-node-steps-out-of-a-straight-chord': 'f9b8916c527c5f88',
-    'a-bar-end-keeps-its-corridor': 'fbe95e96d87d86e8',
+    'a-group-holds-both-ends-of-a-bundle': '79739815d93cadfa',
+    'a-bus-in-a-rank-gap-grows-the-gap': 'd3ca5931561699ed',
+    'a-linked-node-steps-out-of-a-straight-chord': 'a2352d15f342d815',
+    'a-bar-end-keeps-its-corridor': 'f77dc0d98634870c',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {
     const { model } = await run(fixture(name));

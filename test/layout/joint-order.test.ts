@@ -56,7 +56,8 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
     expect(sides(joint)).toEqual(['link-10 left of aggr', 'link-11 right of aggr']);
     expect(sides(alone)).toEqual([]);
     expect([crossings(joint), bends(joint)]).toEqual([1, 6]);
-    expect([crossings(alone), bends(alone)]).toEqual([7, 8]);
+    // Dense-16x9 ticket 45 (the move-before-grow default): the order alone bends once less (7, 8 before).
+    expect([crossings(alone), bends(alone)]).toEqual([7, 7]);
     expect(validateRowOrderDecisions(joint)).toEqual([]);
   }, 120000);
 
@@ -83,7 +84,10 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
     // Bends 2 before architecture-2 ticket 73: the feed split stands both sink groups under their feeds.
     expect([crossings(joint), bends(joint)]).toEqual([1, 0]);
     // 6 crossings before the far-end round (dense-16x9 ticket 07) re-ordered the stale face of the order that stands alone; bends as before.
+    // Dense-16x9 ticket 45 (the move-before-grow default): with the option on, the order alone moves a node where it grew one and draws 15
+    // crossings and 12 bends; the growth choice (ticket 60) keeps its option-off run, 4 and 5 as before; the joint order keeps its 1 and 0.
     expect([crossings(alone), bends(alone)]).toEqual([4, 5]);
+    expect(alone.moveBeforeGrowRun?.choice).toBeDefined();
   }, 120000);
 
   it('lays the mirrored input out: it publishes, refuses nothing and removes no link (R3)', async () => {

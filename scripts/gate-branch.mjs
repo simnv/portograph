@@ -95,8 +95,9 @@ function ensureBase(sha, baseTsv, baseSweep) {
 /**
  * The R3 check: `npm run r3` on `files` through `node scripts/r3.mjs`, which runs inside this job's lock; at most R3_MAX sheets. Returns
  * the reasons it fails the gate: a `links` reversal that differs or fails (link order is never input, ticket DR-04), and a `nodes`
- * reversal that refuses the sheet (decision review D-Q1: the order of `nodes` is author input, but never a refusal). A `nodes`
- * reversal that only differs is reported.
+ * reversal that refuses the sheet (decision review D-Q1: the order of `nodes` is author input, but never a refusal), and an order of
+ * any kind that falls back to the option-off run of `layout.moveBeforeGrow` on a sheet `FALLBACK_SHEETS` does not list (dense-16x9
+ * tickets 45 and 56). A `nodes` reversal that only differs is reported.
  */
 function checkR3(files) {
   if (files.length === 0) { say('r3: no sheet with a new hash'); return []; }
@@ -114,7 +115,7 @@ function checkR3(files) {
   }
   return different.filter((line) => {
     const [, kind = '', text = ''] = line.split('\t');
-    return kind === 'links' || kind === 'written' || /^(ERROR|TIMEOUT)/.test(text);
+    return kind === 'links' || kind === 'written' || /^(ERROR|TIMEOUT|FALLBACK)/.test(text);
   }).map((line) => { const [sheet, kind] = line.split('\t'); return `r3 ${kind} ${sheet}`; });
 }
 

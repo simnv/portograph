@@ -16,6 +16,7 @@ import { reseatRow } from '../../src/layout/overlay-order.js';
 import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 /**
  * Architecture-2 ticket 17 found two 7a plans that pushed a group holding the authored source of a transit link, which the lane-stage
@@ -28,7 +29,7 @@ const read = (name: string): string => readFileSync(new URL(`../../goldens/synth
 
 /** The sheet through 7a, with `spans` as spanning chords and the rows of `order` in the given order (what the stage-4 order may pick). */
 async function throughLanes(yaml: string, spans: string[], order: Record<string, string[]>): Promise<LayoutModel> {
-  const model = resolve(parse(yaml));
+  const model = resolve(withTheOldDefault(parse(yaml)));
   for (const link of model.links) if (spans.includes(link.id)) link.spanHint = true;
   sizeNodes(sidesOne(model));
   await skeleton(model, { createAttempt });
@@ -45,7 +46,7 @@ it('a transit plan does not push the group of a source whose link has a course',
   const source = readFileSync(new URL('../../goldens/synthetic/a-transit-inside-a-canton.yaml', import.meta.url), 'utf8');
   const lines = source.split('\n'), one = lines.findIndex(line => line.startsWith('  top-a:'));
   [lines[one], lines[one + 1]] = [lines[one + 1]!, lines[one]!];
-  const model = await layout(parse(lines.join('\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = await layout(withTheOldDefault(parse(lines.join('\n'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(model.groups.top!.rowOrderDecision).toEqual({ rule: 'frame-columns', before: ['top-b', 'top-a'], after: ['top-b', 'top-a'] });
   expect(model.removedLinks ?? []).toEqual([]);
 }, 60000);
@@ -65,7 +66,7 @@ it('a corridor that follows its child derives the frames again', async () => {
   // dropped) and the nodes keep the order of the sheet. The refused reseat has its own pin: a-refused-reseat-restores-its-frames (refused-reseat-frames.test.ts).
   const lines = read('a-held-lane-is-reserved-before-a-foreign-lane').replaceAll(' of the main building', '').split('\n');
   resetAttemptCounters();
-  const model = await layout(parse(lines.join('\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = await layout(withTheOldDefault(parse(lines.join('\n'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(attemptCounters.reseat.adopted).toBeGreaterThan(0);
   // OPEN COVERAGE GAP (dense-16x9 ticket 01, ADR-0026; not a dead path): the old sheet also drew `LANE_FOLLOWS_ITS_CHILD`, a frame-held corridor moved
   // onto its child's port, and this test pinned it. Under two-pole ranks no input I built reaches that move for a frame-held corridor of a group with a

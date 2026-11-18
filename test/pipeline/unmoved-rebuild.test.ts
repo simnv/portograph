@@ -3,6 +3,9 @@ import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
+// One run of the command (dense-16x9 tickets 45 and 60): this file counts what one run does, and the growth choice of the default runs a
+// sheet that leaves a seat short a second time, with the option off. The sheets write the option, which is the first run of the default.
 // The group lift (ticket 08) is off in these tests: they count the placements, rebuilds or budget of one pipeline run, and each lift trial is one
 // more whole run. `placement-budget.test.ts` bounds the runs of a command with the lift.
 
@@ -16,7 +19,7 @@ it('rebuilds the unmoved baseline at most once per command', async () => {
   const counts: number[] = [];
   for (const name of SHEETS) {
     let rebuilds = 0;
-    await layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true,
+    await layout(withMoveBeforeGrow(parse(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true,
       testRebuildAlways: true, testTiming: label => { if (label === 'bands-unmoved') rebuilds++; } });
     counts.push(rebuilds);
   }

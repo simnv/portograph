@@ -7,6 +7,7 @@ import { givenBackFault, strandedGrowth } from '../../src/layout/given-back.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from './joint-off.js';
+import { withTheOldDefault } from './move-before-grow.js';
 
 /**
  * Architecture-2 ticket 71: a width the centring passes added to align a face's links, and that no kept target or kept chord uses at the end of
@@ -20,7 +21,7 @@ const AUTHORED_ORDER: Record<string, Record<string, number[]>> = {
   'a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first': { src0: [0, 2, 3, 1], snk0: [0, 2, 1] },
 };
 const authored = (name: string) => {
-  const document = parse(source(name));
+  const document = withTheOldDefault(parse(source(name)));
   for (const [node, order] of Object.entries(AUTHORED_ORDER[name] ?? {})) document.nodes[node]!.ports.forEach((port, index) => { port.order = order[index]!; });
   return document;
 };

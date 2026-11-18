@@ -10,6 +10,7 @@ import { score } from '../../src/score/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrderOn } from '../layout/joint-off.js';
+import { withTheOldDefault } from '../layout/move-before-grow.js';
 
 const fixture = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const EPS = 1e-6;
@@ -44,15 +45,22 @@ const horizontals = (link: LayoutLink): number[] => (link.path!.segments as Segm
   .filter(segment => Math.abs(segment.from.y - segment.to.y) < EPS && Math.abs(segment.from.x - segment.to.x) > 1).map(segment => segment.from.y);
 
 /** The rows the tier-gap plan gives each link, read from the placement stage 8 receives (tier-gap-rows.md, Section 2.3). */
-async function planRows(name: string): Promise<Map<string, number[]>> {
-  const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture(name)))))))));
+async function planRows(name: string, old = false): Promise<Map<string, number[]>> {
+  const sheet = old ? withTheOldDefault(parse(fixture(name))) : fixture(name);
+  const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(sheet))))))));
   const result = new Map<string, number[]>();
   for (const part of tierGapPlans(model).flatMap(({ plan }) => plan.parts)) result.set(part.link, [...result.get(part.link) ?? [], ...part.rows]);
   return result;
 }
 
-async function routed(name: string): Promise<LayoutModel> {
-  const model = await layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+/**
+ * `old` reads the sheet as main read it before the move-before-grow default (dense-16x9 ticket 45). The ticket 36 and ticket 41 shapes are the
+ * shapes of the spec (tier-gap-rows.md, Section 2.4) and their rows are the premise; with the default the centring moves a node before it grows
+ * one and the parts stand elsewhere.
+ */
+async function routed(name: string, old = false): Promise<LayoutModel> {
+  const document = parse(fixture(name));
+  const model = await layout(old ? withTheOldDefault(document) : document, { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
   return model;
 }
@@ -64,13 +72,13 @@ function gatesPass(model: LayoutModel): void {
 
 describe('interleaved links of one tier gap cross on the row of the earlier link (ranked-groups ticket 39)', () => {
   it('gives the earlier link the row between its tip rows, so the later link crosses it and is not removed', async () => {
-    const model = await routed('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row');
+    const model = await routed('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', true);
     expect(model.removedLinks ?? []).toEqual([]);
     expect(model.diagnostics.filter(diagnostic => diagnostic.code === 'ROUTE_CHECKPOINT_SKIPPED')).toEqual([]);
     const earlier = model.links.find(link => link.id === 'link-4')!, later = model.links.find(link => link.id === 'link-7')!;
     // Every part holds the row the plan gave it (spec 2.4: link-4 327.5, the last of five), and on no other.
     // Verdana metrics (snack-theme ticket 157): 326.5 with Arial.
-    const plan = await planRows('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row');
+    const plan = await planRows('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', true);
     expect(plan.get('link-4')).toEqual([expect.closeTo(327.5, 6)]);
     expect(horizontals(earlier)).toEqual([expect.closeTo(plan.get('link-4')![0]!, 6)]);
     // The pair crosses once, on link-4's run over link-7's lower leg (reserved by the plan, not discovered by the router).
@@ -81,14 +89,14 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
   }, 60000);
 
   it('gives an earlier link with no run of its own the row midway between tip rows more than a pitch apart', async () => {
-    const model = await routed('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips');
+    const model = await routed('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips', true);
     expect(model.removedLinks ?? []).toEqual([]);
     const earlier = model.links.find(link => link.id === 'link-3')!, later = model.links.find(link => link.id === 'link-4')!;
     const [upper, lower] = tipRows(model, earlier);
     expect(lower - upper).toBeGreaterThan(23);
     // The plan: link-3 275.5 between the halves of link-4, a Z part (4a 264, 4b 287); the pair crosses once, on link-4's middle drop.
     // Verdana metrics (snack-theme ticket 157): 274.5, 263 and 286 with Arial.
-    const plan = await planRows('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips');
+    const plan = await planRows('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips', true);
     expect(plan.get('link-3')).toEqual([expect.closeTo(275.5, 6)]);
     expect(plan.get('link-4')).toEqual([expect.closeTo(264, 6), expect.closeTo(287, 6)]);
     expect(horizontals(earlier)).toEqual([expect.closeTo(275.5, 6)]);
