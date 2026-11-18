@@ -321,4 +321,42 @@ describe('a far-end decision holds only the proposal the far-end round generates
     expect(farEndDecisionsOf(model.reservations ?? [])).toEqual([]);
     expect(g5(model).sort()).toEqual(['port-order lab3wrp001', 'port-order lab3wrp003', 'port-order lab6slb002', 'port-order sa-edge3']);
   }, 240000);
+
+  it('review 4: a follow-up proposal equal to a split of the first proposal decides nothing, also on a measured 7f refusal', async () => {
+    // The reviewer's probe: on the first trial with four faces, links of the faces other than `sa-edge3` read as bundle members in the copy the judge
+    // reads, so the judge returns the follow-up `sa-edge3` top alone, which is also a split group of the first proposal. That follow-up then takes the
+    // measured missing-exit refusal at 7f.
+    const wanted = 'sa-edge3', judge = farEnd.judge, reserve = farEnd.reserve;
+    const bundled = (trial: LayoutModel, faces: readonly FarEndFace[]): LayoutModel => {
+      const copied = copy(trial);
+      for (const face of faces.filter(item => item.node !== wanted)) {
+        const port = face.ports[0]!, link = copied.links.find(item => [item.attachments?.from, item.attachments?.to].some(end => end?.node === port.node && end?.ordinal === port.ordinal));
+        if (link !== undefined) (link as { bundle?: string }).bundle = 'alternate';
+      }
+      return copied;
+    };
+    let changed = false, injected = false;
+    const judged = vi.spyOn(farEnd, 'judge').mockImplementation((env, state, offer, trial) => {
+      if (changed || offer.next === true || offer.faces.length < 2 || !offer.faces.some(face => face.node === wanted)) return judge(env, state, offer, trial);
+      changed = true;
+      return judge(env, state, offer, { ...trial, routedTrial: bundled(trial.routedTrial, offer.faces) });
+    });
+    const reserved = vi.spyOn(farEnd, 'reserve').mockImplementation((env, state, offer) => {
+      const ledger = reserve(env, state, offer);
+      if (!injected && offer.next === true && offer.faces.length === 1 && offer.faces[0]!.node === wanted) {
+        injected = true;
+        const bands = env.bands;
+        env.bands = async () => { env.bands = bands; throw new PostconditionRefusal('bands', [{ kind: 'groupExit', subject: 'g', detail: 'required exit lost' }]); };
+      }
+      return ledger;
+    });
+    try {
+      const origins: string[] = [];
+      const model = await layout(parse(reversedNodes(text('a-corridor-moves-after-the-grid-settles'))), { ...options, testSideTrace: event => { if (event.ev === 'far-end-refused') origins.push(`${event.origin as string} ${(event.faces as string[]).join(' ')}`); } });
+      expect({ changed, injected }).toEqual({ changed: true, injected: true });
+      expect(origins).toContain(`next ${wanted}.top`);
+      expect(farEndDecisionsOf(model.reservations ?? [])).toEqual([]);
+      expect(g5(restoreFinalLayout(JSON.stringify(model))).sort()).toEqual(['port-order lab3wrp001', 'port-order lab3wrp003', 'port-order lab6slb002', 'port-order sa-edge3']);
+    } finally { judged.mockRestore(); reserved.mockRestore(); }
+  }, 240000);
 });

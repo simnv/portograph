@@ -629,9 +629,12 @@ type FarEndTrialOffer = { faces: FarEndFace[]; current: LayoutModel; decisions: 
  * The decline reason of a refused far-end trial, when the refusal is a decision of the whole-sheet measure (dense-16x9 ticket 49, review 1): the judge's own
  * (`verdict.decline`: a completed comparison worse by the unified order, a new error-gate finding, the canvas cap), or a refusal of the trial's geometry at
  * 7f (`postcondition-7f`: a placement refusal that 7f itself threw, `refusedBy7f`; a failure of the replacement placement of a 7f retry is none, review 2). A placement-run refusal, an ELK fallback, a ledger or a predictor
- * refusal, a trial that did not settle and anything the round does not tolerate (a deadline, a budget, a worker failure) decide nothing.
+ * refusal, a trial that did not settle, a follow-up proposal (`next`) and anything the round does not tolerate (a deadline, a budget, a worker failure) decide nothing.
  */
 function farEndDecline(o: FarEndTrialOffer, r: Refusal): FarEndDeclineReason | undefined {
+  // A follow-up proposal decides nothing (review 3, ticket 59), also when its sequence equals a split of the first proposal: restore cannot tell the
+  // two apart, the writer can (review 4).
+  if (o.next === true) return undefined;
   if (r.at === 'verdict') return o.verdict?.next === undefined ? o.verdict?.decline : undefined;
   return r.at === 'bands' && refusedBy7f(r.error) ? 'postcondition-7f' : undefined;
 }
