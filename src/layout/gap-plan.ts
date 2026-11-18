@@ -1296,12 +1296,12 @@ function gapPlanOf(model: LayoutModel, gap: TierGap, dodging: boolean): GapPlan 
     // Whatever the sign of its bound, as a group box (ticket 56).
     if (box.y >= gap.high - EPS) obstacles.push({ x0, x1, anchor: 'below', bound: reach + bandTop - box.y });
   }
-  // A canton frame is no group box, and it reaches into the gap: its margin and its title band stand below its last sub-tier
-  // (or above its first), outside every member box. A canton that ends at this gap's upper band is an O5 band anchored to it,
-  // one that starts at this gap's lower band is anchored to that, both with the group-edge margin. One that spans the gap is
-  // no wall: its members' own boxes and lanes already are.
+  // A frame is no group box, and it reaches into the gap: a canton's margin and title band, and the padding of any frame round a child
+  // frame at its edge, stand below its last sub-tier (or above its first), outside every member box. G6 reads the frame box as a group
+  // edge (`groupBoxes`), so the plan reads it too (dense-16x9 ticket 52; before, only a canton's). A frame that ends at this gap's upper
+  // band is an O5 band anchored to it, one that starts at this gap's lower band is anchored to that, both with the group-edge margin.
+  // One that spans the gap is no wall: its members' own boxes and lanes already are.
   for (const frame of model.frames ?? []) {
-    if (frame.kind !== 'canton') continue;
     const box = frame.box, x0 = box.x - margin, x1 = right(box) + margin, tiers = cantonTiers(model, frame.id);
     if (tiers.last === gap.above) {
       if (bottom(box) + margin > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + margin });

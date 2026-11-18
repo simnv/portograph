@@ -1,0 +1,49 @@
+# Expected (dense-16x9 ticket 52): the nodes of `a-refused-reseat-restores-its-frames` listed in reverse, with the option `layout.moveBeforeGrow`.
+# The frame `east` holds the child frame `eastc` in its last sub-tier, so its box reaches the group padding below that band, into the tier gap
+# above `low`. The link from `eastg` to `l1` turns in that gap on a row the gap plan seats; the plan reads every frame box as an O5 band with
+# the group-edge margin, as G6 reads it, so the row stands at least the margin below the frame edge. Before the ticket the plan read the
+# frame box of a canton only: the row stood 5.75 px below the edge of `east` (G6 segment-group-edge, link-7 with east).
+# Also G5 port-order on l0 (the far-end order the routed trial declines): ticket 49, not this ticket.
+# Test: test/layout/frame-edge-rows.test.ts.
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  up: { tier: 0, label: Up }
+  east: { tier: 1, label: East }
+  eastc: { parent: east, label: East access }
+  mid: { tier: 1, label: Mid }
+  midc: { parent: mid, label: Mid access }
+  west: { tier: 1, label: West }
+  westc: { parent: west, label: West access }
+  low: { tier: 2, label: Low }
+nodes:
+  l0: { group: low, class: server, label: L0 }
+  l2: { group: low, class: server, label: L2 }
+  l1: { group: low, class: server, label: L1 }
+  westa: { group: westc, class: server, label: West access server }
+  westd: { group: west, class: switch, label: West distribution switch }
+  westg: { group: west, class: router, label: West gateway }
+  mida: { group: midc, class: server, label: Mid access server }
+  midd: { group: mid, class: switch, label: Mid distribution switch }
+  midg: { group: mid, class: router, label: Mid gateway }
+  easta: { group: eastc, class: server, label: East access server }
+  eastd: { group: east, class: switch, label: East distribution switch }
+  eastg: { group: east, class: router, label: East gateway }
+  u2: { group: up, class: provider, label: U2 }
+  u1: { group: up, class: provider, label: U1 }
+  u0: { group: up, class: provider, label: U0 }
+links:
+  - [eastg, eastd]
+  - [eastd, easta]
+  - [midg, midd]
+  - [midg, mida]
+  - [westg, westd]
+  - [westd, westa]
+  - [u1, eastg]
+  - [u1, westg]
+  - [u1, l0]
+  - [u0, l2]
+  - [westg, l0]
+  - [eastg, l1]
+  - [easta, l0]
+  - [westa, l2]
