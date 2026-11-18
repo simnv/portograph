@@ -1265,6 +1265,7 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     writeAlignmentTargets(model, model.groups[id]!.nodes, step.notes, warn ? stepPass : 0);
     // The seats, only when the step's own geometry stands: a step given back or kept at its start leaves no seat of its own (ADR-0027).
     if (step.group === began) writeAlignmentSeats(model, step.notes.seated, warn ? stepPass : 0, step.notes.unseated);
+    centreCheckTrace.step?.(model, id, warn, step.unresolved);
     return step;
   });
 }
@@ -1592,7 +1593,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const pooled = rowSeat.has(id);
   const inBody = (node: LayoutNode, limit: WideningLimit): WideningLimit => pooled ? { low: Math.max(limit.low, node.bounds!.x), high: Math.min(limit.high, right(node.bounds!)) } : limit;
   // A pooled unit after its main move and before any seat (dense-16x9 ticket 47): the step goes back to it when the clamp carries every seat it made
-  // off its feeds, and keeps the main move.
+  // off its feeds, and keeps the main move. Only a member the unit's seat moves off its own mean is in `rowSeat`; the member whose own mean is the
+  // seat takes the whole-step decline as any group (review 2).
   const beforeSeats = seated && pooled ? JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] } : undefined;
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
@@ -1721,13 +1723,20 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
       const withdrawn = [...new Set(beforeSeats.nodes.filter(node => node.ports.some(port => aligned.has(portId(port.ref)))).map(node => node.id))].sort();
       if (warn) for (const nodeId of withdrawn) {
         const named = [...new Set(model.nodes[nodeId]!.ports.map(port => portId(port.ref)).filter(key => aligned.has(key)).map(key => seats.get(key)!.link))].sort();
-        placementWarning(model, SEAT_REFUSED, `${nodeId} keeps its place and width: the clamp into the step window carries its seat off its feeds; ${named.join(', ')} keep${named.length === 1 ? 's' : ''} a jog and routing completes ${named.length === 1 ? 'it' : 'them'}.`, named);
+        placementWarning(model, SEAT_REFUSED, `${nodeId} keeps its place and width: the clamp into the step window carries its seat off the feeds of ${named.join(', ')}.`, named);
       }
       Object.assign(group, beforeSeats.group);
       for (const node of beforeSeats.nodes) model.nodes[node.id] = node;
-      // A recorded seat this step withdrew gives its growth back again (ADR-0027, clause 4), on the geometry before the seats.
-      for (const nodeId of notes.unseated ?? []) giveBackGrowth(model, model.nodes[nodeId]!, record![nodeId]!.from, record![nodeId]!.at);
+      // Every seat the withdrawal undoes is retired (ADR-0027, clause 4; review 2 of ticket 47): a recorded seat this step withdrew, and a recorded
+      // seat this step aligned again and the withdrawal now undoes, give their growth back on the geometry before the seats, and their records go.
+      // So the next group and the replay read no seat that stands off its feed.
+      const retired = new Set([...notes.unseated ?? [], ...withdrawn.filter(nodeId => record !== undefined && Object.hasOwn(record, nodeId))]);
+      for (const nodeId of [...retired].sort()) giveBackGrowth(model, model.nodes[nodeId]!, record![nodeId]!.from, record![nodeId]!.at);
+      notes.unseated = retired;
       notes.seated.clear(); notes.grown.clear(); aligned.clear();
+      // The misses are read again on the geometry the second settle leaves; only the seat conflicts of the feeds carry over.
+      unresolved.clear();
+      for (const key of conflicts) unresolved.add(key);
       const again = settle();
       if (again !== undefined) return again;
       endMisses = misses();
@@ -1955,6 +1964,11 @@ export const centreCheckTrace: {
   /** Each answer of the ownership test (`otherRuleOwns`) for a wanted port, with the phase it was asked for (`ahead`): by the invariant of check
    * `read`, or by a seated step (`read` is the check that replays it; undefined for a producer step). Review 2 of ticket 38. */
   owner?: (model: LayoutModel, reader: 'step' | 'invariant', read: number | undefined, ahead: boolean, child: string, owned: boolean) => void;
+  /**
+   * The model as a group step leaves it, records written: what the next group and a replay read, and the wanted ports the step leaves unresolved
+   * (review 2 of dense-16x9 ticket 47). `warn`: a producer step.
+   */
+  step?: (model: LayoutModel, group: string, warn: boolean, unresolved: ReadonlySet<string>) => void;
 } = {};
 /** The check (`readCentreViolations`) whose replay runs now, for `centreCheckTrace.owner`; undefined while a producer step runs. */
 let ownerRead: number | undefined;

@@ -143,9 +143,12 @@ The design note `design-02-seat-2` proposed two clauses. The owner chose clause 
   any corpus sheet, and nothing read it. The record, its second run of the passes and its check are
   removed.
   Amended 2026-11-18 (dense-16x9 ticket 47): for a member of a pooled row unit, such a step
-  withdraws its seats alone and keeps its main move, which is the unit's shared decision. When the
-  clamp carries every seat off its feeds, the seats are withdrawn (`ALIGNMENT_SEAT_REFUSED`), the
-  group goes back to where its main move put it, and the rest of the step runs again there. A
+  withdraws its seats alone and keeps its main move, which is the unit's shared decision. The
+  exception covers only the members the unit's seat moves off their own mean (the coordinate-override
+  map of `rowSeats`); a member whose own mean is the unit's seat is declined whole as any group. When
+  the clamp carries every seat off its feeds, the seats are withdrawn (`ALIGNMENT_SEAT_REFUSED`), every
+  recorded seat the withdrawal undoes gives its growth back and its record goes, the group goes back
+  to where its main move put it, and the rest of the step runs again there. A
   whole-step decline undid that move on every pass and left the unit at its stage-6 x. For a group
   that is not pooled, the move and the seat are one body's decision, and the step is declined whole.
 - Clause 1 is not changed: a seated body pulls only through the feeds of its kept ports. The

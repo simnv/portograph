@@ -1429,7 +1429,10 @@ stands is withdrawn and gives the body back to the box it had before its first s
 `givenBack` record). A step that widens any body and leaves every aligned port of its group off its feed after the clamp is declined whole,
 main move included (clause 5; without the option, ticket 71's rule for a body whose growth was given back). One exception (dense-16x9 ticket 47,
 rulings of 2026-11-18): for a member of a pooled row unit, the main move is the unit's shared decision, so the step withdraws its seats alone
-(`ALIGNMENT_SEAT_REFUSED`, naming the clamp), the group goes back to where its main move put it, and the rest of the step runs again there. A
+(`ALIGNMENT_SEAT_REFUSED`, naming the clamp), the group goes back to where its main move put it, and the rest of the step runs again there. The
+exception covers only the members the unit's seat moves off their own mean (the groups in the coordinate-override map of `rowSeats`); the member
+whose own mean is the unit's seat takes its ordinary move and the whole-step decline, as any group. Every recorded seat the withdrawal undoes gives
+its growth back and its record goes (clause 4), and the misses are read again on the geometry the second run leaves (review 2 of ticket 47). A
 seat that survives the step window stands in both cases. A whole-step decline undoes the alignment; the tier pack (`packClear`) can still move
 the group clear of the group before it.
 At 7e a bent bundle block keeps the start of a face whose seat keeps a port. The publication check refuses a seat record in a model
