@@ -84,7 +84,7 @@ describe('the final flat-gap choice and the published sheet of the run (review 2
     try { model = await layout(parse(writeYaml(input)), options); } finally { trace.wider = false; }
     expect(model.canvas!.width).toBeLessThanOrEqual(5017);
     const note = model.diagnostics.find(item => item.code === 'FLAT_BLOCK_GAP_FINAL_DECLINED');
-    expect(note?.message).toMatch(/passes the width budget of 5017 px/);
+    expect(note?.message).toMatch(/passes the width limit of 5017 px/);
     expect(model.diagnostics.some(item => item.code === 'WIDTH_BUDGET_UNMET')).toBe(false);
   }, 120000);
 

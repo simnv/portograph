@@ -8,8 +8,8 @@
 import type { LayoutModel } from '../model/index.js';
 
 /**
- * What a wrapper asks of the fit of the run it picked (review 2, P2b): `maxWidth`, the width budget the picked run met, which the fitted
- * sheet must meet too (the fit declines a candidate past it by name).
+ * What a wrapper asks of the fit of the run it picked (review 2, P2b; review 3): `maxWidth`, the widest sheet the fit may publish: the width
+ * budget when the picked run met it, else the width of the picked run (the fit declines a candidate past it by name).
  */
 export interface FitLimits { maxWidth?: number }
 type Fit = (limits: FitLimits) => Promise<LayoutModel>;

@@ -185,8 +185,8 @@ export async function refuseCrowdedChords(env: Env, s: State): Promise<void> {
  * at the gaps it gives. Its trigger is the published sheet of the run (`published`, the canvas of the model the run published; review 2,
  * P2a): it places only when that sheet asks for other gaps, read with the same function the baseline of the comparison is. It runs once
  * (`flatGapSheet`, set by the first choice, is the marker it consumes): it reads its own result nowhere, so no loop. The command runs it once,
- * on the run that publishes (`fitPublication` in `index.ts`); a lift or width trial is judged without it, and a width budget the picked run
- * met holds the candidate (`limits.maxWidth`, review 2, P2b).
+ * on the run that publishes (`fitPublication` in `index.ts`); a lift or width trial is judged without it, and under a width budget the candidate
+ * is held to the budget or, when the picked run missed it, to the width of that run (`limits.maxWidth`, review 2, P2b; review 3).
  *
  * Both sides of the comparison are the published sheet (review 1, P1): the publication route of the model (`publicationRoute`, the route mode
  * publication uses), labelled as stage 9 labels it (`publishedSheet`: link labels, legend, margin; for the baseline, the canvas the run
@@ -208,10 +208,11 @@ export async function refuseCrowdedChords(env: Env, s: State): Promise<void> {
 export async function chooseFlatGapsAgain(env: Env, s: State, published?: SheetSize, limits: FitLimits = {}): Promise<boolean> {
   const marker = s.flatGapSheet, records = s.kept7e.blockReservations ?? [];
   if (marker === undefined || !records.some(record => record.mode === 'flat')) return false;
+  // The trigger and the baseline of the comparison are one reading: the published sheet of the run (review 2, P2a). The baseline is routed
+  // before the marker is consumed, so a route that throws leaves the marker as it was (review 3).
+  const before = await publicationRoute(env, s), now = published ?? publishedSheet(env, before);
   // The step runs once: a later call reads no marker (no loop, whatever the result).
   delete s.flatGapSheet;
-  // The trigger and the baseline of the comparison are one reading: the published sheet of the run (review 2, P2a).
-  const before = await publicationRoute(env, s), now = published ?? publishedSheet(env, before);
   const aim = aspectAim(env.document), gaps = aspectFlatGaps(records, now, aim, env.flatBlockGaps);
   if (gaps === undefined) return false;
   const asked = env.flatBlockGaps, declined = env.seatSetDeclined, notes: Diagnostic[] = [];
@@ -251,7 +252,7 @@ export async function chooseFlatGapsAgain(env: Env, s: State, published?: SheetS
     const view: State = { ...s, kept7e: replaced, base: banded.model };
     delete view.routedFinal; delete view.routedBase; delete view.published;
     const routed = await publicationRoute(env, view), sheet = publishedSheet(env, routed);
-    if (limits.maxWidth !== undefined && sheet.width > limits.maxWidth) return decline(`the published sheet of ${size(sheet)} passes the width budget of ${limits.maxWidth} px`);
+    if (limits.maxWidth !== undefined && sheet.width > limits.maxWidth) return decline(`the published sheet of ${size(sheet)} passes the width limit of ${limits.maxWidth} px`);
     if (!nearerAim(sheet, now, aim)) return decline(`the published sheet of ${size(sheet)} stands no nearer the aspect aim`);
     const was = new Map(before.links.map(link => [link.id, pathBends(link)]));
     const is = new Map(routed.links.map(link => [link.id, pathBends(link)]));

@@ -71,12 +71,13 @@ export async function fitWidthBudget(input: NormalisedDocument, options: LayoutO
   }
   if (best !== first) notes.unshift(...liftNotes);
   // The publication fit of the run picked is the command's (`carryFit`, dense-16x9 ticket 42 review 1); the trials were judged without it. The
-  // width finding reads the model the command returns, after its fit (review 2, P2b), and a run that met the budget holds the fit to it.
+  // width finding reads the model the command returns, after its fit (review 2, P2b). The fit publishes no sheet wider than the budget or, when
+  // the picked run missed it, than that run (review 3): an unmet budget does not get worse, and the finding names the narrowest result.
   const unmet = (model: LayoutModel): Diagnostic[] => model.canvas!.width > budget ? [{ stage: 'placement', severity: 'warning', code: 'WIDTH_BUDGET_UNMET',
     message: `The narrowest valid result tried is ${model.canvas!.width.toFixed(2)} px wide; the width budget is ${budget} px.` }] : [];
   const decorate = (model: LayoutModel): LayoutModel => {
     const extra = [...notes, ...unmet(model)];
     return extra.length === 0 ? model : restoreLayoutModel(JSON.stringify({ ...model, diagnostics: [...model.diagnostics, ...extra] }));
   };
-  return carryFit(best, decorate(best), decorate, best.canvas!.width <= budget ? { maxWidth: budget } : {});
+  return carryFit(best, decorate(best), decorate, { maxWidth: Math.max(budget, best.canvas!.width) });
 }
