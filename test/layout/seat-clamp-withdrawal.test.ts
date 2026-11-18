@@ -12,6 +12,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // Dense-16x9 ticket 47 (ruling of 2026-11-18, review 1): with `layout.moveBeforeGrow` a seat that survives the step window stands; a seat that
 // the clamp of the step carries off its feeds is withdrawn alone (`ALIGNMENT_SEAT_REFUSED`), and the main move of the step stands. Before, the
 // step was declined whole, main move included, on every pass, and the group stood at its stage-6 x with no seat or target of its own.
+// Each case settles (no `PLACEMENT_NON_CONVERGENCE`, no `CENTRE_INVARIANT_UNVERIFIED`): after the chord freeze the recorded seat of a pooled member
+// holds only inside its body (dense-16x9 ticket 46, cause a), and a seat that stands keeps standing in the later passes.
 const NAME = 'a-seat-the-clamp-carries-off-its-feed-is-withdrawn-alone';
 const yaml = readFileSync(new URL(`../../goldens/synthetic/${NAME}.yaml`, import.meta.url), 'utf8');
 const lay = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -19,20 +21,21 @@ const lay = (text: string): Promise<LayoutModel> => layout(parse(text), { create
 const read = (model: LayoutModel) => {
   const { routed, overlay } = score(model).snapshot.counts;
   return { routed: routed.turns, overlay: overlay.turns, width: Math.round(model.canvas!.width), seats: Object.keys(model.alignmentSeats ?? {}).sort(),
-    refused: model.diagnostics.filter(note => note.code === 'ALIGNMENT_SEAT_REFUSED').map(note => note.message) };
+    refused: model.diagnostics.filter(note => note.code === 'ALIGNMENT_SEAT_REFUSED').map(note => note.message),
+    settled: !model.diagnostics.some(note => note.code === 'PLACEMENT_NON_CONVERGENCE' || note.code === 'CENTRE_INVARIANT_UNVERIFIED') };
 };
 
 it('a seat the clamp carries off its feed is withdrawn alone: the main move stands', async () => {
   const model = await lay(yaml);
   expect(model.document.layout?.moveBeforeGrow).toBe(true);
-  expect(read(model)).toEqual({ routed: 2, overlay: 0, width: 370, seats: [],
+  expect(read(model)).toEqual({ routed: 2, overlay: 0, width: 370, seats: [], settled: true,
     refused: ['node-b keeps its place and width: the clamp into the step window carries its seat off the feeds of link-3.'] });
   expect(Math.round(model.groups['row-b']!.bounds!.x)).toBe(202);
   expect(Math.round(model.nodes['node-b']!.bounds!.width)).toBe(55);
 }, 120000);
 
 it('a seat that survives the step window stands (the nodes block reversed): every link straight', async () => {
-  expect(read(await lay(reversed(yaml, 'nodes')))).toEqual({ routed: 0, overlay: 0, width: 524, seats: ['node-b'], refused: [] });
+  expect(read(await lay(reversed(yaml, 'nodes')))).toEqual({ routed: 0, overlay: 0, width: 524, seats: ['node-b'], refused: [], settled: true });
 }, 120000);
 
 // Four nodes and four links (review 1): with `node-b` first its seat survives the clamp and holds the routed link and the overlay straight; with
@@ -56,9 +59,9 @@ links:
 `;
 
 it('four nodes: the seat that survives stands, the one the clamp carries off is withdrawn alone', async () => {
-  expect(read(await lay(FOUR))).toEqual({ routed: 0, overlay: 0, width: 334, seats: ['node-b'], refused: [] });
+  expect(read(await lay(FOUR))).toEqual({ routed: 0, overlay: 0, width: 334, seats: ['node-b'], refused: [], settled: true });
   const back = read(await lay(reversed(FOUR, 'nodes')));
-  expect(back).toMatchObject({ routed: 0, overlay: 2, width: 276, seats: [] });
+  expect(back).toMatchObject({ routed: 0, overlay: 2, width: 276, seats: [], settled: true });
   expect(back.refused).toHaveLength(1);
 }, 120000);
 

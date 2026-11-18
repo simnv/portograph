@@ -256,7 +256,12 @@ export interface SeatCandidate { keys: string[]; x: number; width: number; dx: n
  * The alignment cap of a seat (ADR-0027): whether a body `width` wide that stands the targets of `window` keeps it.
  */
 export type SeatCap = (window: readonly SeatTarget[], width: number) => boolean;
-interface SeatBounds { siblings: WideningLimit; window: WideningLimit; stops: OverlayStops; kept?: ReadonlySet<string> | undefined }
+/**
+ * The bounds of a seat. `keptInBody`: the recorded seat (`kept`) holds only inside the body as it stands, neither slid nor grown back (a member of
+ * a pooled row unit after the chord freeze, dense-16x9 ticket 46, cause a: the unit's move is the shared decision, and a member's seat does not
+ * move the body against it).
+ */
+interface SeatBounds { siblings: WideningLimit; window: WideningLimit; stops: OverlayStops; kept?: ReadonlySet<string> | undefined; keptInBody?: boolean }
 
 /** The wanted ports of the top and bottom faces of `node`, by x, then by port key (R3: the last key). */
 function seatTargets(node: LayoutNode, wanted: ReadonlyMap<string, number>, owes: (key: string) => boolean, sides: readonly ('top' | 'bottom')[] = ['top', 'bottom']): SeatTarget[] {
@@ -325,21 +330,23 @@ export function seatCandidates(node: LayoutNode, targets: readonly SeatTarget[],
       // and it goes back by a move bounded as a move+grow is, by the siblings and the walls, and the group box follows it.
       const recorded = bounds.kept !== undefined && bounds.kept.size > 0 && keys.length === bounds.kept.size && keys.every(key => bounds.kept!.has(key));
       const seat = (item: SeatCandidate): SeatCandidate => recorded ? { ...item, recorded } : item;
+      // A recorded seat bounded by its body (`keptInBody`) stands only where the body stands: no slide, move+grow or growth in place.
+      const inBodyOnly = recorded && bounds.keptInBody === true;
       if (need <= w0 + EPS) {
         // A body that holds the interval where it stands stays: the bounds of the row bound a move, not a body that does not move.
         const from = Math.max(edgeHigh - w0, recorded ? growLow : low), to = Math.min(edgeLow, (recorded ? growHigh : high) - w0), stays = x0 >= edgeHigh - w0 - EPS && x0 <= edgeLow + EPS;
         if (stays) result.push(seat({ keys, x: x0, width: w0, dx: 0, growth: 0, owed, inPlace: false }));
-        else if (movable && (owed > 0 || recorded) && from <= to + EPS) {
+        else if (!inBodyOnly && movable && (owed > 0 || recorded) && from <= to + EPS) {
           const x = Math.max(from, Math.min(x0, to));
           result.push(seat({ keys, x, width: w0, dx: x - x0, growth: 0, owed, inPlace: false }));
         }
-      } else if (movable && (owed > 0 || recorded) && edgeLow >= growLow - EPS && edgeHigh <= growHigh + EPS) {
+      } else if (!inBodyOnly && movable && (owed > 0 || recorded) && edgeLow >= growLow - EPS && edgeHigh <= growHigh + EPS) {
         // A seat the cap alone refuses is kept apart: its targets are the ones the cap declines (`seatNode`).
         (holds(need) ? result : capped).push(seat({ keys, x: edgeLow, width: need, dx: edgeLow - x0, growth: need - w0, owed, inPlace: false }));
       }
       // The growth in place: the body keeps its edges and reaches over the targets.
       const reachLow = Math.min(x0, edgeLow), width = Math.max(x0 + w0, edgeHigh) - reachLow;
-      if (inLimit && !stoppedInPlace && width > w0 + EPS) (holds(width) ? result : capped).push(seat({ keys, x: reachLow, width, dx: 0, growth: width - w0, owed, inPlace: true }));
+      if (!inBodyOnly && inLimit && !stoppedInPlace && width > w0 + EPS) (holds(width) ? result : capped).push(seat({ keys, x: reachLow, width, dx: 0, growth: width - w0, owed, inPlace: true }));
     }
   }
   const near = (a: number, b: number): boolean => Math.abs(a - b) <= NO_MOVE_EPS;
@@ -380,7 +387,7 @@ interface SeatOutcome { kept: Set<string>; dx: number; from: number; capped: Set
  */
 function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, wanted: ReadonlyMap<string, number>, owes: (key: string) => boolean,
   window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean, kept?: ReadonlySet<string>,
-  recordedFrom?: number): SeatOutcome {
+  recordedFrom?: number, keptInBody = false): SeatOutcome {
   // The width of a seated body is measured from the record (ADR-0027, clause 4): the width before its first seat, never a box an earlier pass grew.
   const box = node.bounds!, from = Math.min(box.width, recordedFrom ?? Infinity), none: SeatOutcome = { kept: new Set(), dx: 0, from, capped: new Set() };
   // A seat reads the geometry alone, never an earlier `cap` decline: the publication check replays it after the route rule has dropped the
@@ -391,7 +398,7 @@ function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, want
   const movable = !isGridGroup(model, group.id) && !model.staggerRows?.some(row => row.group === group.id) && chainBlockOf(model, node.id) === undefined;
   const siblings = siblingLimit(model, group, node);
   const refusedByCap: SeatCandidate[] = [];
-  const candidates = seatCandidates(node, targets, { siblings, window, stops, kept }, movable, seatCap(model, node, from), refusedByCap);
+  const candidates = seatCandidates(node, targets, { siblings, window, stops, kept, keptInBody }, movable, seatCap(model, node, from), refusedByCap);
   const saved = JSON.stringify(node);
   const restore = (): void => {
     const copy = JSON.parse(saved) as LayoutNode;
@@ -1264,7 +1271,20 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     // The targets the step kept, grew toward or declined, read on the geometry it leaves on every exit (architecture-2 ticket 66).
     writeAlignmentTargets(model, model.groups[id]!.nodes, step.notes, warn ? stepPass : 0);
     // The seats, only when the step's own geometry stands: a step given back or kept at its start leaves no seat of its own (ADR-0027).
-    if (step.group === began) writeAlignmentSeats(model, step.notes.seated, warn ? stepPass : 0, step.notes.unseated);
+    if (step.group === began) {
+      writeAlignmentSeats(model, step.notes.seated, warn ? stepPass : 0, step.notes.unseated);
+      // A pooled member's recorded seat the step withdrew after the freeze is read from the record it leaves (dense-16x9 ticket 46, cause a; R1):
+      // the member is latched (`seatLatches`) and takes no seat again in the attempt, and the decline is named. A step given back or kept at its
+      // start withdraws nothing.
+      for (const [nodeId, keys] of [...step.notes.lost ?? []].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+        // A seat decided again over other ports is no withdrawal: only a member the step leaves with no seat is latched.
+        if (model.alignmentSeats === undefined || Object.hasOwn(model.alignmentSeats, nodeId)) continue;
+        if (!(model.seatLatches ?? []).includes(nodeId)) model.seatLatches = [...model.seatLatches ?? [], nodeId].sort();
+        if (!warn) continue;
+        const named = [...new Set(keys.map(key => step.notes.seats.get(key)!.link))].sort();
+        placementWarning(model, SEAT_REFUSED, `${nodeId} withdraws its recorded seat and takes no seat again in this placement (seat latch): the move of its row unit takes it off the feeds of ${named.join(', ')}; after the chord freeze a seat of a row unit member holds only inside the body it has.`, named);
+      }
+    }
     centreCheckTrace.step?.(model, id, warn, step.unresolved, step.group === began);
     return step;
   });
@@ -1615,8 +1635,16 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const keptHere = record === undefined ? new Set([...kept].filter(key => nodePorts.has(key))) : Object.hasOwn(record, nodeId) ? new Set(record[nodeId]!.ports) : undefined;
     const recorded = record !== undefined && Object.hasOwn(record, nodeId) ? record[nodeId]! : undefined;
     const seatedFrom = node.bounds!.x;
-    const seat = seatNode(model, group, node, wanted, owes, inBody(node, rowWindow), stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from);
+    // After the chord freeze the recorded seat of a pooled member holds only inside the body it has (dense-16x9 ticket 46, cause a), and a member
+    // whose seat a step withdrew then takes no seat again in the placement attempt (`seatLatches`, R4).
+    const frozen = model.frozenChords !== undefined, latched = pooled && (model.seatLatches?.includes(nodeId) ?? false);
+    const seat = latched ? { kept: new Set<string>(), dx: 0, from: node.bounds!.width, capped: new Set<string>() }
+      : seatNode(model, group, node, wanted, owes, inBody(node, rowWindow), stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from, pooled && frozen);
     for (const key of seat.kept) aligned.add(key);
+    // After the freeze, a recorded seat of a pooled member that the unit's move takes off its feeds is withdrawn by name (dense-16x9 ticket 46,
+    // cause a): it holds only inside the body the member has, so it is not left standing off its feed, and the replay reads the same record (R1).
+    const lost = pooled && frozen && recorded !== undefined ? recorded.ports.filter(key => !seat.kept.has(key) && seats.has(key)) : [];
+    if (lost.length) (notes.lost ??= new Map()).set(nodeId, lost);
     // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
     const box = node.bounds!;
     if (box.width > seat.from + EPS) for (const key of seat.kept) notes.grown.set(key, { low: box.x - wanted.get(key)!, high: right(box) - wanted.get(key)! });

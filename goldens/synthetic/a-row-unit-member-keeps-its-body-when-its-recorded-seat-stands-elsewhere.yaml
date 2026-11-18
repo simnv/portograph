@@ -1,0 +1,70 @@
+# Expected: the nodes of `a-port-outside-a-bundle-keeps-its-side-of-the-block` listed in reverse, with `moveBeforeGrow`. `other` and `low` are fed by
+# the same parent (`edge`) and stand as one row unit (dense-16x9 ticket 27): the unit's seat moves `other` off its own feeds, so its body `spare`
+# keeps its box, neither slid nor grown by a seat, and the link `spare-link` is a chord. Before dense-16x9 ticket 47 the body's recorded seat slid
+# it back to its feed after each main move toward the unit's seat; after the chord freeze the region fit no longer gave the box back, each replay
+# widened `other` by the distance between the two seats, and the publication refused the sheet ("the row unit of other stands off its seat").
+# Ticket 46, cause a (design B): after the chord freeze the recorded seat of a pooled member holds only inside the body the member has; when the
+# unit's move takes its port off the seat's feed, the seat is withdrawn by name (ALIGNMENT_SEAT_REFUSED) and the member takes no seat again in the
+# placement attempt (`seatLatches`). Every order settles with no error gate and no link removed; routed turns 6, 6 and 0 (as written, links
+# reversed, nodes reversed). A regression input of dense-16x9 ticket 46; test/layout/r3-move-before-grow.test.ts reads it in three input orders.
+portograph: 2
+layout: {moveBeforeGrow: true}
+profile: network
+title: A row unit member keeps its body when its recorded seat stands elsewhere
+groups:
+  up:
+    tier: 0
+    label: UP
+  low:
+    tier: 1
+    label: LOW
+  other:
+    tier: 1
+    label: OTHER
+nodes:
+  core:
+    group: low
+    label: core
+    ports:
+    - name: wan1
+    - name: wan2
+    - name: wan3
+  spare:
+    group: other
+    label: spare
+  edge:
+    group: up
+    label: edge
+  peer-b:
+    group: up
+    label: peer-b
+  peer-a:
+    group: up
+    label: peer-a
+links:
+- - spare
+  - edge
+  - id: spare-link
+    label: spare
+- - core.wan1
+  - edge
+  - id: wan-one
+    label: one
+- - core.wan2
+  - edge
+  - id: wan-two
+    label: two
+- - core.wan3
+  - edge
+  - id: wan-three
+    label: three
+- - core
+  - peer-a
+  - id: overlay-a
+    label: ov-a
+    route: overlay
+- - core
+  - peer-b
+  - id: overlay-b
+    label: ov-b
+    route: overlay

@@ -811,6 +811,15 @@ export interface LayoutModel extends Partial<PlacementInputs> {
    */
   alignmentSeats?: Record<string, AlignmentSeat>;
   /**
+   * The seat latches (dense-16x9 ticket 46, cause a; only with `layout.moveBeforeGrow`, absent otherwise): the members of a pooled row unit whose
+   * recorded seat a centring step withdrew after the chord freeze, in node-id order. A latched member takes no seat again in the placement attempt,
+   * so each member loses a seat at most once after the freeze (R4: the post-freeze withdrawals of one attempt are at most the pooled members).
+   * Written by the step that withdraws the seat, read by every later step and by the replays of the publication check (R1); the check refuses a
+   * latched node that holds a seat. Written with the first latch and kept with `alignmentSeats`. Absent = no member latched (also with the option
+   * off, or before 7c); a list is never empty.
+   */
+  seatLatches?: string[];
+  /**
    * Who yields among the labels on diagonal lines (architecture-2 ticket 20, `recordLabelYields`): a key for every described overlay
    * link whose label lies on a diagonal line, with the links whose label bands it keeps clear of ([] = none). Each pair is decided once,
    * in 7f, and never again; 7f and stage 9 read the record. Absent = no label on a diagonal line, or a model before 7f.
