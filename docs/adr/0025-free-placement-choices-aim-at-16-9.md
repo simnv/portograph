@@ -54,14 +54,20 @@ placement. That extent holds no canvas margin and no legend, and the rounds afte
 fan round grew a steep gap, and the published sheet stood at 1.646 for the aim 16:9.
 - One reader: `canvasExtent`, the canvas stage 9 fits (`refitCanvas`), with the legend and the margin, read on a copy. The first choice and
   the final one read it; one function chooses for both (`aspectFlatGaps`) and one judges both (`nearerAim`).
-- After the last step that changes the sheet (the driver's rounds and the crowded-chord replay), the driver reads the kept baseline and chooses
-  once more (`chooseFlatGapsAgain`), only when the sheet differs from the one the first choice read. A gap that a choice raised may also drop
-  toward its floor; a gap at its mandatory height cannot.
-- The placement at the new gaps is kept only when every reservation of the ledger holds on it, it stands nearer the aim, it keeps every seat
-  set, every link straight before stays straight when routed and its route adds no error-gate finding. Else the placement before it stands,
-  and `FLAT_BLOCK_GAP_FINAL_DECLINED` names why (the flat gaps are a placement input outside the ledger).
+- After the last step that changes the sheet (the driver's rounds and the crowded-chord replay), the command chooses once more
+  (`chooseFlatGapsAgain`), only when the kept baseline reads a different sheet from the one the first choice read. It runs once per command,
+  on the run the command publishes (`fitPublication`); a group-lift or width trial is judged on its result without it (review 1). A gap that a
+  choice raised may also drop toward its floor; a gap at its mandatory height cannot.
+- The final choice reads the published sheet on both sides (review 1): the publication route of the model (`publicationRoute`, the route mode
+  publication uses) labelled as stage 9 labels it (`publishedSheet`: link labels, legend, margin). Stage 8 can draw a route outside the placed
+  boxes, and a placement reading does not see it; no forecast of it is built here.
+- The placement at the new gaps is kept only when every reservation of the ledger holds on it, every seat set of the baseline stands on its
+  ledger, its published sheet stands nearer the aim, every straight link stays straight, every course keeps its turn promise (`holdsRouted`)
+  and its route adds no error-gate finding (`gateFindings`, scored with force; a model it cannot score is declined by name). Else the
+  placement before it stands, and `FLAT_BLOCK_GAP_FINAL_DECLINED` names why (the flat gaps are a placement input outside the ledger). A
+  placement or 7f refusal declines it; the centring invariant and the budget are the command's and propagate (`refusedAtBands`).
 - Bound: one placement more per command, outside the placement cap as the first choice's, with the seat-set retries of a kept placement, one
-  7f run and at most two routes. The step reads its own result nowhere.
+  7f run, one route of the candidate and two stage-9 labellings; the command publishes once more when it ran. It reads its own result nowhere.
 - Measured on the sheet behind the ticket: 16:9 publishes 3543 x 1993 px (1.778), with every block member straight and no gate finding.
 
 ## Amendment (2026-11-17): the room of a flat block is not judged by the aim
