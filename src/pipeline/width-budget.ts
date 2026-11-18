@@ -35,7 +35,8 @@ export async function fitWidthBudget(input: NormalisedDocument, options: LayoutO
   delete document.layout!.maxWidth;
   if (Object.keys(document.layout!).length === 0) delete document.layout;
   let best = await run(document, options);
-  if (best.canvas!.width <= budget) return best;
+  // A run that meets the budget keeps it through the publication fit (review 2, P2b): the fit declines a candidate past it by name.
+  if (best.canvas!.width <= budget) return carryFit(best, best, model => model, { maxWidth: budget });
   // The group lift (D-Q5) is decided once, by the first run; every stagger trial applies its record (`fixedLifts`) and decides none, so a
   // command runs at most 1 + LIFT_TRIALS lift runs and then one run per stagger trial. The lift notes of the first run stay the command's.
   const first = best;
@@ -68,10 +69,14 @@ export async function fitWidthBudget(input: NormalisedDocument, options: LayoutO
     best = trial;
     if (best.canvas!.width <= budget) break;
   }
-  if (best.canvas!.width > budget) notes.push({ stage: 'placement', severity: 'warning', code: 'WIDTH_BUDGET_UNMET',
-    message: `The narrowest valid result tried is ${best.canvas!.width.toFixed(2)} px wide; the width budget is ${budget} px.` });
   if (best !== first) notes.unshift(...liftNotes);
-  // The publication fit of the run picked is the command's (`carryFit`, dense-16x9 ticket 42 review 1); the trials were judged without it.
-  const decorate = (model: LayoutModel): LayoutModel => restoreLayoutModel(JSON.stringify({ ...model, diagnostics: [...model.diagnostics, ...notes] }));
-  return notes.length === 0 ? best : carryFit(best, decorate(best), decorate);
+  // The publication fit of the run picked is the command's (`carryFit`, dense-16x9 ticket 42 review 1); the trials were judged without it. The
+  // width finding reads the model the command returns, after its fit (review 2, P2b), and a run that met the budget holds the fit to it.
+  const unmet = (model: LayoutModel): Diagnostic[] => model.canvas!.width > budget ? [{ stage: 'placement', severity: 'warning', code: 'WIDTH_BUDGET_UNMET',
+    message: `The narrowest valid result tried is ${model.canvas!.width.toFixed(2)} px wide; the width budget is ${budget} px.` }] : [];
+  const decorate = (model: LayoutModel): LayoutModel => {
+    const extra = [...notes, ...unmet(model)];
+    return extra.length === 0 ? model : restoreLayoutModel(JSON.stringify({ ...model, diagnostics: [...model.diagnostics, ...extra] }));
+  };
+  return carryFit(best, decorate(best), decorate, best.canvas!.width <= budget ? { maxWidth: budget } : {});
 }

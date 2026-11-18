@@ -7,7 +7,12 @@
  */
 import type { LayoutModel } from '../model/index.js';
 
-type Fit = () => Promise<LayoutModel>;
+/**
+ * What a wrapper asks of the fit of the run it picked (review 2, P2b): `maxWidth`, the width budget the picked run met, which the fitted
+ * sheet must meet too (the fit declines a candidate past it by name).
+ */
+export interface FitLimits { maxWidth?: number }
+type Fit = (limits: FitLimits) => Promise<LayoutModel>;
 const fits = new WeakMap<LayoutModel, Fit>();
 
 /** `model` with its fit: the command runs `fit` when it publishes `model`. */
@@ -16,10 +21,13 @@ export function offerFit(model: LayoutModel, fit: Fit): LayoutModel {
   return model;
 }
 
-/** `to`, the decorated copy of `from` (`decorate(from)`), with the fit of `from`, decorated the same way. */
-export function carryFit(from: LayoutModel, to: LayoutModel, decorate: (model: LayoutModel) => LayoutModel): LayoutModel {
+/**
+ * `to`, the decorated copy of `from` (`decorate(from)`, or `from` itself), with the fit of `from`, decorated the same way and held to
+ * `limits`. A fit that returns `from` itself changed nothing: the result is `to`, already built (review 2, P3b).
+ */
+export function carryFit(from: LayoutModel, to: LayoutModel, decorate: (model: LayoutModel) => LayoutModel, limits: FitLimits = {}): LayoutModel {
   const fit = fits.get(from);
-  if (fit !== undefined) fits.set(to, async () => decorate(await fit()));
+  if (fit !== undefined) fits.set(to, async outer => { const fitted = await fit({ ...outer, ...limits }); return fitted === from ? to : decorate(fitted); });
   return to;
 }
 
@@ -28,5 +36,5 @@ export async function fitPublication(model: LayoutModel): Promise<LayoutModel> {
   const fit = fits.get(model);
   if (fit === undefined) return model;
   fits.delete(model);
-  return fit();
+  return fit({});
 }
