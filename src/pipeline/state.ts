@@ -26,7 +26,8 @@ export interface State {
   kept: Reservations;
   /**
    * The sheet the first flat-gap choice read on the placement it kept (`canvasExtent`; dense-16x9 ticket 42). Absent when the placement has no
-   * flat block, or its 7f trial was refused. The final choice (`chooseFlatGapsAgain`) runs only when the published sheet differs from it.
+   * flat block, or its 7f trial was refused. The final choice (`chooseFlatGapsAgain`) reads it only as its marker: it runs while the marker
+   * stands and consumes it; its trigger is the published sheet of the run (review 2).
    */
   flatGapSheet?: SheetSize;
   /** The publication route of `base` (`publicationRoute` in `publish.ts`), kept so the command routes that model once. */

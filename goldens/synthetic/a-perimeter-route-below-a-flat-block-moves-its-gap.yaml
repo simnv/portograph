@@ -1,0 +1,50 @@
+# Expected: dense-16x9 ticket 42, review 2 (P2a): the final flat-gap choice is triggered by the published sheet, not by a placement reading.
+# A 2x7 flat solid block (`hub` over seven pairs, past the 600 px cap) with the aim 3:1, and one labelled link between the bottom ports of
+# the outer pair nodes. Stage 8 routes that link below the pairs, outside the placed boxes, so the published sheet is 5 px higher than every
+# placement reading (5015.5 x 1676.833 px when the trigger compared two 7f readings: no fit ran). The final choice reads the published sheet
+# of the run, places once (`FLAT_BLOCK_GAP_FINAL`, the flat gap 1407.33 -> 1402.33 px) and publishes 5015.5 x 1671.833 px, W / 3.
+# Test `test/pipeline/flat-gap-final-public.test.ts`.
+portograph: 2
+layout: {aspect: "3:1"}
+groups:
+  hub: {tier: 2}
+  pair1: {tier: 3}
+  pair2: {tier: 3}
+  pair3: {tier: 3}
+  pair4: {tier: 3}
+  pair5: {tier: 3}
+  pair6: {tier: 3}
+  pair7: {tier: 3}
+nodes:
+  hub-a: {group: hub, class: router}
+  hub-b: {group: hub, class: router}
+  node1a: {group: pair1, class: router, size: {width: 300, height: 0}, ports: [{name: port, side: bottom}]}
+  node1b: {group: pair1, class: router, size: {width: 300, height: 0}}
+  node2a: {group: pair2, class: router, size: {width: 300, height: 0}}
+  node2b: {group: pair2, class: router, size: {width: 300, height: 0}}
+  node3a: {group: pair3, class: router, size: {width: 300, height: 0}}
+  node3b: {group: pair3, class: router, size: {width: 300, height: 0}}
+  node4a: {group: pair4, class: router, size: {width: 300, height: 0}}
+  node4b: {group: pair4, class: router, size: {width: 300, height: 0}}
+  node5a: {group: pair5, class: router, size: {width: 300, height: 0}}
+  node5b: {group: pair5, class: router, size: {width: 300, height: 0}}
+  node6a: {group: pair6, class: router, size: {width: 300, height: 0}}
+  node6b: {group: pair6, class: router, size: {width: 300, height: 0}}
+  node7a: {group: pair7, class: router, size: {width: 300, height: 0}}
+  node7b: {group: pair7, class: router, size: {width: 300, height: 0}, ports: [{name: port, side: bottom}]}
+links:
+  - [hub-a, node1a]
+  - [hub-a, node2a]
+  - [hub-a, node3a]
+  - [hub-a, node4a]
+  - [hub-a, node5a]
+  - [hub-a, node6a]
+  - [hub-a, node7a]
+  - [hub-b, node1b]
+  - [hub-b, node2b]
+  - [hub-b, node3b]
+  - [hub-b, node4b]
+  - [hub-b, node5b]
+  - [hub-b, node6b]
+  - [hub-b, node7b]
+  - {from: node1a.port, to: node7b.port, label: perimeter link label}

@@ -63,5 +63,6 @@ async function layoutOnce(document: NormalisedDocument, options: LayoutOptions, 
   const model = await publish(env, state);
   // The flat gaps chosen once more on the sheet the rounds left (dense-16x9 ticket 42): after the last step that changes the sheet, and only on
   // the run the command publishes (review 1): a lift or width trial is judged on `model`. A choice that ran publishes once more.
-  return offerFit(model, async () => await chooseFlatGapsAgain(env, state) ? publish(env, state) : model);
+  // The fit reads the published sheet of this run (review 2, P2a) and the limits of the wrapper that picked it (P2b).
+  return offerFit(model, async limits => await chooseFlatGapsAgain(env, state, model.canvas!, limits) ? publish(env, state) : model);
 }

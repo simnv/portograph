@@ -118,11 +118,23 @@ describe('the guards of the final flat-gap choice (review 1)', () => {
     expect(s.base).toBe(base);
   }, 120000);
 
-  it('lets the centring invariant of the command propagate from 7f (P2)', async () => {
-    const { env, s } = await start(plain);
-    env.bands = async () => { throw new PlacementRefusal('centring', 'The alignment target record contradicts its replay', { stage: 'bands' }); };
-    await expect(chooseFlatGapsAgain(env, s)).rejects.toThrow(/alignment target record/);
-  }, 120000);
+  for (const [code, at] of [['centring', 'bands'], ['budget', 'bands'], ['centring', 'place'], ['budget', 'place']] as const) {
+    it(`lets a ${code} refusal at ${at} propagate and gives the trial inputs back (P2; review 2, P3a)`, async () => {
+      const { env, s } = await start(plain);
+      const gaps = env.flatBlockGaps, marker = s.flatGapSheet, base = s.base, placements = env.placements;
+      expect(marker).toBeDefined();
+      const refusal = new PlacementRefusal(code, `a typed ${code} refusal`, { stage: at });
+      if (at === 'bands') env.bands = async () => { throw refusal; };
+      else { const place = env.place; env.place = async (...args) => { await place(...args); throw refusal; }; }
+      await expect(chooseFlatGapsAgain(env, s)).rejects.toBe(refusal);
+      // The trial inputs and the marker are as before; the started placement stays counted; no exemption is left open.
+      expect(env.flatBlockGaps).toEqual(gaps);
+      expect(s.flatGapSheet).toBe(marker);
+      expect(s.base).toBe(base);
+      expect(env.placements - placements).toBe(1);
+      expect(env.exemptPlacing ?? 0).toBe(0);
+    }, 120000);
+  }
 
   it('keeps the geometry before it on a declined candidate and credits the started placement', async () => {
     const { env, s } = await start(plain);
