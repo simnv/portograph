@@ -21,7 +21,6 @@ import { createAvoidAttempt } from '../route/fixture.js';
 //   - The replay of a group inside `readCentreViolations`: the `ahead` of that check.
 //   - The replay of a tier's row units (`rowUnitFaults`, called by `readCentreViolations`): the `ahead` of that check.
 // So in one check the step and the invariant answer for the same stage.
-const read = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-seated-row-names-the-ports-its-seat-leaves-off-their-feeds.yaml', import.meta.url), 'utf8');
 
 it('a seated row leaves no stall round, and centring converges', async () => {
@@ -79,7 +78,7 @@ it('a seated step names no port another rule owns (a feed from a bar)', async ()
 
 // Review 2 (R1, R2): a seated row port with an ordinary feed that a bundle member also uses. The publication at 7d judges the port as 7d owns it
 // (the centre rule); a replay that read one stage ahead (7e, the bundle owns it) did not name it, and the invariant refused the sheet at bars.
-const SHARED = read('a-seated-row-port-a-bundle-shares-keeps-its-feed-until-the-bundles');
+const SHARED = readFileSync(new URL('../fixtures/staged/a-seated-row-port-a-bundle-shares-keeps-its-feed-until-the-bundles.yaml', import.meta.url), 'utf8');
 
 it('a seated row port a bundle shares publishes past bars, and the bundle keeps it from 7e on', async () => {
   const model = await layout(parse(SHARED), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });

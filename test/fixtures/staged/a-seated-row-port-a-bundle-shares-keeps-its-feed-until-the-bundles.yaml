@@ -2,6 +2,8 @@
 # (`n1.b`, `n1.b2` to `k1` form a bundle). Until 7e the centre rule answers for the port; from 7e on the bundle owns it. The seated step, its replay
 # in the publication check and the invariant ask the one ownership test for the stage the check reads, so the sheet publishes with both seat
 # sets and no error diagnostic. Review 2 of ticket 38: a replay that read the port one stage ahead (bundle-owned at 7d) refused it at bars.
+# Staged, not in goldens/synthetic: the sheet has a known drawing defect, the same on main (dense-16x9 ticket 39). The bundle leaves n1's
+# bottom ports upward through both bodies and gates G2 to G6 fail. Its subject here is the ownership phase, not the drawing.
 # Test-only input owned by dense-16x9 ticket 38; test/pipeline/seated-step-reads-the-invariant.test.ts reads it.
 portograph: 2
 layout: { moveBeforeGrow: true }
