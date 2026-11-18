@@ -76,13 +76,14 @@ describe('two-pole ranks in the layout', () => {
     expect(() => restoreLayoutModel(JSON.stringify({ ...model, reservations: [...model.reservations!, ...refuseChordEntries(['link-10'], 0)] }))).toThrow(/held twice/);
   });
 
-  // The other outcome of the step: on sweep variant v7-3-2 the replay without the crowded chords adds an error-gate finding, so the state before it
-  // stays (no record) and a warning names the chords. The kept state is a protected model, so the warning goes with the published notes.
-  it('keeps the state and names the chords when the replay adds a gate finding (sweep v7-3-2)', async () => {
+  // Sweep variant v7-3-2 reached the other outcome of the step (the replay without the crowded chords added an error-gate finding, so the state
+  // stayed and HELD_CHORD_CROWDED named link-3 and link-11) while the centring of 7c stalled on it. Since dense-16x9 ticket 38 the centre rule
+  // checks the geometry it publishes and settles there: no held chord is crowded, link-12 to link-15 hold as chords too (7 bent links to 3), and
+  // no replay runs. That outcome is driven directly by test/pipeline/seat-retry-publication.test.ts; no sweep variant reaches it now.
+  it('holds the chords of sweep v7-3-2 clear of every planned part, so no replay runs (dense-16x9 ticket 38)', async () => {
     const model = await layout(parse(readFileSync(new URL('../fixtures/sweep/v7-3-2.yaml', import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-    const note = model.diagnostics.find(item => item.code === 'HELD_CHORD_CROWDED');
-    expect(note?.owners?.length).toBeGreaterThan(0);
+    expect(model.diagnostics.some(item => item.code === 'HELD_CHORD_CROWDED')).toBe(false);
     expect(refusedChordsOf(model.reservations ?? [])).toEqual([]);
-    for (const owner of note!.owners!) expect(model.frozenChords).toContain((owner as { id: string }).id);
+    expect(model.frozenChords).toEqual(expect.arrayContaining(['link-3', 'link-11', 'link-12', 'link-13', 'link-14', 'link-15']));
   });
 });

@@ -69,7 +69,8 @@ export function blockReserve(constraint: BlockConstraint): number { return gateB
 export const NO_MOVE_EPS = 1e-9;
 /**
  * A link stands vertical within this distance, px: the half pixel the centring step counts as standing (7c). The seat set (dense-16x9 ticket
- * 36) reads with it which verticals a member already holds at stage 5; its own equations hold to `PLACEMENT_EPS`.
+ * 36) reads with it which verticals a member already holds at stage 5; its own equations hold to `PLACEMENT_EPS`. The seated step names the
+ * ports it leaves off their feeds with it, and the centring invariant (`readCentreViolations`) reads its candidates with it (ticket 38).
  */
 export const SEAT_STANDS_EPS = 0.5;
 

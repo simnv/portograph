@@ -34,7 +34,7 @@ import { farEndFaceFailure, farEndOwner } from './far-end-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
-import { CENTRE_ALIGNMENT_OPEN, centreItemLink, fallenSeatFault, publishedCentreViolations, selectAnchorTier, withdrawFallenSeatsOf } from './centre.js';
+import { CENTRE_ALIGNMENT_OPEN, centreCheckTrace, centreItemLink, fallenSeatFault, publishedCentreViolations, selectAnchorTier, withdrawFallenSeatsOf } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentSeatsFault, alignmentTargetsFault } from './alignment-targets.js';
 import { givenBackFault } from './given-back.js';
 import { moveBeforeGrow } from './read/move-before-grow.js';
@@ -437,6 +437,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     const back = givenBackFault(model);
     if (back !== undefined) throw new Error(`The given-back growth record is forged: ${back}`);
     const all = publishedCentreViolations(model, false, trims.untrimmed);
+    if (model.stage === 'centre') centreCheckTrace.hook?.(model, 'publication', all);
     // A replay that declines a target the record does not is a contradiction of the record, not an alignment a spent budget left unverified:
     // no diagnostic excuses it (R5; ADR-0010 covers the alignments only).
     const differ = all.filter(item => item.startsWith(ALIGNMENT_TARGETS_DIFFER));
@@ -895,6 +896,45 @@ export function withStageMutation(model: LayoutModel, rule: PlacementRule, edit:
   return mutate(model, rule, edit, true);
 }
 const INTERMEDIATE_RULES: ReadonlySet<PlacementRule> = new Set<PlacementRule>(['rows', 'lanes', 'flanks', 'centre', 'bars']);
+/**
+ * What a rule publishes after its edit (dense-16x9 ticket 38): the derived structures rebuilt from the geometry the edit left (the regions, the lane
+ * extents, the region geometry with its node geometry, row and flank paths, and the rule's own products), and the seat records its moves broke
+ * withdrawn. One function, so that what a producer checks is what the transaction publishes (R1, R2): the transaction runs it after every edit, and
+ * the centre rule (7c) runs it before each final centring check of its passes, on its draft, with the rule's input (`input`: the stage and the
+ * bands of the snapshot the edit started from, and whether the edit changed the placement).
+ */
+export function rebuildAfterEdit(draft: LayoutModel, rule: PlacementRule, input: { stage: LayoutModel['stage']; tierBands: LayoutModel['tierBands']; changed: boolean },
+  attempt: Parameters<typeof placementAttempt>[1] = {}): void {
+  // The rows rule produces row paths; any later movement replaces them from the final anchors.
+  if (stages.indexOf(rule) >= stages.indexOf('lanes') && permissions[rule].move) {
+    rebuildRegions(draft);
+    if (rule !== 'lanes') rebuildLaneExtents(draft);
+  }
+  if (rule === 'bands') placementAttempt(draft, attempt);
+  else if (rule === 'link-labels') produceLinkLabels(draft);
+  else if (input.changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
+    if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
+      rebuildRegionGeometry(draft, undefined, rule === 'bars' ? input.tierBands : undefined, rule === 'bundles' || stages.indexOf(input.stage) >= stages.indexOf('bundles'));
+      if (rule === 'bundles' && draft.fanFamilies?.some(family => family.kind === 'solid')) {
+        // Forecast mandatory label/grid packing on a disposable draft; reserve its entry demand
+        // before freezing the real placement. No tentative label claim is published at 7e.
+        const packed = clone(draft);
+        freezeChords(packed);
+        produceGroupLabelBands(packed);
+        reserveBlockGaps(draft, moveBands, packed);
+        rebuildRegionGeometry(draft, undefined, undefined, true, false);
+      }
+      // The geometry rebuild can move a port (the stems of a fan, 7e): a span corridor is derived from the two end anchors, so it is read again (architecture ticket 22).
+      if (draft.lanes.some(lane => lane.kind === 'span')) rebuildLaneExtents(draft);
+    }
+    else rebuildRowPaths(draft);
+  }
+  if (rule === 'bars') rebuildBarDrops(draft);
+  // A rebuild can move a seated body or its feed: the record the rule publishes names only the seats its geometry holds (ADR-0027).
+  if (stages.indexOf(rule) >= stages.indexOf('centre') && stages.indexOf(rule) <= stages.indexOf('bands')) withdrawFallenSeatsOf(draft);
+  // So is a seat set (dense-16x9 ticket 36): one the rule's moves broke is withdrawn whole, by name (`SEAT_SET_WITHDRAWN`).
+  if (stages.indexOf(rule) >= stages.indexOf('centre') && stages.indexOf(rule) <= stages.indexOf('bands')) withdrawBrokenSeatSets(draft);
+}
 function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutModel) => void, intermediate: boolean, abortAt?: () => void, trace?: (event: AttemptTraceEvent) => void, moves?: boolean): LayoutModel {
   if (!protectedModels.has(model)) throw new Error('Mutation requires a protected snapshot; use restoreLayoutModel');
   if (!Object.hasOwn(permissions, rule) || stages[stages.indexOf(model.stage) + 1] !== rule) throw new Error(`Incorrect predecessor stage for ${rule}`);
@@ -1145,37 +1185,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     const was = (model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)), now = (draft.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side));
     same(now, [...was, ...reordered], 'Stage 7a must record the faces it reordered in the turn order, and only those');
   }
-  // The rows rule produces row paths; any later movement replaces them from the final anchors.
-  if (stages.indexOf(rule) >= stages.indexOf('lanes') && permission.move) {
-    rebuildRegions(draft);
-    if (rule !== 'lanes') rebuildLaneExtents(draft);
-  }
-  if (rule === 'bands') placementAttempt(draft, { abortAt, trace, moves });
-  else if (rule === 'link-labels') produceLinkLabels(draft);
-  else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
-    if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
-      rebuildRegionGeometry(draft, undefined, rule === 'bars' ? model.tierBands : undefined, rule === 'bundles' || stages.indexOf(model.stage) >= stages.indexOf('bundles'));
-      if (rule === 'bundles' && draft.fanFamilies?.some(family => family.kind === 'solid')) {
-        // Forecast mandatory label/grid packing on a disposable draft; reserve its entry demand
-        // before freezing the real placement. No tentative label claim is published at 7e.
-        const packed = clone(draft);
-        freezeChords(packed);
-        produceGroupLabelBands(packed);
-        reserveBlockGaps(draft, moveBands, packed);
-        rebuildRegionGeometry(draft, undefined, undefined, true, false);
-      }
-      // The geometry rebuild can move a port (the stems of a fan, 7e): a span corridor is derived from the two end anchors, so it is read again (architecture ticket 22).
-      if (draft.lanes.some(lane => lane.kind === 'span')) rebuildLaneExtents(draft);
-      if (rule === 'bars') same(nonBarHorizontalPlacement(draft), nonBarHorizontalPlacement(model),
-        'Bars may translate downstream tiers only vertically');
-    }
-    else rebuildRowPaths(draft);
-  }
-  if (rule === 'bars') rebuildBarDrops(draft);
-  // A rebuild can move a seated body or its feed: the record the rule publishes names only the seats its geometry holds (ADR-0027).
-  if (stages.indexOf(rule) >= stages.indexOf('centre') && stages.indexOf(rule) <= stages.indexOf('bands')) withdrawFallenSeatsOf(draft);
-  // So is a seat set (dense-16x9 ticket 36): one the rule's moves broke is withdrawn whole, by name (`SEAT_SET_WITHDRAWN`).
-  if (stages.indexOf(rule) >= stages.indexOf('centre') && stages.indexOf(rule) <= stages.indexOf('bands')) withdrawBrokenSeatSets(draft);
+  rebuildAfterEdit(draft, rule, { stage: model.stage, tierBands: model.tierBands, changed }, { abortAt, trace, moves });
+  // The bars rule's own check of the rebuilt draft (the rebuild leaves the other tiers where the rule put them).
+  if (rule === 'bars' && changed) same(nonBarHorizontalPlacement(draft), nonBarHorizontalPlacement(model), 'Bars may translate downstream tiers only vertically');
   // The last centring reading that reads the record is the publication of 7f: by default the routed layout publishes without it (architecture-2
   // ticket 66). With `layout.moveBeforeGrow` the routed layout keeps the records: its publication check replays the centring steps, and they read
   // the seats the producer decided (ADR-0027).

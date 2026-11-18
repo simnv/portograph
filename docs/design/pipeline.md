@@ -1214,7 +1214,8 @@ links on the peer.
 
 ### 7c — child under parents
 **A row with a seat set** (dense-16x9 ticket 36, slice 1) is not centred: its step applies the entry, each member at its stored offset from
-the first parent port where that port stands now, and chooses nothing; the cell box covers the interval (`fitRegionGroup` reads the entry,
+the first parent port where that port stands now, and chooses nothing; every wanted port the seat leaves more than `SEAT_STANDS_EPS` off its
+feed is unresolved by the step's own rule, so the invariant excuses it and the passes do not try it again (dense-16x9 ticket 38, R1); the cell box covers the interval (`fitRegionGroup` reads the entry,
 so no fit gives that room back). The step only translates the row: the anchor tier does not move, and the row stays in the window of its
 frame column (`columnWindow`), on its side of every lane of its tier, and adds no band error. The parent spread leaves the members and
 parents of a set where they stand. A far end of a standing set moves only with its set (dense-16x9 ticket 36a, ruling 3): the set translates

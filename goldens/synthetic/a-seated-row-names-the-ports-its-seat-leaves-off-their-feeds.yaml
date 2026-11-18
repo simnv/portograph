@@ -1,0 +1,20 @@
+# Expected: one row with a seat set (dense-16x9 ticket 38). The seat decides where the row stands, so a wanted port it leaves off its feed is
+# unresolved by the step's own rule, and the centring invariant excuses it. The passes reach a fixed point the check confirms: no stall
+# round, no PLACEMENT_NON_CONVERGENCE, no CENTRE_ALIGNMENT_OPEN. Before ticket 38 the check named that port at every fixed point, and
+# each draft spent a second round of passes on unchanged geometry.
+# Test-only input owned by dense-16x9 ticket 38; test/pipeline/seated-step-reads-the-invariant.test.ts reads it.
+portograph: 2
+layout: {moveBeforeGrow: true}
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+nodes:
+  feed: { group: upstream, class: provider, label: Feed }
+  a: { group: site, class: switch, label: A }
+  b: { group: site, class: switch, label: B }
+  c: { group: site, class: switch, label: C }
+links:
+  - [feed, a]
+  - [a, b]
+  - [b, c]
+  - [a, c]

@@ -31,7 +31,7 @@ import { rowGap } from './sides-two.js';
 import { alignmentAllowance, ownSideWidth, withinAlignmentCap } from './size.js';
 import { moveBeforeGrow } from './read/move-before-grow.js';
 import { standsVertical, strandedGrowth } from './given-back.js';
-import { withStageMutation } from './mutation.js';
+import { rebuildAfterEdit, withStageMutation } from './mutation.js';
 import { barReach } from './bars.js';
 import { placeOverlayFree } from './overlay-place.js';
 import { fitRegionGroup, GROUP_PADDING, groupInsets, placementWarning, rebuildRegions, right } from './regions.js';
@@ -44,7 +44,7 @@ import { linkById } from './peers.js';
 import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, tapTarget, owesVertical, sameDeclines, writeAlignmentSeats, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
 import { faceKey } from './turn-order.js';
 import { untrimmedModel } from './end-trim.js';
-import { NO_MOVE_EPS, PLACEMENT_EPS, RISER_DEPTH_EPS } from './tolerance.js';
+import { NO_MOVE_EPS, PLACEMENT_EPS, RISER_DEPTH_EPS, SEAT_STANDS_EPS } from './tolerance.js';
 import { chainBlockOf } from './read/chain.js';
 
 export interface CentreBudget { remaining: number; passes: number }
@@ -1515,7 +1515,16 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const owned = seatSetOf(model, id);
   if (owned !== undefined) {
     const why = applySeatSet(model, group, owned, seatWall(model, context));
-    if (why === undefined) return { unresolved, group, notes };
+    if (why === undefined) {
+      // The seat decides where the row stands, so every wanted port it leaves off its feed is unresolved by this step's own rule (dense-16x9
+      // ticket 38; R1): the invariant (`readCentreViolations`) excuses exactly this set. Read with the half pixel the check reads
+      // (`SEAT_STANDS_EPS`), so the two never disagree on a port: a port the step leaves is never a violation the passes try to settle again.
+      for (const nodeId of group.nodes) for (const port of model.nodes[nodeId]!.ports) {
+        const at = portId(port.ref), x = wanted.get(at);
+        if (x !== undefined && port.anchor !== undefined && Math.abs(port.anchor.x - x) > SEAT_STANDS_EPS) unresolved.add(at);
+      }
+      return { unresolved, group, notes };
+    }
     withdrawSeatSet(model, id, why);
   }
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
@@ -1810,8 +1819,16 @@ export function stepReader(model: LayoutModel, context: CentreContext): StepRead
     takes: (tier, list, id, from, to) => stepTakesOffset(model, context, tier, list, id, from, to, tail(tier)),
   };
 }
-/** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
-export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
+/**
+ * Reusable bounded producer. The caller shares one budget across all ordered placement replay. `publish`, when given, makes the geometry the caller
+ * publishes from the one the passes left (the centre rule's transaction rebuild, `rebuildAfterEdit`) and returns it: it runs before every final check,
+ * and the check reads what it returns, so the check reads what the publication reads (dense-16x9 ticket 38, R1, R2).
+ */
+export function centreDraft(model: LayoutModel, budget: CentreBudget, publish?: () => LayoutModel): void {
+  centreDraftFound(model, budget, publish);
+}
+/** `centreDraft`, and the finding set of its final check (the centre rule reads it for `centreCheckTrace`). */
+function centreDraftFound(model: LayoutModel, budget: CentreBudget, publish?: () => LayoutModel): readonly string[] {
   // The record of the alignment targets starts empty at the centre rule's input (architecture-2 ticket 66); every later run of the passes reads and
   // writes the one record (a replay of 7f too), and 7f drops it after its last centring reading.
   // A later run on a model whose centre rule ran no producer (a hand-made transaction) records no target and declines none, and says so (R6),
@@ -1858,7 +1875,7 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   // `ahead` as the passes read it) finds the step would now take, is settled by the passes the budget has left (snack-theme ticket 157).
   // A round that changes neither the geometry nor what the check finds is a stall the passes cannot see: the rounds stop there and keep the
   // rest of the shared budget for the stages after 7c (ADR-0010). Each round spends a pass, so the rounds end on the budget too (R4).
-  const check = (): string[] => timed('centre-violations', () => centreViolations(model, true));
+  const check = (): string[] => { const view = publish?.() ?? model; return timed('centre-violations', () => centreViolations(view, true)); };
   let found = withdrawRecorded(model) ? undefined : budget.remaining > 0 ? check() : [];
   let rounds = 0;
   while (found === undefined || (found.length > 0 && budget.remaining > 0)) {
@@ -1866,13 +1883,20 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     rounds++;
     passes();
     found = check();
-    if (was !== undefined && found.join() === was.join() && geometry(model).every((value, i) => Math.abs(value - before[i]!) <= 0.5)) break;
+    // A stall round: counted, so a test can prove that no step leaves a port its invariant then names (dense-16x9 ticket 38).
+    if (was !== undefined && found.join() === was.join() && geometry(model).every((value, i) => Math.abs(value - before[i]!) <= 0.5)) { attemptCounters.centreStallRounds++; break; }
   }
   if (rounds > 0 && found.length > 0) {
     reportStall(model, [], 'Centering left an alignment off its feed after the last overlay windows and the passes the budget allowed; routing and the final gates decide the retained geometry.');
   }
   refreshWindowDeclines(model);
+  return found;
 }
+/**
+ * Test only (dense-16x9 ticket 38): the final finding set of the centre rule's producer on the draft it publishes (`producer`), and the finding set
+ * the publication check reads on that draft (`publication`, at stage `centre`). Unset in production, so it costs one comparison.
+ */
+export const centreCheckTrace: { hook?: (model: LayoutModel, reader: 'producer' | 'publication', found: readonly string[]) => void } = {};
 /**
  * A `CENTRE_ALIGNMENT_INFEASIBLE` names a feed that a step, or the parent stand, could not put on one x. A later pass, a parent spread, the parent
  * stand or a move of 7f may still stand the link vertical (architecture-2 ticket 32). Read where the model stands, a warning whose links all stand
@@ -2232,7 +2256,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
         if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
         const port = groupPorts.get(child)!;
-        if (Math.abs(port.anchor!.x - x) > 0.5) candidates.push({ child, x, feed, port });
+        if (Math.abs(port.anchor!.x - x) > SEAT_STANDS_EPS) candidates.push({ child, x, feed, port });
       }
       if (!candidates.length) { previous = group; continue; }
       if (replayedText === undefined) {
@@ -2388,16 +2412,34 @@ function dropEmptySpreads(model: LayoutModel): void {
  * the second). A growth the second run strands that the first did not is kept, and named (`CENTRE_GROWTH_KEPT`, info), as is a given-back body that
  * ends the second run wider than the rule's input (its step is declined only when no aligned port of its group stands).
  */
-function centreGivingBack(draft: LayoutModel): void {
+function centreGivingBack(draft: LayoutModel): readonly string[] {
+  // The final checks of the passes read the geometry the rule publishes: the transaction's rebuild of the centre rule (ticket 38). The passes go
+  // on from it (the regions, the lane extents, the node geometry, the seats it withdraws). The transaction's own products (the link paths and
+  // their technique, derived from the final anchors, and the mesh buses) a callback may not write: the draft gets them back as they stood, and
+  // the check reads them as rebuilt, in a view, so it reads what the publication reads.
+  const publish = (): LayoutModel => {
+    // Copies: the rebuild writes into these objects in place.
+    const copy = <T>(value: T): T => value === undefined ? value : JSON.parse(JSON.stringify(value)) as T;
+    const links = draft.links.map(link => copy({ path: link.path, technique: link.technique })), meshBuses = copy(draft.meshBuses);
+    rebuildAfterEdit(draft, 'centre', { stage: draft.stage, tierBands: draft.tierBands, changed: true });
+    const view: LayoutModel = { ...draft, links: draft.links.map(link => ({ ...link })), ...(draft.meshBuses === undefined ? {} : { meshBuses: copy(draft.meshBuses) }) };
+    draft.links.forEach((link, index) => {
+      const was = links[index]!;
+      if (was.path === undefined) delete link.path; else link.path = was.path;
+      if (was.technique === undefined) delete link.technique; else link.technique = was.technique;
+    });
+    if (meshBuses === undefined) delete draft.meshBuses; else draft.meshBuses = meshBuses;
+    return view;
+  };
   // With `layout.moveBeforeGrow` a seat gives its own growth back (ADR-0027, clause 4): the passes run once.
-  if (moveBeforeGrow(draft)) { centreDraft(draft, createCentreBudget()); return; }
+  if (moveBeforeGrow(draft)) return centreDraftFound(draft, createCentreBudget(), publish);
   const input = JSON.stringify(draft);
-  centreDraft(draft, createCentreBudget());
+  const first = centreDraftFound(draft, createCentreBudget(), publish);
   const back = strandedGrowth(draft, JSON.parse(input) as LayoutModel);
-  if (!Object.keys(back).length) return;
+  if (!Object.keys(back).length) return first;
   for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
   Object.assign(draft, JSON.parse(input) as LayoutModel, { givenBack: back });
-  centreDraft(draft, createCentreBudget());
+  const found = centreDraftFound(draft, createCentreBudget(), publish);
   const was = JSON.parse(input) as LayoutModel;
   const kept = Object.keys(strandedGrowth(draft, was)).filter(node => !Object.hasOwn(back, node));
   if (kept.length) {
@@ -2411,6 +2453,7 @@ function centreGivingBack(draft: LayoutModel): void {
     draft.diagnostics.push({ stage: 'placement', severity: 'info', code: GROWTH_KEPT,
       message: `${wide.join(', ')} ends the second run of the passes wider than the rule's input; its growth stays.` });
   }
+  return found;
 }
 /** The note that the one judgement of the centre rule left a growth the second run stranded (ticket 71, R6). */
 const GROWTH_KEPT = 'CENTRE_GROWTH_KEPT';
@@ -2423,13 +2466,14 @@ export function centre(model: LayoutModel): LayoutModel {
       return copy;
     };
     const wideTwin = hasRivals(draft) ? twin() : undefined;
-    orderBundles(draft); normalizePrimaryBundlePorts(draft); centreGivingBack(draft); recordSeatedSideLanes(draft); dropEmptySpreads(draft);
-    if (!wideTwin) return;
-    centreGivingBack(wideTwin); recordSeatedSideLanes(wideTwin); dropEmptySpreads(wideTwin);
+    orderBundles(draft); normalizePrimaryBundlePorts(draft); const found = centreGivingBack(draft); recordSeatedSideLanes(draft); dropEmptySpreads(draft);
+    if (!wideTwin) { centreCheckTrace.hook?.(draft, 'producer', found); return; }
+    const twinFound = centreGivingBack(wideTwin); recordSeatedSideLanes(wideTwin); dropEmptySpreads(wideTwin);
     // Narrow only if free: a link that stands straight under the wide seat must stand straight under the narrow one, or the node keeps its wide seat.
     const narrow = straightLinks(draft);
-    if ([...straightLinks(wideTwin)].every(id => narrow.has(id))) return;
+    if ([...straightLinks(wideTwin)].every(id => narrow.has(id))) { centreCheckTrace.hook?.(draft, 'producer', found); return; }
     for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
     Object.assign(draft, wideTwin);
+    centreCheckTrace.hook?.(draft, 'producer', twinFound);
   });
 }
