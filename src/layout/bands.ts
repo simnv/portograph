@@ -727,13 +727,26 @@ function groupTitlesFault(model: LayoutModel): string | undefined {
  * whole growth of a cell that widened for its title, the frame grows by less, and the gap of 40 px would stay open. Flanks keep
  * their place; the anchor tier does not, unlike in centring.
  */
+/** The warning of a child frame the pack of 7f holds off its packed place because the move would break or deepen a hard separation (dense-16x9 ticket 48). */
+const FRAME_PACK_SEPARATION_HELD = 'FRAME_PACK_SEPARATION_HELD';
 function holdColumnsAfterPush(model: LayoutModel): boolean {
   if (model.document.frames === undefined) return false;
   const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
   // The push above moves the cells after a widened cell by its whole growth, and a frame is derived off the bodies, so a title that
   // widens a member inside its frame grows the frame by less (ticket 61). The beside rows are packed against the frames again, the way
   // centring packs them: a gap of 40 px stays 40 px. Only the flanks keep their place: an anchor-tier member pushed by a neighbour's title is packed back too.
-  packBesideRows(model, cell => !model.groups[cell]!.flank);
+  // The pack reads every hard separation as part of its window (dense-16x9 ticket 48): a child that would break or deepen one (the gap of its
+  // frame to the next column) stays where it stands. Placement reserves the gaps (the seat sets read them, `planSeatSet`); this move only checks.
+  packBesideRows(model, cell => !model.groups[cell]!.flank, (cells, delta) => {
+    const child = model.groups[cells[0]!]!.frame ?? cells[0]!, broken = separationsBrokenBy(model, cells.map(cell => {
+      const group = model.groups[cell]!;
+      return { group, bounds: { ...group.bounds!, x: group.bounds!.x + delta } };
+    }));
+    // The warning names the child while the pack holds it (R6), and goes when a later pack moves it or finds it packed.
+    model.diagnostics = model.diagnostics.filter(item => !(item.code === FRAME_PACK_SEPARATION_HELD && item.owners?.some(owner => 'id' in owner && owner.id === child)));
+    if (broken.length) placementWarning(model, FRAME_PACK_SEPARATION_HELD, `Frame ${child} stays ${Math.round(Math.abs(delta) * 100) / 100} px from its packed place: the move would break or deepen the minimum separation ${broken[0]}.`, [child], 'group');
+    return broken.length === 0;
+  });
   holdColumnAxes(model, 0);
   // `moveGroup` leaves pill bounds behind, and the next reservation measures them.
   const moved = [...before].filter(([group, x]) => group.bounds!.x !== x);
