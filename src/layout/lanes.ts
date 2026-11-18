@@ -20,7 +20,7 @@ import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withStageMutation } from './mutation.js';
 import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
-import { type ProposedBox, foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, riserHostGrowth, frameNodes } from './frames.js';
+import { type ProposedBox, deriveFrames, foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, riserHostGrowth, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { corridorSideOf, corridorStandsOn } from './reservations.js';
@@ -31,6 +31,7 @@ import { facingPairs } from './parallel-sets.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkRing } from './trunk.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { moveBeforeGrow } from './read/move-before-grow.js';
+import { besideGap, frameTiers, type Unit } from './columns.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -1112,24 +1113,103 @@ export function allocateLanes(model: LayoutModel): void {
    * Move the planned groups aside, then reserve the corridor beside `group`. Subsequent reservations
    * inspect current pills, not the pre-translation measurements.
    */
+  /** Moves `item` by `dx`; returns its nodes. */
+  const translate = (item: LayoutGroup, dx: number): string[] => {
+    moveGroup(model, item, dx, 0);
+    // Repeated pushes must serialize as one exact common translation, not independently
+    // accumulated floating-point sums for each anchor and its container.
+    const origin = origins.get(item.id)!, totalDx = item.bounds!.x - origin.x;
+    for (const old of origin.nodes) {
+      const node = model.nodes[old.id]!;
+      node.bounds!.x = old.x + totalDx;
+      node.ports.forEach((port, i) => { port.anchor = { ...old.anchors[i]!, x: old.anchors[i]!.x + totalDx }; });
+    }
+    return item.nodes;
+  };
   const shiftGroups = (link: LayoutLink, groups: LayoutGroup[], shifts: number[]): void => {
     const moved: string[] = [];
     for (const [index, item] of groups.entries()) {
       const dx = shifts[index]!;
       if (!dx) continue;
-      moveGroup(model, item, dx, 0);
-      // Repeated pushes must serialize as one exact common translation, not independently
-      // accumulated floating-point sums for each anchor and its container.
-      const origin = origins.get(item.id)!, totalDx = item.bounds!.x - origin.x;
-      for (const old of origin.nodes) {
-        const node = model.nodes[old.id]!;
-        node.bounds!.x = old.x + totalDx;
-        node.ports.forEach((port, i) => { port.anchor = { ...old.anchors[i]!, x: old.anchors[i]!.x + totalDx }; });
-      }
-      moved.push(...item.nodes);
+      moved.push(...translate(item, dx));
       placementWarning(model, 'LANE_MARGIN_EXPANDED', `Expanded the occupied margin of ${item.id} for ${link.id}.`, [item.id], 'group');
     }
     if (moved.length) rebuildNodeGeometry(model, moved, 'current');
+  };
+  /**
+   * A lane a frame holds grows the frame (`transitLanes`) in every sub-tier of the frame, but its slot reads only the sub-tiers the link
+   * crosses, so the grown frame can stand nearer than the beside gap (`besideGap`, the rule G9 reads) to a unit of another sub-tier
+   * (dense-16x9 ticket 48). Once the held lanes stand, the units beside a grown frame edge give way, outward and whole, each unit after them
+   * in turn, by what the gap lacks. The grown frame stays: its cells hold the sources of its lanes. A unit that holds a lane source, stands in a
+   * sub-tier no link crosses (the lanes rule moves only those) or would reach a reserved lane stays, and so do the units beyond it. This runs
+   * before any lane foreign to a frame is reserved, so every foreign lane reads the frames where they stand.
+   */
+  const separateHeldFrames = (): void => {
+    if (!pending.length) return;
+    const lanes = model.lanes, before = deriveFrames(model);
+    let grown: ReturnType<typeof deriveFrames>;
+    model.lanes = pending;
+    try { grown = deriveFrames(model); } finally { model.lanes = lanes; }
+    if (before === undefined || grown === undefined) return;
+    const was = new Map(before.map(frame => [frame.id, frame.box])), now = new Map(grown.map(frame => [frame.id, frame.box]));
+    const crossed = new Set(model.links.flatMap(link => transitTiers(model, link)));
+    const shifts = new Map<Unit, number>();
+    /** Whether `unit` may move by `dx`: no lane source, only crossed sub-tiers, and its reach stays off every lane of another group. */
+    const movable = (unit: Unit, dx: number): boolean => unit.groups.every(group => {
+      if (fixedSources.has(group.id) || !crossed.has(group.tier!)) return false;
+      const reach = occ(group), low = reach.x + dx, high = right(reach) + dx;
+      // A lane hosted in a cell of the unit moves with it.
+      return pending.every(lane => lane.tier !== group.tier || unit.groups.some(item => item.id === lane.group)
+        || right(lane.bounds) <= low + PLACEMENT_EPS || lane.bounds.x >= high - PLACEMENT_EPS);
+    });
+    /** A unit that stays: the gap stays short, and the warning names it (R6). */
+    const held = (unit: Unit, frame: string, need: number): void => placementWarning(model, 'LANE_FRAME_GAP_HELD',
+      `${unit.id} stays ${Math.round(need * 100) / 100} px nearer than the beside gap to frame ${frame}, which a lane it holds grew: it holds a lane source, stands in a sub-tier no link crosses or would reach a reserved lane.`, [unit.id], 'group');
+    for (const all of frameTiers(model)) {
+      // The units the rows rule sweeps (`columnShifts`): the frames and the one-rank row groups. A grid, a bar or a flank stands where it stands.
+      const standing = all.filter(unit => unit.frame || groupShape(model, unit.id) === 'row')
+        .map(unit => ({ unit, box: unit.frame ? now.get(unit.id)! : unit.groups[0]!.bounds! }))
+        .sort((a, b) => a.box.x - b.box.x || compareId(a.unit.id, b.unit.id));
+      for (const [i, { unit, box }] of standing.entries()) {
+        const old = unit.frame ? was.get(unit.id) : undefined;
+        if (old === undefined) continue;
+        // Grown to the left: the units before it move left.
+        if (box.x < old.x - PLACEMENT_EPS) {
+          let edge = box.x, frame = true;
+          for (let j = i - 1; j >= 0; j--) {
+            const other = standing[j]!, dx = shifts.get(other.unit) ?? 0;
+            const need = right(other.box) + dx + besideGap(model, other.unit.frame, frame) - edge;
+            if (need <= PLACEMENT_EPS) break;
+            if (!movable(other.unit, dx - need)) { held(other.unit, unit.id, need); break; }
+            shifts.set(other.unit, dx - need);
+            edge = other.box.x + dx - need; frame = other.unit.frame;
+          }
+        }
+        // Grown to the right: the units after it move right.
+        if (right(box) > right(old) + PLACEMENT_EPS) {
+          let edge = right(box), frame = true;
+          for (let j = i + 1; j < standing.length; j++) {
+            const other = standing[j]!, dx = shifts.get(other.unit) ?? 0;
+            const need = edge + besideGap(model, frame, other.unit.frame) - (other.box.x + dx);
+            if (need <= PLACEMENT_EPS) break;
+            if (!movable(other.unit, dx + need)) { held(other.unit, unit.id, need); break; }
+            shifts.set(other.unit, dx + need);
+            edge = right(other.box) + dx + need; frame = other.unit.frame;
+          }
+        }
+      }
+    }
+    if (!shifts.size) return;
+    const moved: string[] = [];
+    for (const [unit, dx] of [...shifts].sort(([a], [b]) => compareId(a.id, b.id))) {
+      for (const group of unit.groups) {
+        moved.push(...translate(group, dx));
+        // A held lane hosted in a moved cell moves with it.
+        for (const lane of pending) if (lane.group === group.id) { lane.x += dx; lane.bounds = { ...lane.bounds, x: lane.bounds.x + dx }; }
+      }
+      placementWarning(model, 'LANE_FRAME_GAP_KEPT', `Moved ${unit.id} by ${Math.round(dx * 100) / 100} px: a lane a frame holds grew the frame nearer than the beside gap to it.`, [unit.id], 'group');
+    }
+    rebuildNodeGeometry(model, moved, 'current');
   };
   const commit = (link: LayoutLink, tier: number, groups: LayoutGroup[], group: LayoutGroup, x: number, shifts: number[]): void => {
     const source = model.nodes[laneSource(model, link).node]!, width = laneWidth(model, link), half = width / 2;
@@ -1165,7 +1245,9 @@ export function allocateLanes(model: LayoutModel): void {
     return Object.values(model.groups).some(group => own.has(group.id) && crossed.includes(group.tier!));
   };
   const heldLinks = new Set(links.filter(holdsLane));
+  let separated = false;
   for (const link of [...links.filter(item => heldLinks.has(item)), ...links.filter(item => !heldLinks.has(item))]) {
+    if (!separated && !heldLinks.has(link)) { separateHeldFrames(); separated = true; }
     const crossed = transitTiers(model, link), width = laneWidth(model, link), half = width / 2;
     const cellsOf = new Map<string, LayoutGroup[]>();
     for (const group of Object.values(model.groups)) {
@@ -1290,6 +1372,7 @@ export function allocateLanes(model: LayoutModel): void {
       }
     }
   }
+  if (!separated) separateHeldFrames();
   for (const tier of model.tierBands.map(band => band.tier)) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x);
     const main = groups.filter(group => !group.flank);
