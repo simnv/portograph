@@ -1317,7 +1317,10 @@ function gapPlanOf(model: LayoutModel, gap: TierGap, dodging: boolean): GapPlan 
   // One that spans the gap is no wall: its members' own boxes and lanes already are.
   const spans = frameTierSpans(model);
   for (const frame of model.frames ?? []) {
-    const box = frame.box, x0 = box.x - margin, x1 = right(box) + margin, tiers = spans.get(frame.id)!;
+    // A frame box with no frame in the document spans no tier and is no band here, as `cantonTiers` read it (an empty span).
+    const tiers = spans.get(frame.id);
+    if (tiers === undefined) continue;
+    const box = frame.box, x0 = box.x - margin, x1 = right(box) + margin;
     if (tiers.last === gap.above) {
       if (bottom(box) + margin > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + margin });
     } else if (tiers.first === gap.below) {
