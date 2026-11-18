@@ -17,7 +17,17 @@ import { heldLock } from './test-runner-lib.mjs';
 const require = createRequire(import.meta.url);
 
 /** The columns of a corpus TSV, in order; `corpus.mjs` writes them and `gate-compare.mjs` reads them. */
-export const COLUMNS = ['file', 'Q', 'X', 'Xf', 'W', 'gates', 'warn', 'routed', 'fb', 'edge', 'ob', 'bends', 'side', 'removed', 'labelBorder', 'track', 'hash'];
+export const COLUMNS = ['file', 'Q', 'X', 'Xf', 'W', 'gates', 'warn', 'routed', 'fb', 'edge', 'ob', 'bends', 'side', 'removed', 'labelBorder', 'track', 'fallback', 'hash'];
+/**
+ * The columns of a corpus TSV written before `fallback` (dense-16x9 ticket 56). `gate:branch` reuses such a base: the fallback of a default-on
+ * sheet is new in the head, so a missing base column reads as 0.
+ */
+export const COLUMNS_BEFORE_FALLBACK = COLUMNS.filter((column) => column !== 'fallback');
+/**
+ * The sheets that may fall back to the option-off run of `layout.moveBeforeGrow` (dense-16x9 ticket 56), each with its reason. A sheet that
+ * falls back and is not listed is worse in `gate:compare` (and a head-only one fails), so a new class of failure shows up. None today.
+ */
+export const FALLBACK_SHEETS = new Map();
 
 /** The repository root, as a path. */
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));

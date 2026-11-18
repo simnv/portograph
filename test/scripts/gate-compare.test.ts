@@ -112,3 +112,39 @@ it('passes a clean head-only sheet: warnings and bends are not judged on a sheet
   expect(out).not.toContain('WORSE');
   expect(out).toContain('worse: none');
 });
+
+// Dense-16x9 ticket 56: the corpus column `fallback` is 1 when a default-on sheet published its option-off run.
+const WITH_FALLBACK = [...HEADER.slice(0, -1), 'fallback', 'hash'];
+function fallbackRow(fallback: string, overrides: Record<string, string> = {}): string {
+  const cells: Record<string, string> = {
+    file: 'goldens/a.yaml', Q: '0.5', X: '0', Xf: '0', W: '100x100', gates: '-', warn: '-', routed: '1/1', fb: '0', edge: '0', ob: '0/0',
+    bends: '0', side: '0', removed: '0', labelBorder: '0', fallback, hash: 'aaaaaaaaaaaa', ...overrides,
+  };
+  return WITH_FALLBACK.map(column => cells[column]).join('\t');
+}
+function compareFallback(base: string, head: string, baseHeader = WITH_FALLBACK): string {
+  dir = mkdtempSync(join(tmpdir(), 'pg-compare-'));
+  writeFileSync(join(dir, 'base.tsv'), `${baseHeader.join('\t')}\n${base}\n`);
+  writeFileSync(join(dir, 'head.tsv'), `${WITH_FALLBACK.join('\t')}\n${head}\n`);
+  const result = spawnSync('node', [compareScript, join(dir, 'base.tsv'), join(dir, 'head.tsv')], { encoding: 'utf8' });
+  expect(result.status).toBe(0);
+  return String(result.stdout);
+}
+
+it('judges a new fallback to the option-off run worse (dense-16x9 ticket 56)', () => {
+  const out = compareFallback(fallbackRow('0'), fallbackRow('1', { hash: 'bbbbbbbbbbbb' }));
+  expect(out).toMatch(/fallback\s+0\s+1\s+WORSE/);
+  expect(out).toContain('worse: fallback 1');
+});
+
+it('reads a base with no fallback column as 0 (dense-16x9 ticket 56)', () => {
+  const out = compareFallback(sheet(), fallbackRow('1', { hash: 'bbbbbbbbbbbb' }), HEADER);
+  expect(out).toMatch(/fallback\s+-\s+1\s+WORSE/);
+  expect(compareFallback(sheet(), fallbackRow('0'), HEADER)).toContain('no change');
+});
+
+it('flags a head-only sheet that falls back NEW-FAIL (dense-16x9 ticket 56)', () => {
+  const out = compareFallback(fallbackRow('0'), `${fallbackRow('0')}\n${fallbackRow('1', { file: 'goldens/new.yaml' })}`);
+  expect(out).toMatch(/goldens\/new\.yaml\s+fallback\s+-\s+1\s+NEW-FAIL/);
+  expect(out).toContain('worse: new-fail 1');
+});

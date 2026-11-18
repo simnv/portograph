@@ -629,6 +629,15 @@ export interface LayoutModel extends Partial<PlacementInputs> {
    */
   groupLifts?: GroupLift[];
   /**
+   * The mode of `layout.moveBeforeGrow` the command ran (dense-16x9 ticket 56). Present only for a sheet that writes nothing while the default is
+   * on (`defaultMeansOn`): `requested` is then `default`, and `effective` the mode the run had, which `layout` writes into `document.layout`
+   * (`true` for `on`, `false` for `off`), so every reader and the restore read it. `off` is the fallback: the option-on run failed for a
+   * placement reason (`failure`, a `PlacementRefusal` by code and message), and the command published the option-off run, which names it
+   * (`MOVE_BEFORE_GROW_FALLBACK`). Written at stage 1 from the command and never changed. Absent: the document's own value is the requested and
+   * the effective mode (a sheet that writes the option, or a default that is off).
+   */
+  moveBeforeGrowRun?: MoveBeforeGrowRun;
+  /**
    * Architecture-2 ticket 73: the feed splits stage 5 made (`feed-split.ts`), in the order it made them. Absent = not decided: no stage 5 of this
    * pipeline ran on the model (a model before `sides-two`, or one frozen by hand); `[]` = stage 5 decided and split nothing (no anchor tier, no
    * pair short of its room, or each short pair declined with `FEED_SPLIT_DECLINED`). Each placement run decides on its own stage-5 geometry.
@@ -974,6 +983,13 @@ export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossi
  * each a distance from the far end's x. `pass`: the pass of its centring budget that last changed it (0 for a replay; each region replay
  * starts a budget of its own); read by nothing for a decision.
  */
+/** The record of a default-mode run of `layout.moveBeforeGrow` (`LayoutModel.moveBeforeGrowRun`, dense-16x9 ticket 56). */
+export interface MoveBeforeGrowRun {
+  requested: 'default';
+  effective: 'on' | 'off';
+  /** The failure of the option-on run (`effective: off` only): the `PlacementRefusal` code and its message. */
+  failure?: { code: string; message: string };
+}
 export interface AlignmentTarget {
   port: string;
   link: string;

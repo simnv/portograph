@@ -20,6 +20,8 @@
  *   removed  the links stage 8 removed
  *   labelBorder  the scorer's labelBorderCrossings counter (0 when absent)
  *   track    the scorer's overlayTrackShares counter: run pairs of two overlay paths on one track (0 when absent)
+ *   fallback 1 when the sheet writes no `layout.moveBeforeGrow`, the default is on, and the option-on run failed, so the option-off run
+ *            published (`moveBeforeGrowRun.effective` is `off`, dense-16x9 ticket 56); else 0
  *   hash     12 hex of sha256 of the layout JSON without runtime stages (what portograph render writes)
  *
  * Every geometry number is the scorer's (`score().snapshot`: `metrics`, `counts`, `counters`,
@@ -55,6 +57,7 @@ function row(file, model, snapshot, hash) {
     String(snapshot.counters.removedLinks),
     String(snapshot.counters.labelBorderCrossings ?? 0),
     String(snapshot.counters.overlayTrackShares ?? 0),
+    String(model.moveBeforeGrowRun?.effective === 'off' ? 1 : 0),
     hash,
   ].join('\t');
 }
@@ -71,6 +74,7 @@ async function main(argv) {
   writeFileSync(out, `${COLUMNS.join('\t')}\n`);
   writeFileSync(timingsOut, `${TIMING_COLUMNS.join('\t')}\n`);
   const timings = [];
+  let fallbacks = 0;
   try {
     for (const [index, file] of files.entries()) {
       process.stderr.write(`corpus: ${index + 1}/${files.length} ${file}\n`);
@@ -104,6 +108,7 @@ async function main(argv) {
           scoreMs = performance.now() - scoreStart;
         }
         line = row(file, model, snapshot, layoutHash(pipeline.api, model));
+        if (model.moveBeforeGrowRun?.effective === 'off') fallbacks++;
       } catch (error) {
         line = `${file}\t${failure(error)}`;
         status = error instanceof Error && error.name === 'TimeoutError' ? 'TIMEOUT' : 'ERROR';
@@ -116,7 +121,7 @@ async function main(argv) {
   } finally {
     pipeline.close();
   }
-  process.stderr.write(`corpus: ${files.length} sheets in ${elapsed(start)} -> ${out}\n`);
+  process.stderr.write(`corpus: ${files.length} sheets in ${elapsed(start)} -> ${out}; ${fallbacks} fell back to the option-off run\n`);
   const slowest = [...timings].sort((a, b) => b.totalMs - a.totalMs || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0)).slice(0, 5);
   if (slowest.length > 0) {
     process.stderr.write(`slowest 5: ${slowest.map((entry) => `${entry.file} (${entry.totalMs.toFixed(1)} ms)`).join(', ')}\n`);

@@ -12,20 +12,23 @@
  * base and fails in the head is flagged `error`, before the other flags.
  *
  * A sheet only in the head has no base to be worse than, so it is judged on its own: an ERROR or TIMEOUT row, an error gate (`gates` not `-`)
- * or `removed > 0` prints `NEW-FAIL` (one row for the sheet, one for each reason), and `gate:branch` fails on it. A clean new sheet passes.
+ * `removed > 0`, or an unlisted fallback (`fallback` 1, not in `FALLBACK_SHEETS`) prints `NEW-FAIL` (one row for the sheet, one for each reason),
+ * and `gate:branch` fails on it. A clean new sheet passes.
  *
  * Worse means: more bends; more removed links; a gate id with a violation that the base did not
- * have; more crossings; a larger canvas area; more label border crossings; more overlay run pairs on one track.
+ * have; more crossings; a larger canvas area; more label border crossings; more overlay run pairs on one track; a fallback to the option-off run
+ * of `layout.moveBeforeGrow` that the base did not have, on a sheet `FALLBACK_SHEETS` does not list (dense-16x9 ticket 56; a base with no
+ * `fallback` column reads as 0).
  */
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
-import { COLUMNS } from './gate-lib.mjs';
+import { COLUMNS, FALLBACK_SHEETS } from './gate-lib.mjs';
 
-const JUDGED = ['bends', 'removed', 'gates', 'crossings', 'canvas', 'labelBorder', 'track'];
+const JUDGED = ['bends', 'removed', 'gates', 'crossings', 'canvas', 'labelBorder', 'track', 'fallback'];
 /** The flag of a sheet that only the head has, judged on its own. */
 const NEW_FAIL = 'new-fail';
 /** The columns in print order: the judged ones first, in judgement order, then the rest as the TSV has them. */
-const PRINT_ORDER = ['bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track', ...COLUMNS.filter((column) => !['file', 'bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track'].includes(column))];
+const PRINT_ORDER = ['bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track', 'fallback', ...COLUMNS.filter((column) => !['file', 'bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track', 'fallback'].includes(column))];
 
 class ParseError extends Error {}
 
@@ -65,9 +68,10 @@ function parseTsv(path) {
 }
 
 /** What fails on a head-only sheet, as `[column, value]` cells; empty when it is clean. */
-function newFailures(row) {
+function newFailures(row, file) {
   if (row.error !== undefined) return [['(sheet)', row.error]];
   const failures = [];
+  if ('fallback' in row.cells && row.cells.fallback !== '0' && !FALLBACK_SHEETS.has(file)) failures.push(['fallback', row.cells.fallback]);
   if ('gates' in row.cells && row.cells.gates !== '-') failures.push(['gates', row.cells.gates]);
   if ('removed' in row.cells && Number(row.cells.removed) > 0) failures.push(['removed', row.cells.removed]);
   return failures;
@@ -77,7 +81,7 @@ const gateSet = (text) => new Set(text === '-' ? [] : text.split(','));
 const area = (text) => text.split('x').reduce((product, side) => product * Number(side), 1);
 
 /** The flags of one sheet, in judgement order; a missing column is never judged. */
-function flags(base, head) {
+function flags(base, head, file) {
   const worse = [];
   const both = (column) => column in base && column in head;
   if (both('bends') && Number(head.bends) > Number(base.bends)) worse.push('bends');
@@ -87,6 +91,7 @@ function flags(base, head) {
   if (both('W') && head.W !== '-' && base.W !== '-' && area(head.W) > area(base.W)) worse.push('canvas');
   if (both('labelBorder') && Number(head.labelBorder) > Number(base.labelBorder)) worse.push('labelBorder');
   if (both('track') && Number(head.track) > Number(base.track)) worse.push('track');
+  if ('fallback' in head && Number(head.fallback) > Number(base.fallback ?? '0') && !FALLBACK_SHEETS.has(file)) worse.push('fallback');
   return worse;
 }
 
@@ -104,7 +109,7 @@ function compare(base, head) {
     let cells = [];
     if (b === undefined) {
       // Only in the head: no base to be worse than, so the sheet is judged on its own. Every row of a failing sheet carries the flag.
-      const failures = newFailures(h);
+      const failures = newFailures(h, file);
       cells = h.error !== undefined ? [['(sheet)', '-', h.error]] : [['(sheet)', '-', 'only in head'], ...failures.map(([column, value]) => [column, '-', value])];
       if (failures.length > 0) sheetFlags = [NEW_FAIL];
     } else if (h === undefined) cells.push(['(sheet)', 'only in base', '-']);
@@ -114,14 +119,16 @@ function compare(base, head) {
       if (h.error !== undefined && b.error === undefined) sheetFlags = ['error'];
     } else {
       cells = columns.filter((column) => b.cells[column] !== h.cells[column]).map((column) => [column, b.cells[column], h.cells[column]]);
+      // A base written before the fallback column reads as 0 there (dense-16x9 ticket 56).
+      if (!('fallback' in b.cells) && 'fallback' in h.cells && h.cells.fallback !== '0') cells.push(['fallback', '-', h.cells.fallback]);
       if (cells.length === 0) continue;
-      sheetFlags = flags(b.cells, h.cells);
+      sheetFlags = flags(b.cells, h.cells, file);
     }
     changed++;
     if (cells.some(([column]) => column === 'hash')) geometry++;
     for (const flag of sheetFlags) counts[flag]++;
     for (const [column, left, right] of cells) {
-      const flag = column === 'bends' ? 'bends' : column === 'removed' ? 'removed' : column === 'gates' ? 'gates' : column === 'X' ? 'crossings' : column === 'W' ? 'canvas' : column === 'labelBorder' ? 'labelBorder' : column === 'track' ? 'track' : column === '(sheet)' ? 'error' : undefined;
+      const flag = column === 'bends' ? 'bends' : column === 'removed' ? 'removed' : column === 'gates' ? 'gates' : column === 'X' ? 'crossings' : column === 'W' ? 'canvas' : column === 'labelBorder' ? 'labelBorder' : column === 'track' ? 'track' : column === 'fallback' ? 'fallback' : column === '(sheet)' ? 'error' : undefined;
       lines.push([file, column, left, right, sheetFlags.includes(NEW_FAIL) ? 'NEW-FAIL' : flag !== undefined && sheetFlags.includes(flag) ? 'WORSE' : '']);
     }
   }

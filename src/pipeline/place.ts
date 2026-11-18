@@ -40,7 +40,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return env.step(stage, run); };
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4) are declined in the next: the ledger names them, or all of them once the budget is spent.
   const declinedTrunks = declinedTrunksOf(reservations);
-  const resolved = stepIn('resolve', () => resolve(env.document, { ...(env.declinedSolidBlocks ? { declinedSolidBlocks: env.declinedSolidBlocks } : {}), ...(env.options.diagnostics ? { diagnostics: env.options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}), ...(env.groupLifts !== undefined ? { groupLifts: env.groupLifts } : {}) }));
+  const resolved = stepIn('resolve', () => resolve(env.document, { ...(env.declinedSolidBlocks ? { declinedSolidBlocks: env.declinedSolidBlocks } : {}), ...(env.options.diagnostics ? { diagnostics: env.options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}), ...(env.groupLifts !== undefined ? { groupLifts: env.groupLifts } : {}), ...(env.options.moveBeforeGrowRun !== undefined ? { moveBeforeGrowRun: env.options.moveBeforeGrowRun } : {}) }));
   resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
   // A stagger the ledger declines stands one line in this run, with its reason (dense-16x9 ticket 22, review 2): the record is read, not decided again.
   const declinedStaggers = declinedStaggersOf(reservations);

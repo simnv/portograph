@@ -27,6 +27,7 @@ import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
 import { attemptCounters } from './attempt-counters.js';
 import { EPS } from '../geometry/planar.js';
 import { derivedShortfalls, INSIDE_FRAME, separationsBrokenBy, type Shortfall } from './constraints/separation.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 /**
  * The seat set of a child row (dense-16x9 ticket 36, slice 1; design `36-seats-design.md`, mechanisms III and IV). With
@@ -517,7 +518,7 @@ export const SEAT_SET_DECLINED = 'SEAT_SET_DECLINED';
  * stands is withdrawn by name; a declined row keeps its place and gets `SEAT_SET_DECLINED`. True when a set stands.
  */
 export function seatRows(model: LayoutModel, solve: boolean, refused: ReadonlyMap<string, string> = new Map(), declined: ReadonlyMap<string, string> = new Map()): boolean {
-  if (model.document.layout?.moveBeforeGrow !== true) return false;
+  if (!moveBeforeGrow(model)) return false;
   if (!solve && !(model.reservations ?? []).some(entry => entry.kind === 'seatSet')) return false;
   let moved = false;
   for (const band of [...model.tierBands].sort((a, b) => a.tier - b.tier || a.bounds!.y - b.bounds!.y)) {

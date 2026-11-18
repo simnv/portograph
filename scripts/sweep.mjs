@@ -4,7 +4,8 @@
  *
  * Usage: npm run sweep -- <out.txt> [--only name,name]      (builds dist/ first; see docs/gates.md)
  *
- * Line format: `<name>\tremoved=<link ids, comma-separated, or ->`; a sheet that fails to lay out
+ * Line format: `<name>\tremoved=<link ids, comma-separated, or ->`, then `\tfallback=<refusal code>` when the sheet fell back to the
+ * option-off run of `layout.moveBeforeGrow` (dense-16x9 ticket 56; the count is on standard output); a sheet that fails to lay out
  * gets `<name>\tERROR <message>`. The removed ids are the model's `removedLinks`, the list the
  * score counts (`counters.removedLinks`).
  */
@@ -39,6 +40,7 @@ async function main(argv) {
   writeFileSync(out, '');
   let removed = 0;
   let errors = 0;
+  let fallbacks = 0;
   try {
     for (const [index, file] of files.entries()) {
       const name = basename(file, '.yaml');
@@ -49,6 +51,7 @@ async function main(argv) {
         const ids = model.removedLinks ?? [];
         if (ids.length > 0) removed++;
         line = `${name}\tremoved=${ids.join(',') || '-'}`;
+        if (model.moveBeforeGrowRun?.effective === 'off') { fallbacks++; line += `\tfallback=${model.moveBeforeGrowRun.failure.code}`; }
       } catch (error) {
         errors++;
         line = `${name}\t${failure(error)}`;
@@ -59,7 +62,7 @@ async function main(argv) {
     pipeline.close();
   }
   process.stderr.write(`sweep: ${files.length} sheets in ${elapsed(start)} -> ${out}\n`);
-  process.stdout.write(`${removed} removed of ${files.length}${errors > 0 ? ` (${errors} errors)` : ''}\n`);
+  process.stdout.write(`${removed} removed of ${files.length}${errors > 0 ? ` (${errors} errors)` : ''}${fallbacks > 0 ? `, ${fallbacks} fell back to the option-off run` : ''}\n`);
 }
 
 withGateLock(() => main(process.argv.slice(2))).then(

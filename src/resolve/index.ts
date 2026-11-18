@@ -2,7 +2,7 @@ import { detectSolidBlocks } from './solid-blocks.js';
 import {
   createLayoutModel, groupNodeIds, orderedGroupIds, orderedNodeIds, unsupportedMessage,
   type Diagnostic, type Endpoint, type Layer, type LayoutLink, type LayoutModel,
-  type NormalisedDocument, type Owner, type PortRef, type GroupLift,
+  type NormalisedDocument, type Owner, type PortRef, type GroupLift, type MoveBeforeGrowRun,
 } from '../model/index.js';
 import { enclosedBundle } from '../layout/grid.js';
 import { stackChains } from '../layout/grid-chains.js';
@@ -22,6 +22,8 @@ export interface ResolveOptions {
   declinedSolidBlocks?: ReadonlyMap<string, string>;
   /** D-Q5: the group lifts to apply as band input (`lift.ts`, `applyLifts`); the document is not changed. */
   groupLifts?: readonly GroupLift[];
+  /** The record of a run of the default-on mode of `layout.moveBeforeGrow` (dense-16x9 ticket 56), written on the model as given. */
+  moveBeforeGrowRun?: MoveBeforeGrowRun;
 }
 
 export class ResolveError extends Error {
@@ -405,5 +407,6 @@ export function resolve(input: NormalisedDocument, options: ResolveOptions = {})
   // The fan families read the resolved links and the frames, so they are found on the final model too (architecture-2 ticket 40).
   detectFanFamilies(final);
   detectSolidBlocks(final, options.declinedSolidBlocks);
+  if (options.moveBeforeGrowRun !== undefined) final.moveBeforeGrowRun = JSON.parse(JSON.stringify(options.moveBeforeGrowRun)) as MoveBeforeGrowRun;
   return final;
 }

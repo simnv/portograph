@@ -8,7 +8,7 @@ export type {
   BarDrop, Bundle, Course, CourseEnd, CourseKind, CourseRun, Diagnostic, FanAdmission, FeedSplit, SiblingRow, FanFallbackReason, FanFamily, Frame, FrozenPort, GroupExit, GroupLink, Junction, LabelBand, LabelSupport, Lane, Layer, LayoutFreeze, MeshBus, BusBand,
   LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPath,
   LayoutPort, LayoutRuntime, LayoutStage, Legend, LegendEntry, Obstacle, OwnedElement, Owner,
-  PathSegment, PillGeometry, PlacementSnapshot, Region, RowOrderDecision, StaggerRow, GroupArrangement, GroupLift, TierBand,
+  PathSegment, PillGeometry, PlacementSnapshot, Region, RowOrderDecision, StaggerRow, GroupArrangement, GroupLift, MoveBeforeGrowRun, TierBand,
 } from './layout.js';
 export { DEFAULT_ASPECT } from './document.js';
 export { endpointId, linkIds } from './link-ids.js';

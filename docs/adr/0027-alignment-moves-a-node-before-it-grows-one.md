@@ -202,3 +202,17 @@ seats of this ADR: its bodies keep the widths placement gave them (no alignment 
 clause of this ADR chooses a seat for its members. A set that cannot stand is withdrawn whole by name, and its row falls back to the clauses
 above. Rows outside the scope of the set (staggered, in a canton, in a feeding chain) keep the clauses above. The test option `testSeatSets:
 false` keeps the clauses above for every row, for tests whose subject is one of them.
+
+## Amendment: the default mode falls back to the option-off run (dense-16x9 ticket 56, owner ruling 2026-11-18)
+
+The option has three modes, read by one reader (`moveBeforeGrowMode`, `src/layout/read/move-before-grow.ts`): written `true` is strict and throws as
+before, written `false` is off, and a sheet that writes nothing takes the default (`DEFAULT_MEANS_ON`, false until ticket 45 flips it). In the
+default-on mode `layout` runs the whole command with the option on and writes the effective mode into the document of the run. When that run fails
+with a `PlacementRefusal` (any code, the centring invariant included) while the command budget has time left, it runs the complete input once more
+with the option off: a fresh ledger, the ordinary pipeline with its width and lift selection and the publication fit, on what is left of the budget.
+Only that run's own validated result publishes, with the warning `MOVE_BEFORE_GROW_FALLBACK`, which names the first failure by code and message
+(R6), and the record `moveBeforeGrowRun` (`requested: default`, `effective: off`, the failure). A failure of that run propagates. A parse or
+resolve error fails in both modes and does not run twice; a deadline (the command's, ELK's or the caller's) is no refusal and never falls back.
+The record and the document's effective value are checked at every publication and at the restore (R5), so a restored layout runs the checks
+of the mode it ran. A run that draws in the default-on mode records `effective: on`. This is the release guarantee of ticket 45 for a sheet
+that draws with the option off; the joint placement of a pooled row unit (ticket 53) can retire it when it passes the cases of ticket 46.

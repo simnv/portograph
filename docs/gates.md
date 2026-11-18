@@ -35,11 +35,11 @@ Stuck lock: a message says that the processes of the previous job will not die. 
 | `npm run gate:compare -- <base.tsv> <head.tsv>` | Reads two corpus files. Prints the changed cells side by side and flags every sheet that is worse. |
 | `npm run r3 -- <sheet.yaml>...` | The R3 check (see `CODING_STANDARDS.md`): lays each sheet out as written, with `links` reversed and with `nodes` reversed. Prints `SAME` or the first differing JSON path. |
 
-The corpus file has a header line and these columns: `file Q X Xf W gates warn routed fb edge ob bends side removed labelBorder track hash`. Every number is the scorer's. `Q` is the score; it is printed and never judged. `gates` lists the error gates with a violation, or `-`. `bends` counts the real bends of every kept link. `removed` counts the links that stage 8 removed. `hash` is 12 hex digits of the sha256 of the layout JSON; any geometry change moves it.
+The corpus file has a header line and these columns: `file Q X Xf W gates warn routed fb edge ob bends side removed labelBorder track fallback hash`. Every number is the scorer's. `Q` is the score; it is printed and never judged. `gates` lists the error gates with a violation, or `-`. `bends` counts the real bends of every kept link. `removed` counts the links that stage 8 removed. `fallback` is 1 when a sheet that writes no `layout.moveBeforeGrow` ran with the default on and published the option-off run (dense-16x9 ticket 56), else 0; the corpus script also prints the count. A base written before the column is reused, and its missing column reads as 0. `hash` is 12 hex digits of the sha256 of the layout JSON; any geometry change moves it.
 
 A sheet that fails to lay out gets `<file>\tERROR <message>`.
 
-`gate:compare` marks `WORSE` a cell that judges a sheet worse, in this order: `error`, `bends`, `removed`, `gates`, `crossings`, `canvas`, `labelBorder`, `track`. A sheet that only the head has is judged on its own: an `ERROR` or `TIMEOUT` row, a `gates` cell that is not `-`, or `removed` above 0 marks it `NEW-FAIL`.
+`gate:compare` marks `WORSE` a cell that judges a sheet worse, in this order: `error`, `bends`, `removed`, `gates`, `crossings`, `canvas`, `labelBorder`, `track`, `fallback`. A `fallback` is worse when the base has none and `FALLBACK_SHEETS` (`scripts/gate-lib.mjs`, empty today) does not list the sheet. A sheet that only the head has is judged on its own: an `ERROR` or `TIMEOUT` row, a `gates` cell that is not `-`, `removed` above 0, or an unlisted `fallback` marks it `NEW-FAIL`.
 
 ## Before a merge request: `gate:branch`
 

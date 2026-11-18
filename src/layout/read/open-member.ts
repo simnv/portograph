@@ -2,6 +2,7 @@ import type { LayoutGroup, LayoutModel } from '../../model/layout.js';
 import type { PortRef } from '../../model/document.js';
 import { portId } from '../skeleton-graph.js';
 import { isCantonFrame } from './canton.js';
+import { moveBeforeGrow } from './move-before-grow.js';
 
 /**
  * Why the sheet opens no member at all, or undefined (review 2 of slice 3): the slot of an open member is a freedom of `layout.moveBeforeGrow` only, and
@@ -10,9 +11,9 @@ import { isCantonFrame } from './canton.js';
  */
 export function openScopeFault(model: LayoutModel): string | undefined {
   const layout = model.document.layout;
-  if (layout?.moveBeforeGrow !== true) return 'the sheet does not opt in (layout.moveBeforeGrow)';
-  if (layout.feedOrder === false) return 'the author keeps the row orders (layout.feedOrder: false)';
-  if (layout.corridorRowOrder === false) return 'the author keeps the row orders (layout.corridorRowOrder: false)';
+  if (!moveBeforeGrow(model)) return 'the sheet does not opt in (layout.moveBeforeGrow)';
+  if (layout?.feedOrder === false) return 'the author keeps the row orders (layout.feedOrder: false)';
+  if (layout?.corridorRowOrder === false) return 'the author keeps the row orders (layout.corridorRowOrder: false)';
   return undefined;
 }
 

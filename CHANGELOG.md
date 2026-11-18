@@ -13,6 +13,10 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 
 ## [Unreleased]
 
+### Added
+
+- `layout.moveBeforeGrow` has three modes. `true` is strict, `false` is off, and a sheet that writes nothing takes the default, which stays off for now. Once the default is on, a sheet that writes nothing and whose option-on run fails for a placement reason is laid out again with the option off; that layout carries the warning `MOVE_BEFORE_GROW_FALLBACK`, which names the first failure, and the record `moveBeforeGrowRun` (requested and effective mode). The corpus gate has a `fallback` column.
+
 ## [0.2.2] - 2026-11-13
 
 ### Added

@@ -16,6 +16,7 @@ import { portEndInsets } from './port-insets.js';
 import { rowLabelGap } from './row-label-room.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { seatRowsAndColumns } from './seat-set.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 const right = (rect: Rect): number => rect.x + rect.width;
 const overlaps = (a: Rect, b: Rect): boolean => a.x < right(b) && b.x < right(a) && a.y < b.y + b.height && b.y < a.y + a.height;
@@ -230,6 +231,6 @@ export function rows(model: LayoutModel, seatSets = true, declined: ReadonlyMap<
     // leg (ADR-0015 rule 1). The gap is asked again on the levelled anchors, so no leg's room is
     // left for stage 8 to discover. Nodes move in x only, which cannot undo the levelling.
     // The seat sets are decided here and not in the first repack: the levelling and the label detours can widen the parents' rows again.
-    repackOverlaps(draft, true, seatSets && draft.document.layout?.moveBeforeGrow === true, declined);
+    repackOverlaps(draft, true, seatSets && moveBeforeGrow(draft), declined);
   });
 }

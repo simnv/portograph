@@ -37,7 +37,7 @@ import { groupPadding, rebuildRegions } from './regions.js';
 import { CENTRE_ALIGNMENT_OPEN, centreCheckTrace, centreItemLink, fallenSeatFault, publishedCentreViolations, selectAnchorTier, withdrawFallenSeatsOf } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentSeatsFault, alignmentTargetsFault } from './alignment-targets.js';
 import { givenBackFault } from './given-back.js';
-import { moveBeforeGrow } from './read/move-before-grow.js';
+import { moveBeforeGrow, moveBeforeGrowRunFault } from './read/move-before-grow.js';
 import { checkBodyTrims } from './end-trim.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
@@ -394,12 +394,18 @@ function validatePublication(model: LayoutModel, baseline: LayoutModel, intermed
   verifyJsonValue(model);
   validateStaggerRows(model);
   validateGroupLifts(model);
+  validateMoveBeforeGrowRun(model);
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
   validateJoins(model);
   validateGeometry(model);
   validateFreeze(model);
   validateRegionClaims(model, intermediate);
+}
+/** The record of a default-mode run of `layout.moveBeforeGrow` holds (dense-16x9 ticket 56): the effective mode is the document's, a fallback names its failure. */
+function validateMoveBeforeGrowRun(model: LayoutModel): void {
+  const fault = moveBeforeGrowRunFault(model);
+  if (fault !== undefined) throw new Error(`The moveBeforeGrow run record is forged: ${fault}`);
 }
 /** The same ordered producers validate every publication, including restored JSON. */
 function validateRegionClaims(model: LayoutModel, intermediate = false): void {
@@ -758,6 +764,7 @@ export function restoreLayoutModel(json: string): LayoutModel {
     validateDocumentCss(model);
     resolve(model.document);
     validateEarlyPitches(model);
+    validateMoveBeforeGrowRun(model);
     // The order reservations stage 4 wrote hold on the stage-4 model (ticket 18 review): the stages before the freeze check them here.
     validateEarlyReservations(model);
     // The sibling rows stage 4 decided (dense-16x9 ticket 06, slice C) hold on the stage-4 model, before stage 5 reads them for the u-turn courses; no
@@ -1102,7 +1109,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
         const seats = old.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.anchor!);
         node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).forEach((port, index) => seated.set(portKey(port.ref), seats[index]!));
       }
-    } else if (!permission.reorder && rule === 'rows' && model.document.layout?.moveBeforeGrow === true) {
+    } else if (!permission.reorder && rule === 'rows' && moveBeforeGrow(model)) {
       // The rows rule reorders a face only to the order the stage-5 sorter gives it on the draft (`orderFace`): a face that reads an open member the
       // seat set seated in another slot (dense-16x9 ticket 36, slice 3).
       for (const side of SIDE_TIE_ORDER) {

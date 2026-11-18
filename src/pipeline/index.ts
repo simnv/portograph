@@ -20,7 +20,10 @@ import { fitWidthBudget } from './width-budget.js';
 import { decideLifts } from './lift-round.js';
 import { floatComponents } from '../layout/lift.js';
 import { resolve } from '../resolve/index.js';
-import type { StaggerRow } from '../model/layout.js';
+import type { Diagnostic, StaggerRow } from '../model/layout.js';
+import { defaultMeansOn, fallbackMessage, MOVE_BEFORE_GROW_FALLBACK, moveBeforeGrowMode } from '../layout/read/move-before-grow.js';
+import { PlacementRefusal } from '../layout/placement-refusal.js';
+import { UNBOUNDED_BUDGET, type Budget } from './budget.js';
 
 export { MAX_RERUNS, PlacementBudgetExceeded } from './limits.js';
 export { CommandDeadlineError, createBudget, UNBOUNDED_BUDGET } from './budget.js';
@@ -38,11 +41,45 @@ export type { LayoutOptions, LayoutProgress } from './options.js';
  * normalised document no longer holds, so the order cannot be derived again here.
  */
 export async function layout(document: NormalisedDocument, options: LayoutOptions = {}): Promise<LayoutModel> {
-  // The publication fit (the final flat-gap choice, dense-16x9 ticket 42) runs once, on the run the command publishes (`fitPublication`).
-  const run = async (): Promise<LayoutModel> => fitPublication(await (document.layout?.maxWidth !== undefined ? fitWidthBudget(document, options, layoutOnce) : layoutOnce(document, options)));
+  // The record of a default-mode run is the command's to write (dense-16x9 ticket 56): a caller's value is removed.
+  const given: LayoutOptions = { ...options };
+  delete given.moveBeforeGrowRun;
   // The row reading memo lives while the command runs (dense-16x9 ticket 21).
   const close = openRowReadingMemo();
-  try { return await (options.checkCaches ? checkReadCaches(run, options.checkCaches === 'sampled' ? 'sampled' : 'all') : run()); } finally { close(); }
+  try {
+    if (moveBeforeGrowMode(document) !== 'default' || !defaultMeansOn()) return await command(document, given);
+    // The default-on mode (dense-16x9 ticket 56): the run writes the effective mode into its document, so every reader and the restore read it.
+    try {
+      return await command(withMoveBeforeGrow(document, true), { ...given, moveBeforeGrowRun: { requested: 'default', effective: 'on' } });
+    } catch (error) {
+      if (!fallsBack(error, given.budget ?? UNBOUNDED_BUDGET)) throw error;
+      // One terminal retry of the whole input with the option off, on what is left of the command budget: a fresh ledger, the ordinary pipeline
+      // (the width and lift selection too), and its own validation. It names the first failure (R6); its own failure propagates.
+      const failure = { code: error.code, message: error.message };
+      const warning: Diagnostic = { stage: 'placement', severity: 'warning', code: MOVE_BEFORE_GROW_FALLBACK, message: fallbackMessage(failure), owners: [...error.owners] };
+      return await command(withMoveBeforeGrow(document, false), { ...given, diagnostics: [...given.diagnostics ?? [], warning], moveBeforeGrowRun: { requested: 'default', effective: 'off', failure } });
+    }
+  } finally { close(); }
+}
+
+/** One whole run of the command: the width and lift selection, then the publication fit (the final flat-gap choice, dense-16x9 ticket 42) once, on the run it publishes (`fitPublication`). */
+function command(document: NormalisedDocument, options: LayoutOptions): Promise<LayoutModel> {
+  const run = async (): Promise<LayoutModel> => fitPublication(await (document.layout?.maxWidth !== undefined ? fitWidthBudget(document, options, layoutOnce) : layoutOnce(document, options)));
+  return options.checkCaches ? checkReadCaches(run, options.checkCaches === 'sampled' ? 'sampled' : 'all') : run();
+}
+
+/** The document with `layout.moveBeforeGrow` written as `on`: the effective mode of a default-mode run. */
+const withMoveBeforeGrow = (document: NormalisedDocument, on: boolean): NormalisedDocument => ({ ...document, layout: { ...document.layout, moveBeforeGrow: on } });
+
+/**
+ * Whether a failure of the option-on run of a default-on sheet falls back to the option-off run (dense-16x9 ticket 56). A `PlacementRefusal`
+ * does: any code, the centring invariant included, and the placement count (`PlacementBudgetExceeded`), since the option-off run counts its
+ * own placements. Nothing else does: a parse or resolve error fails in both modes, and a bug is no placement reason. A deadline (the command's,
+ * ELK's, or the caller's timeout) is no refusal and never falls back; a refusal falls back only while the command budget has time left
+ * (`remainingMs() > 0`), and the option-off run spends what is left, so a deadline in it propagates.
+ */
+export function fallsBack(error: unknown, budget: Budget): error is PlacementRefusal {
+  return error instanceof PlacementRefusal && budget.remainingMs() > 0;
 }
 
 /** One complete pipeline run; the width-budget trials share the caller's command deadline. */

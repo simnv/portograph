@@ -1,5 +1,5 @@
 /** The options and progress events of `layout`: the public surface of the pipeline seam. */
-import type { Course, Diagnostic, GroupLift, LayoutModel, LayoutStage, Size } from '../model/index.js';
+import type { Course, Diagnostic, GroupLift, LayoutModel, LayoutStage, MoveBeforeGrowRun, Size } from '../model/index.js';
 import type { CreateElkAttempt, ElkClock } from '../layout/elk-worker.js';
 import type { CreateRouteAttempt } from '../route/index.js';
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
@@ -82,6 +82,11 @@ export interface LayoutOptions {
   testSideTrace?: (event: Record<string, unknown>) => void;
   /** Internal (D-Q5): the lift record every placement run of this command applies; no lift is decided (the runs of `decideLifts`). */
   fixedLifts?: GroupLift[];
+  /**
+   * Internal (dense-16x9 ticket 56): the record of a run of the default-on mode of `layout.moveBeforeGrow`, which stage 1 writes on the model
+   * (`LayoutModel.moveBeforeGrowRun`). `layout` sets it on each such run and removes a caller's value.
+   */
+  moveBeforeGrowRun?: MoveBeforeGrowRun;
   /** Test only (D-Q5): no lift decision; the record stays absent (the no-lift drawing of a sheet). */
   testLiftOff?: boolean;
   /** Test only (D-Q5): each lift trial, with the published baseline and the published trial (undefined when the run refused it). */
