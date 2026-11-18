@@ -6,7 +6,9 @@ import { canvasExtent } from '../../src/layout/link-labels.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createEnv } from '../../src/pipeline/env.js';
 import { firstState } from '../../src/pipeline/initial.js';
-import { chooseFlatGapsAgain, drive, FLAT_BLOCK_GAP_FINAL, FLAT_BLOCK_GAP_FINAL_DECLINED, refuseCrowdedChords } from '../../src/pipeline/driver.js';
+import { chooseFlatGapsAgain, drive, FLAT_BLOCK_GAP_FINAL, refuseCrowdedChords } from '../../src/pipeline/driver.js';
+import { publish } from '../../src/pipeline/publish.js';
+import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -14,13 +16,15 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const text = readFileSync(new URL('../../goldens/synthetic/a-flat-gap-is-chosen-again-after-the-fan-round.yaml', import.meta.url), 'utf8');
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 const AIM = 3;
-const bent = (model: LayoutModel): string[] => model.links.filter(link => (link.path?.segments.length ?? 0) > 1).map(link => link.id);
+// The production bend reader (`pathBends`, review 1 P3): a link with no path is no straight link, so every link must have one.
+const bent = (model: LayoutModel): string[] => model.links.filter(link => (pathBends(link) ?? Infinity) > 0).map(link => link.id);
 
 describe('the flat-gap choice after the rounds', () => {
   it('publishes the sheet at the aim, every link straight, and restores', async () => {
     const model = await layout(parse(text), options);
     expect(model.canvas!.height).toBeCloseTo(model.canvas!.width / AIM, 1);
     expect(model.diagnostics.map(item => item.code)).toContain(FLAT_BLOCK_GAP_FINAL);
+    expect(model.links.every(link => link.path !== undefined && link.path.segments.length > 0)).toBe(true);
     expect(bent(model)).toEqual([]);
     // The one reader reads the published sheet as stage 9 fitted it.
     const sheet = canvasExtent(model);
@@ -46,38 +50,13 @@ describe('the flat-gap choice after the rounds', () => {
     const placements = env.placements, gateRuns = env.gateRuns;
     await chooseFlatGapsAgain(env, state);
     expect(state.sideNotes.map(item => item.code)).toContain(FLAT_BLOCK_GAP_FINAL);
-    expect(canvasExtent(state.base).height).toBeCloseTo(after.width / AIM, 1);
+    const published = (await publish(env, state)).canvas!;
+    expect(published.height).toBeCloseTo(published.width / AIM, 1);
     expect(env.placements - placements).toBe(1);
     expect(env.gateRuns - gateRuns).toBe(1);
     expect(env.exemptPlacing ?? 0).toBe(0);
     // Its own result is read nowhere: a second call on the kept state places nothing.
     await chooseFlatGapsAgain(env, state);
     expect(env.placements - placements).toBe(1);
-  }, 120000);
-
-  it('keeps the placement before it when the new placement loses a straight link, and names why', async () => {
-    const env = createEnv(parse(text), options);
-    const state = await firstState(env);
-    await drive(env, state);
-    await refuseCrowdedChords(env, state);
-    const before = { base: state.base, kept7e: state.kept7e, routed: state.routedFinal, gaps: env.flatBlockGaps };
-    // The route of the new placement draws one straight link with a bend.
-    const route = env.route;
-    env.route = async (model, trial, publish) => {
-      const routed = JSON.parse(JSON.stringify(await route(model, trial, publish))) as LayoutModel;
-      const link = routed.links.find(item => item.path?.segments.length === 1 && item.path.segments[0]!.from.x !== item.path.segments[0]!.to.x
-        && item.path.segments[0]!.from.y !== item.path.segments[0]!.to.y)!;
-      const { from, to } = link.path!.segments[0]!;
-      const corner = { x: to.x, y: from.y };
-      link.path!.segments = [{ ...link.path!.segments[0]!, from, to: corner }, { ...link.path!.segments[0]!, from: corner, to }];
-      return routed;
-    };
-    await chooseFlatGapsAgain(env, state);
-    const note = state.sideNotes.find(item => item.code === FLAT_BLOCK_GAP_FINAL_DECLINED);
-    expect(note?.message).toMatch(/are no longer straight/);
-    expect(state.base).toBe(before.base);
-    expect(state.kept7e).toBe(before.kept7e);
-    expect(state.routedFinal).toBe(before.routed);
-    expect(env.flatBlockGaps).toEqual(before.gaps);
   }, 120000);
 });

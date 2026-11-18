@@ -655,6 +655,17 @@ export function seatSetsLost(before: LayoutModel, after: LayoutModel, clause?: s
     && (clause === undefined || entry.payload.why.startsWith(clause)) ? [entry.payload.row] : []).sort();
 }
 
+/**
+ * The rows of `before` whose seat set stands there and not on `after`, read on the two ledgers alone (dense-16x9 ticket 42, review 1): a whole
+ * placement replayed from the kept ledger decides the sets again, and a row can lose its set with no withdrawal entry (stage 6 declines to
+ * create it). `seatSetsLost` reads the other case, a move of an already seated model, where a lost set is withdrawn by name.
+ */
+export function seatRowsLost(before: LayoutModel, after: LayoutModel): string[] {
+  const standing = (model: LayoutModel): Set<string> => new Set((model.reservations ?? []).flatMap(entry => entry.kind === 'seatSet' ? [entry.payload.row] : []));
+  const now = standing(after);
+  return [...standing(before)].filter(row => !now.has(row)).sort();
+}
+
 /** The diagnostic of a 7c move a standing seat set clamps (`seatFarEndRange`): the mover, the row, how far it asked and how far it went, and why. */
 export const SEAT_FAR_END_CLAMPED = 'SEAT_FAR_END_CLAMPED';
 

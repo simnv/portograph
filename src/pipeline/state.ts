@@ -29,6 +29,8 @@ export interface State {
    * flat block, or its 7f trial was refused. The final choice (`chooseFlatGapsAgain`) runs only when the published sheet differs from it.
    */
   flatGapSheet?: SheetSize;
+  /** The publication route of `base` (`publicationRoute` in `publish.ts`), kept so the command routes that model once. */
+  published?: { base: LayoutModel; routed: LayoutModel };
   /** The fan rounds' and the side round's cut notes, the notes of the kept rounds, and the notes of the side trials that were kept. */
   cuts: Diagnostic[];
   sideNotes: Diagnostic[];
