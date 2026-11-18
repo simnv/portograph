@@ -7,6 +7,7 @@ import type { Diagnostic, LayoutModel } from '../model/index.js';
 import type { Reservations } from '../layout/reservations.js';
 import type { SideOffer } from '../layout/side-measure.js';
 import type { FarEndFace } from '../layout/far-end-order.js';
+import type { SheetSize } from '../layout/flat-gap-choice.js';
 
 export interface State {
   /** The kept result of stages 1 to 7e: the model a measure reads, and the key of the stage-3 sizes. */
@@ -23,6 +24,11 @@ export interface State {
   baseUnmoved?: LayoutModel | undefined;
   /** The ledger every placement run is told to keep. */
   kept: Reservations;
+  /**
+   * The sheet the first flat-gap choice read on the placement it kept (`canvasExtent`; dense-16x9 ticket 42). Absent when the placement has no
+   * flat block, or its 7f trial was refused. The final choice (`chooseFlatGapsAgain`) runs only when the published sheet differs from it.
+   */
+  flatGapSheet?: SheetSize;
   /** The fan rounds' and the side round's cut notes, the notes of the kept rounds, and the notes of the side trials that were kept. */
   cuts: Diagnostic[];
   sideNotes: Diagnostic[];

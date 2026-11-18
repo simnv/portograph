@@ -802,6 +802,20 @@ export function refitCanvas(model: LayoutModel): Rect {
   return { x, y, width: farRight + CANVAS_MARGIN - x, height: farBottom + CANVAS_MARGIN - y };
 }
 
+/**
+ * The size of the sheet a placed model publishes (dense-16x9 ticket 42): the canvas stage 9 fits (`refitCanvas`), with the legend stage 9
+ * produces and the margin on every side. The one reader of the aspect of a placement for the flat-gap choice, the first one and the final one
+ * (R1). It reads a copy, so the model does not change. A link with no route yet adds no box: on a placement before routing it reads the
+ * sheet less any part of a later route or link label that stands outside the placed boxes.
+ */
+export function canvasExtent(model: LayoutModel): { width: number; height: number } {
+  const sheet: LayoutModel = { ...model, labels: model.labels.filter(label => label.role !== 'legend') };
+  delete sheet.legend;
+  produceLegend(sheet);
+  const canvas = refitCanvas(sheet);
+  return { width: canvas.width, height: canvas.height };
+}
+
 const linkLabelDiagnostics = (model: LayoutModel): Diagnostic[] =>
   model.diagnostics.filter(item => (LINK_LABEL_CODES as readonly string[]).includes(item.code));
 

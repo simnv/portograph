@@ -47,6 +47,23 @@ an earlier stage (the defect class of ticket 22: a choice made on a stale extent
 
 A box entry is no part of the floor: a member whose box entry the chosen gap does not hold falls back alone, and the block stays.
 
+## Amendment (2026-11-18): the flat-gap choice reads the published sheet, and once more after the rounds
+
+An aspect choice reads the sheet it is judged by (dense-16x9 ticket 42). The amendment of 2026-11-16 read the placed extent of the first
+placement. That extent holds no canvas margin and no legend, and the rounds after it can change the sheet: on the sheet behind the ticket the
+fan round grew a steep gap, and the published sheet stood at 1.646 for the aim 16:9.
+- One reader: `canvasExtent`, the canvas stage 9 fits (`refitCanvas`), with the legend and the margin, read on a copy. The first choice and
+  the final one read it; one function chooses for both (`aspectFlatGaps`) and one judges both (`nearerAim`).
+- After the last step that changes the sheet (the driver's rounds and the crowded-chord replay), the driver reads the kept baseline and chooses
+  once more (`chooseFlatGapsAgain`), only when the sheet differs from the one the first choice read. A gap that a choice raised may also drop
+  toward its floor; a gap at its mandatory height cannot.
+- The placement at the new gaps is kept only when every reservation of the ledger holds on it, it stands nearer the aim, it keeps every seat
+  set, every link straight before stays straight when routed and its route adds no error-gate finding. Else the placement before it stands,
+  and `FLAT_BLOCK_GAP_FINAL_DECLINED` names why (the flat gaps are a placement input outside the ledger).
+- Bound: one placement more per command, outside the placement cap as the first choice's, with the seat-set retries of a kept placement, one
+  7f run and at most two routes. The step reads its own result nowhere.
+- Measured on the sheet behind the ticket: 16:9 publishes 3543 x 1993 px (1.778), with every block member straight and no gate finding.
+
 ## Amendment (2026-11-17): the room of a flat block is not judged by the aim
 
 Before the gap choice, placement gives the flat members their room (dense-16x9 ticket 04, slice 3, step 2): the side padding of a box that a

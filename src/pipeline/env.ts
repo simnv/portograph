@@ -29,7 +29,7 @@ export interface Env {
    */
   gateRuns: number;
   /**
-   * While above 0, a placement that starts is an exempt trial's (the stagger gate's trials and the flat-gap choice, `initial.ts`): `place` credits
+   * While above 0, a placement that starts is an exempt trial's (the stagger gate's trials and the flat-gap choice, `initial.ts`, and the final flat-gap choice, `chooseFlatGapsAgain` in `driver.ts`): `place` credits
    * it to `gateRuns` before its cap check, every retry inside the trial included (dense-16x9 ticket 04 slice 3, review 1, finding 2). Absent or 0
    * otherwise.
    *
@@ -43,7 +43,7 @@ export interface Env {
   /** The placements of the far-end round (dense-16x9 ticket 07, at most `FAR_END_ORDER_RUNS`): its own count, outside the re-run budget and the placement cap, so the shared budget the other rounds spend does not starve the one round that reads their settled result. */
   farEndRuns: number;
   staggerRows?: StaggerRow[];
-  /** Dense-16x9 ticket 04 slice 3: the gap the aspect choice gave each flat solid block (`chooseFlatGaps`); absent: every flat gap at its floor. */
+  /** Dense-16x9 ticket 04 slice 3: the gap the aspect choice gave each flat solid block (`aspectFlatGaps`, first in `initial.ts`, once more after the rounds in `chooseFlatGapsAgain`, ticket 42); absent: every flat gap at its floor. */
   flatBlockGaps?: FlatBlockGap[];
   /** The side paddings of the boxes of flat block members (`blockBoxPadsAsked`), read on a complete placement; absent: none. */
   blockBoxPads?: BlockBoxPad[];

@@ -55,11 +55,14 @@ describe('a flat block of named ports (review 1, finding 1)', () => {
   });
 });
 
+// The parts of a stub model the sheet reader reads (`canvasExtent`, dense-16x9 ticket 42): no label, lane, link or bundle, and no legend.
+const SHEET = { labels: [], lanes: [], links: [], bundles: [] };
+
 describe('the flat-gap trial and the placement cap (review 1, finding 2)', () => {
   it('starts the trial outside the cap after the initial trunk retries spent the allowance', async () => {
     // Three placements each refuse a trunk; the fourth stands with a flat block at its floor, and the sheet asks for height: the trial is offered
     // with placements = 4 = the cap. It is credited before `place` checks the cap.
-    const floor = { document: { layout: { aspect: 2 } }, nodes: { x: { bounds: { x: 0, y: 0, width: 2000, height: 500 } } }, groups: {},
+    const floor = { document: { layout: { aspect: 2 }, nodes: {} }, nodes: { x: { bounds: { x: 0, y: 0, width: 2000, height: 500 }, ports: [] } }, groups: {}, ...SHEET,
       blockReservations: [{ family: 'a', mode: 'flat', below: 1, chosen: 100, target: 800 }] };
     let calls = 0;
     const env = { document: floor.document, options: {}, maxReruns: MAX_RERUNS, placeCap: Math.max(MAX_RERUNS, FAN_ROUNDS) + 1, placements: 0, reruns: 0,
@@ -100,8 +103,8 @@ describe('a placement started inside an exempt trial is credited once (review 2)
   it('keeps the flat-gap trial whose block retry stood, and the floor placement stays the one ordinary charge', async () => {
     // The reviewer's state: two flat records share a gap; the trial refuses block b, its retry stands without b at 2000 x 1000, nearer aim 2.
     const records = [{ family: 'a', mode: 'flat', below: 1, chosen: 100, target: 800 }, { family: 'b', mode: 'flat', below: 1, chosen: 100, target: 700 }];
-    const floor = { document: { layout: { aspect: 2 } }, nodes: { x: { bounds: { x: 0, y: 0, width: 2000, height: 500 } } }, groups: {}, blockReservations: records };
-    const chosen = { ...floor, nodes: { x: { bounds: { x: 0, y: 0, width: 2000, height: 1000 } } }, blockReservations: [records[0]] };
+    const floor = { document: { layout: { aspect: 2 }, nodes: {} }, nodes: { x: { bounds: { x: 0, y: 0, width: 2000, height: 500 }, ports: [] } }, groups: {}, ...SHEET, blockReservations: records };
+    const chosen = { ...floor, nodes: { x: { bounds: { x: 0, y: 0, width: 2000, height: 1000 }, ports: [] } }, blockReservations: [records[0]] };
     const env = stub(floor, chosen, 2, { bands: async (model: unknown) => ({ model, moved: false }) });
     await firstState(env);
     expect(env.declinedSolidBlocks?.has('b')).toBe(true);

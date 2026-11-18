@@ -19,6 +19,14 @@ import { score } from '../score/index.js';
 import { restoreLayoutModel } from '../layout/mutation.js';
 import type { Diagnostic, LayoutModel } from '../model/index.js';
 import { bandsWithoutWithdrawnSeats } from './seat-retry.js';
+import { EPS } from '../geometry/planar.js';
+import { aspectAim } from '../layout/aspect.js';
+import { aspectFlatGaps, nearerAim } from '../layout/flat-gap-choice.js';
+import { canvasExtent } from '../layout/link-labels.js';
+import { PlacementRefusal } from '../layout/placement-refusal.js';
+import { holds } from '../layout/reservation-checks.js';
+import { seatSetsLost } from '../layout/seat-set.js';
+import { routedBends } from '../layout/objective.js';
 
 /** The rounds in the order of the pipeline. A group holds the rounds that compete for the same starts: the fan, the span, the side and course, the turn and overlay, and last the far-end round, which reads the settled result of all of them. */
 const PLAN: readonly (readonly AnyRound[])[] = [[fan], [span], [side, course], [turn, overlay], [farEnd]];
@@ -168,3 +176,72 @@ export async function refuseCrowdedChords(env: Env, s: State): Promise<void> {
   s.kept7e = placed; s.kept = ledger; s.base = banded.model; s.baseMoved = banded.moved; s.baseUnmoved = banded.unmoved;
   s.routedFinal = routed; s.sideNotes.push(...notes);
 }
+
+/**
+ * The flat-gap choice once more, on the sheet the command publishes (dense-16x9 ticket 42; ADR-0025, amendment of 2026-11-18). The first choice
+ * (`initial.ts`) reads the sheet before the rounds; a round can then change it (a fan round that spreads a row grows a steep gap). After the
+ * last step that changes the sheet, the kept 7f baseline is read with the same reader (`canvasExtent`) and the same choice (`aspectFlatGaps`),
+ * and the kept ledger is placed again at the gaps it gives. It runs only when the sheet differs from the one the first choice read
+ * (`flatGapSheet`), and once: it reads its own result nowhere, so no loop.
+ *
+ * The placement at the new gaps is kept only when every reservation of the ledger holds on it (`holds`, the reader of `RESERVATION_CHECKS`
+ * the rounds use), it stands nearer the aim (`nearerAim`), it keeps every seat set (`seatSetsLost`), every link straight before stays straight
+ * when routed, and its route adds no error-gate finding. Else the placement before it stands and `FLAT_BLOCK_GAP_FINAL_DECLINED` names why;
+ * the flat gaps are a placement input outside the ledger (`PlacementInputs`), so the note is the record of the decline.
+ *
+ * Bound (R4): one placement, credited outside the placement cap as the first choice's (`env.exemptPlacing`), with the seat-set retries of a
+ * kept placement (`bandsWithoutWithdrawnSeats`, at most `SEAT_SET_RETRIES`), one 7f run and at most two routes.
+ */
+export async function chooseFlatGapsAgain(env: Env, s: State): Promise<void> {
+  const read = s.flatGapSheet, records = s.kept7e.blockReservations ?? [];
+  if (read === undefined || !records.some(record => record.mode === 'flat')) return;
+  const now = canvasExtent(s.base);
+  if (Math.abs(now.width - read.width) <= EPS && Math.abs(now.height - read.height) <= EPS) return;
+  // The step runs once: a later call reads no sheet (no loop, whatever the result).
+  delete s.flatGapSheet;
+  const aim = aspectAim(env.document), gaps = aspectFlatGaps(records, now, aim, env.flatBlockGaps);
+  if (gaps === undefined) return;
+  const asked = env.flatBlockGaps, declined = env.seatSetDeclined, notes: Diagnostic[] = [];
+  const describe = gaps.map(item => `${item.family} ${item.gap.toFixed(2)} px`).join(', ');
+  const decline = (why: string): void => {
+    if (asked === undefined) delete env.flatBlockGaps; else env.flatBlockGaps = asked;
+    if (declined === undefined) delete env.seatSetDeclined; else env.seatSetDeclined = declined;
+    s.sideNotes.push({ stage: 'placement', severity: 'info', code: FLAT_BLOCK_GAP_FINAL_DECLINED, owners: [],
+      message: `The flat gaps chosen again on the sheet of ${now.width.toFixed(0)} x ${now.height.toFixed(0)} px (${describe}) are declined: ${why}; the placement before them stands.` });
+  };
+  env.flatBlockGaps = gaps;
+  let placed: LayoutModel;
+  env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
+  try { placed = await env.timed('place', () => env.place(s.kept)); } catch (error) {
+    if (!(error instanceof PlacementRefusal)) throw error;
+    decline(`the placement was refused (${error.message})`);
+    return;
+  } finally { env.exemptPlacing--; }
+  let replaced: LayoutModel, banded: Awaited<ReturnType<typeof bandsWithoutWithdrawnSeats>>['banded'];
+  try { ({ placed: replaced, banded } = await bandsWithoutWithdrawnSeats(env, s.kept, placed, false, notes)); } catch (error) {
+    if (!(error instanceof PlacementRefusal)) throw error;
+    decline(`7f refused the placement (${error.message})`);
+    return;
+  }
+  const broken = holds(s.kept, replaced);
+  if (broken.length) { decline(`the reservation ${broken[0]!.id} does not hold (${broken[0]!.why})`); return; }
+  const sheet = canvasExtent(banded.model);
+  if (!nearerAim(sheet, now, aim)) { decline(`the sheet of ${sheet.width.toFixed(0)} x ${sheet.height.toFixed(0)} px stands no nearer the aspect aim`); return; }
+  const seats = seatSetsLost(s.base, banded.model);
+  if (seats.length) { decline(`the seat sets of ${seats.join(', ')} do not stand`); return; }
+  const before = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
+  const routed = await env.route(banded.model);
+  const was = routedBends(before), is = routedBends(routed);
+  const bent = [...was].filter(([id, count]) => count === 0 && (is.get(id) ?? Infinity) > 0).map(([id]) => id);
+  if (bent.length) { decline(`the links ${bent.join(', ')} are no longer straight`); return; }
+  const findings = errorFindings(before), added = [...errorFindings(routed)].filter(key => !findings.has(key));
+  if (added.length) { decline(`the route adds the gate findings ${added.join('; ')}`); return; }
+  s.kept7e = replaced; s.base = banded.model; s.baseMoved = banded.moved; s.baseUnmoved = banded.unmoved; s.routedFinal = routed;
+  s.sideNotes.push(...notes, { stage: 'placement', severity: 'info', code: FLAT_BLOCK_GAP_FINAL, owners: [],
+    message: `The flat gaps are chosen again on the sheet of ${now.width.toFixed(0)} x ${now.height.toFixed(0)} px: ${describe}; the sheet is ${sheet.width.toFixed(0)} x ${sheet.height.toFixed(0)} px.` });
+}
+
+/** The final flat-gap choice was kept (`chooseFlatGapsAgain`). */
+export const FLAT_BLOCK_GAP_FINAL = 'FLAT_BLOCK_GAP_FINAL';
+/** The final flat-gap choice was declined, with why (`chooseFlatGapsAgain`). */
+export const FLAT_BLOCK_GAP_FINAL_DECLINED = 'FLAT_BLOCK_GAP_FINAL_DECLINED';

@@ -13,7 +13,7 @@ import { createEnv } from './env.js';
 import { checkReadCaches } from '../model/read-cache.js';
 import { openRowReadingMemo } from '../layout/label-room-guard.js';
 import { firstState } from './initial.js';
-import { drive, refuseCrowdedChords } from './driver.js';
+import { chooseFlatGapsAgain, drive, refuseCrowdedChords } from './driver.js';
 import { publish } from './publish.js';
 import { fitWidthBudget } from './width-budget.js';
 import { decideLifts } from './lift-round.js';
@@ -58,5 +58,7 @@ async function layoutOnce(document: NormalisedDocument, options: LayoutOptions, 
   await drive(env, state);
   // The state to publish: a held chord the plan names crowded falls back before a gate finding is published (one bounded replay).
   await refuseCrowdedChords(env, state);
+  // The flat gaps chosen once more on the sheet the rounds left (dense-16x9 ticket 42): after the last step that changes the sheet.
+  await chooseFlatGapsAgain(env, state);
   return publish(env, state);
 }

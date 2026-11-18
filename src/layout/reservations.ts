@@ -1014,11 +1014,11 @@ export const RESERVATION_CHECKS: { readonly [K in ReservationKind]: KindCheck } 
 };
 /**
  * The placement inputs that stand in model fields outside the ledger (dense-16x9 ticket 04, slice 3; `PlacementInputs`): the gaps of the flat
- * blocks and the room of their members. They are not ledger entries: the rounds of `initial.ts` decide them before any round of the driver, `env` carries them and `place`
+ * blocks and the room of their members. They are not ledger entries: the rounds of `initial.ts` decide them before any round of the driver (the flat gaps once more after the last round, `chooseFlatGapsAgain`), `env` carries them and `place`
  * copies them, unchanged, into every placement run from `resolve` on. One predicate per field and the same three readers as `RESERVATION_CHECKS`.
  * The table is a mapped type over the keys of `PlacementInputs`, their one declaration: a new placement input without an entry does not compile.
  */
-const NO_ROUND_WRITES = 'no round writes it: the input is decided before the rounds and copied unchanged into every run, so a round has nothing to compare';
+const NO_ROUND_WRITES = 'no round writes it: the input is decided before the rounds and copied unchanged into every run, so a round has nothing to compare (the final flat-gap choice, `chooseFlatGapsAgain`, writes `flatBlockGaps` once after the last round, and no round reads it)';
 export const FIELD_CHECKS: { readonly [K in PlacementInputField]: { readonly predicate: (model: LayoutModel) => string | undefined; readonly at: KindCheck['at'] } } = {
   // The records the predicate compares with are written from the placement stage on; before them it reads the entries alone.
   flatBlockGaps: { predicate: flatBlockGapsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
