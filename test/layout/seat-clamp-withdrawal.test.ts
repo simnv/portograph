@@ -154,7 +154,8 @@ links:
     - lower
     - route: orthogonal
 `;
-// Review 2: after the withdrawal the misses are read again on the geometry the second settle leaves. Eight nodes; `b2` ends on its feed.
+// Review 2: after the withdrawal the misses are read again on the geometry the second settle leaves. Eight nodes (review 3: with the comparison at
+// the decision the first reproduction no longer withdraws; this one does, and without the reread its standing ports stay unresolved).
 const REREAD = `portograph: 2
 layout:
   moveBeforeGrow: true
@@ -186,7 +187,7 @@ nodes:
   b2:
     group: row-b
     size:
-      width: 35
+      width: 135
       height: 50
   a2:
     group: row-a
@@ -207,10 +208,6 @@ links:
   - - node-a
     - node-b
     - id: tunnel
-  - - node-a
-    - relay-2
-    - id: ov-1
-      route: overlay
   - - node-a
     - relay-1
     - id: ov-2
@@ -245,19 +242,19 @@ const stands = (model: LayoutModel, nodeId: string, key: string): boolean => {
 };
 /**
  * Each producer step of `group`, read on the model it leaves: the seats whose kept ports stand off their feed (or have no target), the wanted ports
- * that stand on their feed, and the ports the step leaves unresolved.
+ * that stand on their feed, the ports the step leaves unresolved, and whether the step's own geometry stands.
  */
-async function steps(text: string, group: string): Promise<{ off: string[]; standing: string[]; unresolved: string[] }[]> {
-  const found: { off: string[]; standing: string[]; unresolved: string[] }[] = [];
+async function steps(text: string, group: string): Promise<{ off: string[]; standing: string[]; unresolved: string[]; stood: boolean }[]> {
+  const found: { off: string[]; standing: string[]; unresolved: string[]; stood: boolean }[] = [];
   const hook = centreCheckTrace.step;
-  centreCheckTrace.step = (model, id, warn, unresolved) => {
+  centreCheckTrace.step = (model, id, warn, unresolved, stood) => {
     if (!warn || id !== group) return;
     const off: string[] = [], standing: string[] = [];
     for (const nodeId of model.groups[id]!.nodes) {
       for (const key of model.alignmentSeats?.[nodeId]?.ports ?? []) if (!stands(model, nodeId, key)) off.push(`${nodeId} ${key}`);
       for (const port of model.nodes[nodeId]!.ports) if (feedX(model, nodeId, portId(port.ref)) !== undefined && stands(model, nodeId, portId(port.ref))) standing.push(portId(port.ref));
     }
-    found.push({ off, standing: standing.sort(), unresolved: [...unresolved].sort() });
+    found.push({ off, standing: standing.sort(), unresolved: [...unresolved].sort(), stood });
   };
   try { await lay(text); } finally { if (hook === undefined) delete centreCheckTrace.step; else centreCheckTrace.step = hook; }
   return found;
@@ -273,8 +270,9 @@ it('a recorded seat the withdrawal undoes gives its growth back: no group step l
 
 it('the misses after a withdrawal are read on the geometry the step leaves: a port on its feed is not unresolved', async () => {
   const found = await steps(REREAD, 'row-b');
-  expect(found.some(item => item.standing.some(key => key.includes('"b2"')))).toBe(true);
-  expect(found.flatMap(item => item.standing.filter(key => item.unresolved.includes(key)))).toEqual([]);
+  expect(found.some(item => item.stood && item.standing.length > 0)).toBe(true);
+  // A step declined whole leaves every wanted port unresolved, as on main; a step whose geometry stands names only the ports off their feeds.
+  expect(found.flatMap(item => item.stood ? item.standing.filter(key => item.unresolved.includes(key)) : [])).toEqual([]);
 }, 120000);
 
 // Review 2, P2b (ruling of 2026-11-18: the trade is accepted and recorded). Eight nodes. Main (4b891688) draws a2 -> hub (link-3) and the tunnel
@@ -372,4 +370,19 @@ it('the accepted trade of review 2: the withdrawal keeps the main move, and two 
   const model = await lay(TRADE);
   const { routed, overlay } = score(model).snapshot.counts;
   expect({ width: Math.round(model.canvas!.width), routed: routed.turns, overlay: overlay.turns }).toEqual({ width: 682, routed: 14, overlay: 0 });
+}, 120000);
+
+// Review 3 (the ruled comparison at the decision): on the same eight nodes the course trial of link-5 runs a first flanks pass of its own. There
+// the whole decline leaves row-b at its start with b2's port on its feed, and the withdrawal would leave it 102.92 px off: verticalTally (1, 1)
+// against (0, 0). The step keeps the decline and names it. The published drawing is the accepted trade above, unchanged.
+it('the withdrawal stands only when it holds as many verticals as the whole decline: the trial step of the course round keeps the decline', async () => {
+  const found: { declined: boolean; b2: boolean }[] = [];
+  const hook = centreCheckTrace.step;
+  centreCheckTrace.step = (model, id, warn) => {
+    if (!warn || id !== 'row-b') return;
+    const key = portId(model.nodes['b2']!.ports.find(port => port.side === 'top')!.ref);
+    found.push({ declined: model.diagnostics.some(note => note.code === 'ALIGNMENT_SEAT_REFUSED' && note.message === 'row-b is declined whole and keeps no seat of its step: withdrawing the seats of b2, node-b would stand 0 owed verticals and 0 aligned targets, the whole decline 1 and 1.'), b2: stands(model, 'b2', key) });
+  };
+  try { await lay(TRADE); } finally { if (hook === undefined) delete centreCheckTrace.step; else centreCheckTrace.step = hook; }
+  expect(found.some(item => item.declined && item.b2)).toBe(true);
 }, 120000);

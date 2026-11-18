@@ -1432,8 +1432,11 @@ rulings of 2026-11-18): for a member of a pooled row unit, the main move is the 
 (`ALIGNMENT_SEAT_REFUSED`, naming the clamp), the group goes back to where its main move put it, and the rest of the step runs again there. The
 exception covers only the members the unit's seat moves off their own mean (the groups in the coordinate-override map of `rowSeats`); the member
 whose own mean is the unit's seat takes its ordinary move and the whole-step decline, as any group. Every recorded seat the withdrawal undoes gives
-its growth back and its record goes (clause 4), and the misses are read again on the geometry the second run leaves (review 2 of ticket 47). A
-seat that survives the step window stands in both cases. A whole-step decline undoes the alignment; the tier pack (`packClear`) can still move
+its growth back and its record goes (clause 4), and the misses are read again on the geometry the second run leaves (review 2 of ticket 47). The
+withdrawal is the better of two outcomes the step knows (review 3): it stands only when it holds at least as many owed verticals and aligned
+targets (`verticalTally`) as the whole-step decline, read on the decline path's own geometry (the saved geometry, `packClear`, `standNearFeed`); a
+tie goes to the withdrawal, and a decline that stands more is taken and named (`ALIGNMENT_SEAT_REFUSED`). A seat that survives the step window
+stands in both cases. A whole-step decline undoes the alignment; the tier pack (`packClear`) can still move
 the group clear of the group before it.
 At 7e a bent bundle block keeps the start of a face whose seat keeps a port. The publication check refuses a seat record in a model
 without the option, and a seat whose kept port stands off its feed, whatever the centring replay excuses (R5). ADR-0027 states the rule,

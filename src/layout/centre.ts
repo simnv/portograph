@@ -1265,7 +1265,7 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     writeAlignmentTargets(model, model.groups[id]!.nodes, step.notes, warn ? stepPass : 0);
     // The seats, only when the step's own geometry stands: a step given back or kept at its start leaves no seat of its own (ADR-0027).
     if (step.group === began) writeAlignmentSeats(model, step.notes.seated, warn ? stepPass : 0, step.notes.unseated);
-    centreCheckTrace.step?.(model, id, warn, step.unresolved);
+    centreCheckTrace.step?.(model, id, warn, step.unresolved, step.group === began);
     return step;
   });
 }
@@ -1721,10 +1721,22 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     && group.nodes.some(nodeId => (seated || (model.givenBack !== undefined && Object.hasOwn(model.givenBack, nodeId))) && model.nodes[nodeId]!.bounds!.width > saved.nodes.find(node => node.id === nodeId)!.bounds!.width + EPS)) {
     if (beforeSeats !== undefined) {
       const withdrawn = [...new Set(beforeSeats.nodes.filter(node => node.ports.some(port => aligned.has(portId(port.ref)))).map(node => node.id))].sort();
-      if (warn) for (const nodeId of withdrawn) {
-        const named = [...new Set(model.nodes[nodeId]!.ports.map(port => portId(port.ref)).filter(key => aligned.has(key)).map(key => seats.get(key)!.link))].sort();
-        placementWarning(model, SEAT_REFUSED, `${nodeId} keeps its place and width: the clamp into the step window carries its seat off the feeds of ${named.join(', ')}.`, named);
-      }
+      const alignedBefore = new Set(aligned);
+      const linksOf = (nodeIds: readonly string[]): string[] => [...new Set(nodeIds.flatMap(nodeId => model.nodes[nodeId]!.ports.map(port => portId(port.ref)))
+        .filter(key => alignedBefore.has(key)).map(key => seats.get(key)!.link))].sort();
+      // The withdrawal is the better of two outcomes the step knows (ruling of 2026-11-18, review 3 of ticket 47): it stands only when it holds at
+      // least as many owed verticals and aligned targets (`verticalTally`) as the whole-step decline, read on the geometry of the decline path
+      // (the saved geometry, `packClear`, `standNearFeed`); a tie goes to the withdrawal. The decline is tried on copies first, and only the
+      // group, its nodes and the diagnostics change on the way, so the withdrawal starts from the state the clause found.
+      const judge = tally ?? verticalTally(model, group, wanted, seats), diagnosticsAt = [...model.diagnostics];
+      const whole = JSON.parse(JSON.stringify(saved)) as typeof saved;
+      model.groups[id] = whole.group;
+      for (const node of whole.nodes) model.nodes[node.id] = node;
+      packClear(model, context, tier, whole.group, previous);
+      standNearFeed(model, context, tier, id, whole.group, began + Math.max(farthestLeft, Math.min(toMean, farthestRight)), low, high);
+      const declineTally = judge(misses()), declineNotes = [...model.diagnostics];
+      model.diagnostics = diagnosticsAt;
+      model.groups[id] = group;
       Object.assign(group, beforeSeats.group);
       for (const node of beforeSeats.nodes) model.nodes[node.id] = node;
       // Every seat the withdrawal undoes is retired (ADR-0027, clause 4; review 2 of ticket 47): a recorded seat this step withdrew, and a recorded
@@ -1740,6 +1752,22 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
       const again = settle();
       if (again !== undefined) return again;
       endMisses = misses();
+      const withdrawalTally = judge(endMisses);
+      if (fewerVerticals(withdrawalTally, declineTally)) {
+        // The decline stands more: the step is declined whole on the geometry tried above, as without the exception, and the decline is named (R6).
+        model.groups[id] = whole.group;
+        for (const node of whole.nodes) model.nodes[node.id] = node;
+        model.diagnostics = declineNotes;
+        if (warn) {
+          for (const feed of own) if (alignedBefore.has(portId(feed.child.ref))) placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
+          placementWarning(model, SEAT_REFUSED, `${id} is declined whole and keeps no seat of its step: withdrawing the seats of ${withdrawn.join(', ')} would stand ${withdrawalTally[0]} owed verticals and ${withdrawalTally[1]} aligned targets, the whole decline ${declineTally[0]} and ${declineTally[1]}.`, linksOf(withdrawn));
+        }
+        return { unresolved: new Set(wanted.keys()), group: whole.group, notes: { ...notes, grown: new Map(), declined: new Map(), seated: new Map(), unseated: new Set() } };
+      }
+      if (warn) for (const nodeId of withdrawn) {
+        const named = linksOf([nodeId]);
+        placementWarning(model, SEAT_REFUSED, `${nodeId} keeps its place and width: the clamp into the step window carries its seat off the feeds of ${named.join(', ')}.`, named);
+      }
     } else {
     if (warn) for (const feed of own) {
       if (!aligned.has(portId(feed.child.ref))) continue;
@@ -1966,9 +1994,9 @@ export const centreCheckTrace: {
   owner?: (model: LayoutModel, reader: 'step' | 'invariant', read: number | undefined, ahead: boolean, child: string, owned: boolean) => void;
   /**
    * The model as a group step leaves it, records written: what the next group and a replay read, and the wanted ports the step leaves unresolved
-   * (review 2 of dense-16x9 ticket 47). `warn`: a producer step.
+   * (review 2 of dense-16x9 ticket 47). `warn`: a producer step. `stood`: the step's own geometry stands (not given back or declined whole).
    */
-  step?: (model: LayoutModel, group: string, warn: boolean, unresolved: ReadonlySet<string>) => void;
+  step?: (model: LayoutModel, group: string, warn: boolean, unresolved: ReadonlySet<string>, stood: boolean) => void;
 } = {};
 /** The check (`readCentreViolations`) whose replay runs now, for `centreCheckTrace.owner`; undefined while a producer step runs. */
 let ownerRead: number | undefined;
