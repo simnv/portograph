@@ -18,7 +18,7 @@ import { chainBlockOf } from './read/chain.js';
 import { belowReader } from './feed-order.js';
 import { staleThrough } from './far-end-order.js';
 import { decisionStale, facePositions, farAnchorIndex, routedLinksOf, wrongPairs } from './far-end-faults.js';
-import { unifiedCompare, type UnifiedTally } from './turn-measure.js';
+import { measuredTally, unifiedCompare, type UnifiedTally } from './turn-measure.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
@@ -466,6 +466,12 @@ export function farEndDecisionEntry(payload: ReservationPayload['farEndDecision'
 export function withFarEndDecisions(ledger: Reservations, decisions: readonly ReservationOf<'farEndDecision'>[]): Reservations {
   return [...ledger.filter(entry => entry.kind !== 'farEndDecision'), ...decisions];
 }
+/**
+ * The ledger a placement starts from (dense-16x9 ticket 49, review 2): `ledger` without its far-end decisions. A decision is bound to the baseline it was
+ * judged against, and a placement is another one: no trial of any kind, the round trials, the stagger rebase, the final flat-gap fit and the held-chord
+ * replay, carries one. The kept ledger keeps them, and the publication checks them again.
+ */
+export const trialLedger = (ledger: Reservations): Reservations => (ledger.some(entry => entry.kind === 'farEndDecision') ? ledger.filter(entry => entry.kind !== 'farEndDecision') : ledger);
 export function farEndEntries(faces: readonly { node: string; side: Side; ports: readonly PortRef[] }[], producer: RoundId, revision: number): Reservations {
   return faces.map(face => reservation('farEndOrder', { kind: 'node', id: face.node }, face.side, producer, revision, { node: face.node, side: face.side, ports: face.ports }));
 }
@@ -1035,7 +1041,12 @@ type ReaderCheck = true | ((model: LayoutModel) => boolean) | string;
  * comparator, `unifiedCompare`); every face of the proposal exists with a wanted order of exactly its ports, the decided face among them; and the record holds on
  * the model (`decisionStale`: the input digest, the baseline digest, the port order and the pairs). Production publishes no record that fails this.
  */
-function farEndDecisionFailure(item: Reservation, model: LayoutModel): string | undefined {
+const sameTally = (a: UnifiedTally | undefined, b: UnifiedTally): boolean => a !== undefined && a.crossings === b.crossings
+  && a.routed.bent === b.routed.bent && a.routed.turns === b.routed.turns && a.overlay.bent === b.overlay.bent && a.overlay.turns === b.overlay.turns;
+const tallies = new WeakMap<LayoutModel, UnifiedTally | undefined>();
+/** The measured tally of a model, read once per model (a ledger may hold several decisions). */
+const tallyOfModel = (model: LayoutModel): UnifiedTally | undefined => { if (!tallies.has(model)) tallies.set(model, measuredTally(model)); return tallies.get(model); };
+export function farEndDecisionFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'farEndDecision') return undefined;
   const { node, side, ports, pairs, reason, tallies, binding } = item.payload, face = model.nodes[node]?.ports.filter(port => port.side === side);
   if (item.owner.kind !== 'node' || item.owner.id !== node || item.producer !== 'farEnd') return `the decision of the ${side} face of ${node} is not the far-end round's own (owner ${ownerKey(item.owner)}, producer ${item.producer})`;
@@ -1043,15 +1054,18 @@ function farEndDecisionFailure(item: Reservation, model: LayoutModel): string | 
   const have = new Set(face.map(port => portId(port.ref))), named = new Set(ports.map(ref => portId(ref)));
   if (have.size !== named.size || [...named].some(id => !have.has(id))) return `the ${side} face of ${node} does not hold the recorded ports`;
   if (pairs.some(pair => pair.some(id => !have.has(id)))) return `a recorded pair of the ${side} face of ${node} names a port it does not hold`;
-  if (reason === 'unified' && (tallies === undefined || !(unifiedCompare(tallies.base, tallies.trial) > 0))) return `the decision of the ${side} face of ${node} names no trial worse by the unified order`;
+  const stale = decisionStale(model, item, wrongPairs(facePositions(model.nodes[node]!, side, farAnchorIndex(model, routedLinksOf(model)))));
+  if (stale !== undefined) return `the decision of the ${side} face of ${node} does not hold: ${stale}`;
   for (const wanted of binding.proposal) {
     const ids = model.nodes[wanted.node]?.ports.filter(port => port.side === wanted.side).map(port => portId(port.ref)) ?? [];
     const asked = wanted.ports.map(ref => portId(ref));
     if (ids.length === 0 || ids.length !== asked.length || new Set(asked).size !== asked.length || asked.some(id => !ids.includes(id))) return `the proposal of the decision of the ${side} face of ${node} names a face the model does not hold (${wanted.node} ${wanted.side})`;
   }
   if (!binding.proposal.some(wanted => wanted.node === node && wanted.side === side)) return `the proposal of the decision of the ${side} face of ${node} does not hold the face`;
-  const stale = decisionStale(model, item, wrongPairs(facePositions(model.nodes[node]!, side, farAnchorIndex(model, routedLinksOf(model)))));
-  return stale === undefined ? undefined : `the decision of the ${side} face of ${node} does not hold: ${stale}`;
+  if (reason === 'unified' && (tallies === undefined || !(unifiedCompare(tallies.base, tallies.trial) > 0))) return `the decision of the ${side} face of ${node} names no trial worse by the unified order`;
+  // The baseline tally is the model's own, measured as the judge measures it (review 2): the record cannot claim a baseline the saved geometry does not have.
+  if (tallies !== undefined && !sameTally(tallyOfModel(model), tallies.base)) return `the decision of the ${side} face of ${node} names a baseline tally the model does not have`;
+  return undefined;
 }
 export interface KindCheck { readonly predicate?: (item: Reservation, model: LayoutModel) => string | undefined; readonly at: { readonly round: ReaderCheck; readonly final: ReaderCheck; readonly early: ReaderCheck } }
 const TRANSIENT = 'transient: it lives for one move check and is never stored (`validateLedgerShape` refuses it)';

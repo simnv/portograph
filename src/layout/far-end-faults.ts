@@ -95,6 +95,22 @@ export type FarEndDecisionEntry = ReservationOf<'farEndDecision'>;
 export const farEndDecisions = (model: LayoutModel): Map<string, FarEndDecisionEntry> =>
   new Map(ofKind(model.reservations ?? [], 'farEndDecision').map(entry => [faceKey(entry.payload.node, entry.payload.side), entry] as const));
 
+/**
+ * Why the proposal of a far-end decision does not show the trial that earned it (dense-16x9 ticket 49, review 2), or `undefined`: each face stands in the
+ * proposal once, the decided face among them, and its wanted order differs from the standing order and puts every recorded pair the other way round (the
+ * order that removes the recorded inversions).
+ */
+export function proposalFault(payload: FarEndDecisionEntry['payload']): string | undefined {
+  const { node, side, ports, pairs, binding } = payload, keys = binding.proposal.map(face => faceKey(face.node, face.side));
+  if (new Set(keys).size !== keys.length) return 'the proposal names a face twice';
+  const wanted = binding.proposal.find(face => face.node === node && face.side === side);
+  if (wanted === undefined) return 'the proposal does not hold the face';
+  const order = wanted.ports.map(ref => portId(ref));
+  if (JSON.stringify(order) === JSON.stringify(ports.map(ref => portId(ref)))) return 'the proposal asks for the order that stands';
+  if (pairs.some(([before, after]) => !(order.indexOf(after) >= 0 && order.indexOf(after) < order.indexOf(before)))) return 'the proposal does not put the recorded pairs the other way round';
+  return undefined;
+}
+
 /** A digest of a JSON value, the keys of every object sorted: two FNV-1a 32-bit hashes of the canonical text (no runtime dependency, the same in a browser). */
 export function digestOf(value: unknown): string {
   const canonical = (item: unknown): unknown => Array.isArray(item) ? item.map(canonical)
@@ -132,7 +148,7 @@ export function decisionStale(model: LayoutModel, entry: FarEndDecisionEntry, wr
   if (binding.baseline !== baselineDigest(model)) return 'the sheet is not the one the trial was judged against';
   if (JSON.stringify(engineIds(model, node, side)) !== JSON.stringify(ports.map(ref => portId(ref)))) return 'the ports do not stand in the recorded order';
   if (JSON.stringify(wrong) !== JSON.stringify(pairs)) return 'the far ends no longer stand in the recorded order';
-  return undefined;
+  return proposalFault(entry.payload);
 }
 
 /** How the reader judges one face. */

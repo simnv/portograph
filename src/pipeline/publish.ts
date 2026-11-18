@@ -10,9 +10,7 @@ import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { sideHintDiagnostics } from '../layout/side-hints.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { routedBends } from '../layout/side-judge.js';
-import { declinedStaggersOf, farEndDecisionsOf, sideHintsOf, staggerDeclineSentence, withFarEndDecisions } from '../layout/reservations.js';
-import { staleFarEndDecisions } from '../layout/far-end-faults.js';
-import { routedLinksOf } from '../layout/far-end-order.js';
+import { declinedStaggersOf, farEndDecisionFailure, farEndDecisionsOf, sideHintsOf, staggerDeclineSentence, withFarEndDecisions } from '../layout/reservations.js';
 import { FAN_WRAP_DECLINED } from '../layout/stagger.js';
 import { holdsRouted } from '../layout/reservation-checks.js';
 import type { Env } from './env.js';
@@ -82,7 +80,9 @@ export async function publish(env: Env, s: State): Promise<LayoutModel> {
   // A far-end decision that no longer holds on the published sheet buys nothing: it is not published, G5 judges its face again, and the decision is named
   // (R6, dense-16x9 ticket 49). Restore refuses a record that does not hold, so production publishes none.
   const kept = farEndDecisionsOf(s.kept), all = kept.length === 0 ? published : { ...published, reservations: withFarEndDecisions(published.reservations ?? [], kept) };
-  const stale = staleFarEndDecisions(all, routedLinksOf(all)), decisions = kept.filter(entry => !stale.some(item => item.entry === entry));
+  // The same check as restore (`farEndDecisionFailure`): a decision the published sheet does not support is named, not published.
+  const stale = kept.flatMap(entry => { const why = farEndDecisionFailure(entry, all); return why === undefined ? [] : [{ entry, why }]; });
+  const decisions = kept.filter(entry => !stale.some(item => item.entry === entry));
   for (const { entry, why } of stale) {
     lost.push({ stage: 'placement', severity: 'warning', code: 'FAR_END_DECISION_STALE', owners: [{ kind: 'node', id: entry.payload.node }],
       message: `The far-end order of the ${entry.payload.side} face of ${entry.payload.node} was declined (${entry.payload.why}), but ${why}; the decision is not published, and G5 judges the face again.` });

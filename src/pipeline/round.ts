@@ -7,7 +7,7 @@ import type { Diagnostic, LayoutModel } from '../model/index.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
 import { producerRefusal } from '../layout/placement-refusal.js';
 import { staggerRefusal } from '../layout/stagger.js';
-import { declineStagger, reserve as addReservations, type Reservations } from '../layout/reservations.js';
+import { declineStagger, reserve as addReservations, trialLedger, type Reservations } from '../layout/reservations.js';
 import { holds } from '../layout/reservation-checks.js';
 import type { Env } from './env.js';
 import type { State, Trial } from './state.js';
@@ -131,7 +131,7 @@ async function keptStaggers<O>(env: Env, s: State, round: Round<O>, ledger: Rese
       const named = staggerRefusal(error) ? [...new Set(error.owners.flatMap(owner => owner.kind === 'group' && rows.includes(owner.id) && !env.rebasedRows?.has(owner.id) ? [owner.id] : []))].sort() : [];
       if (!named.length) return { at: 'bands', why: (error as Error).message, error: error as Error };
       for (const group of named) (env.rebasedRows ??= new Set()).add(group);
-      ledger = addReservations(replaced ? ledger : s.kept, named.flatMap(group => declineStagger(group, (error as Error).message, 'later-placement', round.id, env.placements)));
+      ledger = addReservations(replaced ? ledger : trialLedger(s.kept), named.flatMap(group => declineStagger(group, (error as Error).message, 'later-placement', round.id, env.placements)));
       replaced = true;
       // The placement stands outside the cap: it is credited before it starts (`place` counts and checks the cap at once), and the credit is set to the
       // placements it started (none when it did not run).
@@ -150,7 +150,7 @@ async function keptStaggers<O>(env: Env, s: State, round: Round<O>, ledger: Rese
 
 /** Reserve and place a trial of `round` on the offer `o`. A started placement is never given back. */
 export async function open<O>(env: Env, s: State, round: Round<O>, o: O): Promise<Opened | Refusal> {
-  const ledger = round.reserve(env, s, o);
+  const ledger = trialLedger(round.reserve(env, s, o));
   if (round.budget.own === true) { env.farEndRuns++; attemptCounters.farEndStarts++; } else env.reruns++;
   if (round.invalidation !== undefined) attemptCounters.invalidations[round.invalidation]++;
   let trial7e: LayoutModel;

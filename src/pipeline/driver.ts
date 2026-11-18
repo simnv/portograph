@@ -14,7 +14,7 @@ import { close, open, type AnyRound, type Opened, type Refusal } from './round.j
 import { course, fan, farEnd, overlay, side, span, turn } from './rounds.js';
 import type { State } from './state.js';
 import { crowdedHeldChords } from '../layout/direct-families.js';
-import { refuseChordEntries, reserve as addReservations } from '../layout/reservations.js';
+import { refuseChordEntries, reserve as addReservations, trialLedger } from '../layout/reservations.js';
 import { score } from '../score/index.js';
 import { restoreLayoutModel } from '../layout/mutation.js';
 import type { Diagnostic, LayoutModel } from '../model/index.js';
@@ -164,7 +164,7 @@ export async function refuseCrowdedChords(env: Env, s: State): Promise<void> {
   // replay placed once more from its ledger (`bandsWithoutWithdrawnSeats`), before the gates judge it. A replay the gates discard gives back the
   // declines it added, and its notes are not published: the command does not act on a discarded placement's withdrawal.
   const declined = env.seatSetDeclined, ledger = addReservations(s.kept, entries), notes: Diagnostic[] = [];
-  const { placed, banded } = await bandsWithoutWithdrawnSeats(env, ledger, kept7e, false, notes);
+  const { placed, banded } = await bandsWithoutWithdrawnSeats(env, trialLedger(ledger), kept7e, false, notes);
   const routed = await env.route(banded.model);
   const was = errorFindings(before);
   if ([...errorFindings(routed)].some(key => !was.has(key))) {
@@ -237,15 +237,17 @@ export async function chooseFlatGapsAgain(env: Env, s: State, published?: SheetS
     env.flatBlockGaps = gaps!;
     let placed: LayoutModel, replaced: LayoutModel, banded: Awaited<ReturnType<typeof bandsWithoutWithdrawnSeats>>['banded'];
     env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
-    try { placed = await env.timed('place', () => env.place(s.kept)); } catch (error) {
+    // The trial is placed without the kept far-end decisions (`trialLedger`); the kept ledger keeps them, and the publication checks them again.
+    const ledger = trialLedger(s.kept);
+    try { placed = await env.timed('place', () => env.place(ledger)); } catch (error) {
       if (!refusedAtBands(error)) throw error;
       return decline(`the placement was refused (${error.message})`);
     } finally { env.exemptPlacing--; }
-    try { ({ placed: replaced, banded } = await bandsWithoutWithdrawnSeats(env, s.kept, placed, false, notes)); } catch (error) {
+    try { ({ placed: replaced, banded } = await bandsWithoutWithdrawnSeats(env, ledger, placed, false, notes)); } catch (error) {
       if (!refusedAtBands(error)) throw error;
       return decline(`7f refused the placement (${error.message})`);
     }
-    const broken = holds(s.kept, replaced);
+    const broken = holds(ledger, replaced);
     if (broken.length) return decline(`the reservation ${broken[0]!.id} does not hold (${broken[0]!.why})`);
     const seats = seatRowsLost(s.base, banded.model);
     if (seats.length) return decline(`the seat sets of ${seats.join(', ')} do not stand`);

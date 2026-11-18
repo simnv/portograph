@@ -8,7 +8,7 @@ import { endMode } from '../layout/course-rows.js';
 import { contentInsets, measureNodeContent } from '../layout/size.js';
 import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
 import { SolidBlockRefusal, TrunkBlocked } from '../layout/placement-refusal.js';
-import { PlacementRefusal, producerRefusal, refusedAtBands } from '../layout/placement-refusal.js';
+import { PlacementRefusal, producerRefusal, refusedAtBands, refusedBy7f } from '../layout/placement-refusal.js';
 import { staggerRefusal } from '../layout/stagger.js';
 import { documentTierDistance, freezeRefusal, isRoutedChord } from '../layout/frame-paths.js';
 import { transitTiers } from '../layout/lanes.js';
@@ -25,8 +25,8 @@ import { faceKey, straightFaces } from '../layout/turn-order.js';
 import { linkLabels } from '../layout/link-labels.js';
 import { judgeFarEndTrial, measureFarEndOrder } from '../layout/far-end-measure.js';
 import { engineSequence, farEndOwner, proposalGroups, proposalKey, routedLinksOf, staleFaces, type FarEndFace } from '../layout/far-end-order.js';
-import { baselineDigest, farAnchorIndex, farEndDecisions as readDecisions, inputDigest, readFace, type FarEndDecisionEntry } from '../layout/far-end-faults.js';
-import { farEndDecisionEntry, farEndDecisionsOf, farEndEntries, withFarEndDecisions, type FarEndDeclineReason, pairGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
+import { baselineDigest, farAnchorIndex, farEndDecisions as readDecisions, inputDigest, proposalFault, readFace, type FarEndDecisionEntry } from '../layout/far-end-faults.js';
+import { farEndDecisionEntry, farEndDecisionsOf, farEndEntries, trialLedger, type FarEndDeclineReason, pairGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import type { ReservationFailure } from '../layout/reservations.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute } from '../route/plan.js';
@@ -628,12 +628,12 @@ type FarEndTrialOffer = { faces: FarEndFace[]; current: LayoutModel; decisions: 
 /**
  * The decline reason of a refused far-end trial, when the refusal is a decision of the whole-sheet measure (dense-16x9 ticket 49, review 1): the judge's own
  * (`verdict.decline`: a completed comparison worse by the unified order, a new error-gate finding, the canvas cap), or a refusal of the trial's geometry at
- * 7f (`postcondition-7f`: a placement refusal of stage 7f, which the round tolerates). A placement-run refusal, an ELK fallback, a ledger or a predictor
+ * 7f (`postcondition-7f`: a placement refusal that 7f itself threw, `refusedBy7f`; a failure of the replacement placement of a 7f retry is none, review 2). A placement-run refusal, an ELK fallback, a ledger or a predictor
  * refusal, a trial that did not settle and anything the round does not tolerate (a deadline, a budget, a worker failure) decide nothing.
  */
 function farEndDecline(o: FarEndTrialOffer, r: Refusal): FarEndDeclineReason | undefined {
   if (r.at === 'verdict') return o.verdict?.next === undefined ? o.verdict?.decline : undefined;
-  return r.at === 'bands' && refusedAtBands(r.error) ? 'postcondition-7f' : undefined;
+  return r.at === 'bands' && refusedBy7f(r.error) ? 'postcondition-7f' : undefined;
 }
 /**
  * The far-end decisions of a declined trial (`farEndDecision`): one per proposed face that fails G5 on the baseline the trial was measured on and that no other owner holds,
@@ -648,8 +648,9 @@ function farEndDecisions(env: Env, o: FarEndTrialOffer, r: Refusal, reason: FarE
     if (farEndOwner(base, face.node, face.side) !== undefined) return [];
     const reading = readFace(base, face.node, face.side, index), ports = engineSequence(base, face.node, face.side);
     if (reading.wrong.length === 0 || ports === undefined) return [];
-    return [farEndDecisionEntry({ node: face.node, side: face.side, ports, pairs: reading.wrong, reason,
-      why: r.why, ...(verdict?.tallies === undefined ? {} : { tallies: verdict.tallies }), binding }, 'farEnd', env.placements)];
+    const payload = { node: face.node, side: face.side, ports, pairs: reading.wrong, reason, why: r.why, ...(verdict?.tallies === undefined ? {} : { tallies: verdict.tallies }), binding };
+    // A proposal that does not reverse the recorded pairs earned no decision for them (`proposalFault`, the check the reader and restore make).
+    return proposalFault(payload) === undefined ? [farEndDecisionEntry(payload, 'farEnd', env.placements)] : [];
   });
 }
 const faceNames = (faces: readonly { node: string; side: string }[]): string => faces.map(face => `${face.node} ${face.side}`).join(', ');
@@ -707,7 +708,7 @@ export const farEnd: Round<FarEndTrialOffer> = {
     const turn = turnOf(s.kept), straight = [...straightFaces(s.base)];
     // A decision is bound to the baseline it was judged against (dense-16x9 ticket 49, review 1), and a trial is another placement: no decision enters the
     // trial's ledger. A declined trial leaves the kept ledger with its decisions; a kept trial is a new baseline, and its ledger holds none.
-    return addReservations(withFarEndDecisions(s.kept, []), [...floorEntries(keptFloors(env, s), 'farEnd', env.placements), ...farEndEntries(o.faces, 'farEnd', env.placements),
+    return addReservations(trialLedger(s.kept), [...floorEntries(keptFloors(env, s), 'farEnd', env.placements), ...farEndEntries(o.faces, 'farEnd', env.placements),
       ...(turn.all || turn.links.length > 0 ? turnEntries(turn.all, turn.all ? [] : turn.links, false, 'farEnd', env.placements, straight) : [])]);
   },
   holdsAt7e(_env, _s, _o, ledger, trial7e) {

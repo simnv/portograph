@@ -1,6 +1,6 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import type { Reservations } from '../layout/reservations.js';
-import { producerRefusal } from '../layout/placement-refusal.js';
+import { markThrownBy7f, producerRefusal } from '../layout/placement-refusal.js';
 import { staggerRefusal } from '../layout/stagger.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
 import type { Env } from './env.js';
@@ -84,7 +84,8 @@ type Banded = Awaited<ReturnType<Env['bands']>>;
  */
 export async function bandsWithoutWithdrawnSeats(env: Env, ledger: Reservations, placed: LayoutModel, trial: boolean, notes: Diagnostic[],
   admit?: (placed: LayoutModel) => Promise<void>): Promise<{ placed: LayoutModel; banded: Banded }> {
-  const band = (model: LayoutModel): Promise<Banded> => trial ? env.bands(model, true) : env.bands(model);
+  // An error of 7f itself is marked (`refusedBy7f`): the replacement placement below runs inside this call, and its failure is no 7f refusal.
+  const band = async (model: LayoutModel): Promise<Banded> => { try { return await (trial ? env.bands(model, true) : env.bands(model)); } catch (error) { markThrownBy7f(error); throw error; } };
   let banded = await band(placed);
   // Only a run that withdrew a set retries (a set exists only with `layout.moveBeforeGrow`).
   if (!withdrawnSeatRows(banded.model).size) return { placed, banded };

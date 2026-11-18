@@ -1,0 +1,277 @@
+# Expected (dense-16x9 ticket 49, review 2): two inputs in one sheet: `a-flat-gap-is-chosen-again-after-the-fan-round` and the far-end golden
+# `a-far-end-order-a-full-trial-measures-worse-is-decided-once`, its group tiers 2 lower. The far-end round declines `snk1` top and `src0`
+# bottom (a new G6 error finding of the routed trial) and records the decision of `snk1` top; then the final flat-gap choice places the sheet
+# once more and is kept (`FLAT_BLOCK_GAP_FINAL`). That trial is another placement, so it starts from the kept ledger without the decision
+# (`trialLedger`). The kept trial moves the ports, so the decision is stale on the published sheet: the publication names it
+# (`FAR_END_DECISION_STALE`, a warning) and does not publish it, and G5 judges the faces (G5 on `src0` and `snk1`). Before the fix the final
+# trial carried the decision into stage 5, which refused it on the fresh placement and threw; main b07ab8ed publishes the sheet. All 37 links
+# publish, and the layout restores. Staged, not in goldens/synthetic: the sheet keeps a G5, and the corpus gate takes a new sheet with an error
+# finding as a failure. Test-only input owned by dense-16x9 ticket 49; test/pipeline/far-end-decision.test.ts reads it.
+portograph: 2
+layout:
+  aspect: 3:1
+groups:
+  upstream:
+    tier: 0
+    label: Upstream
+  site:
+    tier: 1
+    label: Site
+  hub:
+    tier: 2
+  pair1:
+    tier: 3
+  pair2:
+    tier: 3
+  pair3:
+    tier: 3
+  pair4:
+    tier: 3
+  pair5:
+    tier: 3
+  pair6:
+    tier: 3
+  pair7:
+    tier: 3
+  src:
+    tier: 2
+  access:
+    tier: 3
+  edge-far:
+    tier: 4
+  edge-near:
+    tier: 4
+nodes:
+  isp:
+    group: upstream
+    class: provider
+    label: ISP
+  core-1:
+    group: site
+    class: router
+    label: Core 1
+  core-2:
+    group: site
+    class: router
+    label: Core 2
+  edge-1:
+    group: site
+    class: router
+    label: Edge 1
+  edge-2:
+    group: site
+    class: router
+    label: Edge 2
+  edge-3:
+    group: site
+    class: router
+    label: Edge 3
+  edge-4:
+    group: site
+    class: router
+    label: Edge 4
+  spare:
+    group: site
+    class: router
+    label: Spare
+  hub-a:
+    group: hub
+    class: router
+  hub-b:
+    group: hub
+    class: router
+  node1a:
+    group: pair1
+    class: router
+    size:
+      width: 300
+      height: 0
+  node1b:
+    group: pair1
+    class: router
+    size:
+      width: 300
+      height: 0
+  node2a:
+    group: pair2
+    class: router
+    size:
+      width: 300
+      height: 0
+  node2b:
+    group: pair2
+    class: router
+    size:
+      width: 300
+      height: 0
+  node3a:
+    group: pair3
+    class: router
+    size:
+      width: 300
+      height: 0
+  node3b:
+    group: pair3
+    class: router
+    size:
+      width: 300
+      height: 0
+  node4a:
+    group: pair4
+    class: router
+    size:
+      width: 300
+      height: 0
+  node4b:
+    group: pair4
+    class: router
+    size:
+      width: 300
+      height: 0
+  node5a:
+    group: pair5
+    class: router
+    size:
+      width: 300
+      height: 0
+  node5b:
+    group: pair5
+    class: router
+    size:
+      width: 300
+      height: 0
+  node6a:
+    group: pair6
+    class: router
+    size:
+      width: 300
+      height: 0
+  node6b:
+    group: pair6
+    class: router
+    size:
+      width: 300
+      height: 0
+  node7a:
+    group: pair7
+    class: router
+    size:
+      width: 300
+      height: 0
+  node7b:
+    group: pair7
+    class: router
+    size:
+      width: 300
+      height: 0
+  src0:
+    group: src
+    class: router
+    ports: []
+  src1:
+    group: src
+    class: router
+    ports: []
+  acc0:
+    group: access
+    class: switch
+    ports: []
+  acc1:
+    group: access
+    class: switch
+    ports: []
+  acc2:
+    group: access
+    class: switch
+    ports: []
+  acc3:
+    group: access
+    class: switch
+    ports: []
+  acc4:
+    group: access
+    class: switch
+    ports: []
+  snk0:
+    group: edge-near
+    class: server
+    ports: []
+  snk1:
+    group: edge-far
+    class: server
+    ports: []
+links:
+  - - isp
+    - core-1
+  - - isp
+    - core-2
+  - - core-1
+    - edge-1
+  - - core-1
+    - edge-2
+  - - core-1
+    - edge-3
+  - - core-1
+    - edge-4
+  - - core-2
+    - edge-1
+  - - core-2
+    - edge-2
+  - - core-2
+    - edge-3
+  - - core-2
+    - edge-4
+  - - isp
+    - spare
+  - - hub-a
+    - node1a
+  - - hub-a
+    - node2a
+  - - hub-a
+    - node3a
+  - - hub-a
+    - node4a
+  - - hub-a
+    - node5a
+  - - hub-a
+    - node6a
+  - - hub-a
+    - node7a
+  - - hub-b
+    - node1b
+  - - hub-b
+    - node2b
+  - - hub-b
+    - node3b
+  - - hub-b
+    - node4b
+  - - hub-b
+    - node5b
+  - - hub-b
+    - node6b
+  - - hub-b
+    - node7b
+  - - src0
+    - acc0
+  - - src0
+    - acc1
+  - - src1
+    - acc2
+  - - src1
+    - acc3
+  - - src1
+    - acc4
+  - - acc0
+    - snk1
+  - - acc1
+    - snk0
+  - - acc2
+    - snk1
+  - - acc3
+    - snk0
+  - - acc4
+    - snk1
+  - - src0
+    - snk1
+  - - src1
+    - snk1

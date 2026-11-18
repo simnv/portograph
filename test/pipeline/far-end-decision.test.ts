@@ -4,6 +4,8 @@ import { parse as readYaml, stringify as writeYaml } from 'yaml';
 import { layout, parse, restoreFinalLayout, score } from '../../src/index.js';
 import { linkLabels } from '../../src/layout/link-labels.js';
 import { farEnd } from '../../src/pipeline/rounds.js';
+import { judgeFarEndTrial } from '../../src/layout/far-end-measure.js';
+import type { FarEndFace } from '../../src/layout/far-end-order.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { farEndDecisionsOf } from '../../src/layout/reservations.js';
@@ -147,5 +149,97 @@ describe('a far-end decision excuses a face only with the evidence that earned i
       expect(g5(model)).toEqual(['port-order src0']);
       expect(g5(restoreFinalLayout(JSON.stringify(model)))).toEqual(['port-order src0']);
     } finally { spy.mockRestore(); }
+  }, 120000);
+});
+
+// Ticket 49 review 2: no trial carries a decision, only a 7f refusal of 7f itself or a new error decides, and restore reads the proposal and measures the baseline.
+describe('a far-end decision earns its evidence on the trial and holds it at restore (dense-16x9 ticket 49, review 2)', () => {
+  const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+  type Entry = { payload: { ports: unknown[]; binding: { proposal: { ports: unknown[] }[] }; tallies: { base: unknown; trial: unknown } } };
+
+  it('the final flat-gap trial places without the far-end decisions, and the sheet publishes all its links', async () => {
+    const model = await run(readFileSync(new URL('../fixtures/staged/a-final-flat-gap-trial-places-without-far-end-decisions.yaml', import.meta.url), 'utf8'));
+    expect(model.links.length).toBe(37);
+    expect(model.removedLinks ?? []).toEqual([]);
+    // The kept final fit moves the ports: the decision of `snk1` top is stale on the published sheet, named and not published.
+    expect(model.diagnostics.filter(item => item.code === 'FLAT_BLOCK_GAP_FINAL').length).toBe(1);
+    expect(model.diagnostics.filter(item => item.code === 'FAR_END_DECISION_STALE').map(item => item.owners)).toEqual([[{ kind: 'node', id: 'snk1' }]]);
+    expect(farEndDecisionsOf(model.reservations ?? [])).toEqual([]);
+    expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
+  }, 240000);
+
+  it('a worker failure in the replacement placement of a 7f seat retry decides nothing', async () => {
+    let armed = false, done = false, remaining = 0, failures = 0;
+    const reserve = farEnd.reserve;
+    const spy = vi.spyOn(farEnd, 'reserve').mockImplementation((env, s, o) => {
+      const out = reserve(env, s, o);
+      if (!armed) {
+        armed = true;
+        const band = env.bands;
+        // The first 7f of the trial reports one withdrawn seat set, so 7f places again; that placement's two ELK workers fail.
+        env.bands = async (...args: Parameters<typeof band>) => {
+          const banded = await band(...args);
+          if (done) return banded;
+          done = true; env.bands = band; remaining = 2;
+          const row = Object.keys(banded.model.groups)[0]!;
+          return { ...banded, model: { ...banded.model, reservations: [...banded.model.reservations ?? [], { kind: 'seatSetDeclined', payload: { row, at: 'bands', why: 'controlled withdrawal' } }] } } as typeof banded;
+        };
+      }
+      return out;
+    });
+    try {
+      const model = await layout(parse(withSeats(text(FIXTURE))), { ...options, createElkAttempt: () => {
+        if (remaining > 0) { remaining--; failures++; return { layout: async () => { throw new Error('worker unavailable during replacement placement'); }, terminateWorker() {} } as unknown as ReturnType<typeof createAttempt>; }
+        return createAttempt();
+      } });
+      expect(failures).toBe(2);
+      expect(farEndDecisionsOf(model.reservations ?? []).map(entry => entry.payload.reason)).not.toContain('postcondition-7f');
+      expect(g5(restoreFinalLayout(JSON.stringify(model)))).toContain('port-order src0');
+    } finally { spy.mockRestore(); }
+  }, 120000);
+
+  it('a trial with a new warning and no new error decides nothing', async () => {
+    let event: { routedBase: LayoutModel; routedTrial: LayoutModel; faces: FarEndFace[] } | undefined;
+    const doc = parse(reversedNodes(sweep('v5-0-1')));
+    doc.layout = { ...doc.layout, moveBeforeGrow: false };
+    await layout(doc, { ...options, testSideTrace: (item: Record<string, unknown>) => {
+      if (item.ev === 'far-end-trial' && (item.verdict as { kept: boolean }).kept && event === undefined) event = item as unknown as typeof event;
+    } });
+    expect(event).toBeDefined();
+    const base = copy(event!.routedBase), trial = copy(event!.routedTrial), source = Object.values(base.nodes)[0]!;
+    // 301 spare bodies make G3 a warning; one label over a spare body in the trial is one new warning and no new error.
+    for (const model of [base, trial]) for (let at = 0; at < 301; at++) {
+      const id = `spare${at}`;
+      model.nodes[id] = { ...copy(source), id, owner: { kind: 'node', id }, ports: [], bounds: { x: 20000 + at * 200, y: 20000, width: 24, height: 24 } } as typeof source;
+    }
+    const label = trial.labels.find(item => item.role === 'node' && !item.omitted)!;
+    trial.labels.push({ ...copy(label), id: 'review-label', bounds: { x: 20004, y: 20004, width: 8, height: 8 } });
+    const verdict = judgeFarEndTrial(base, trial, new Map(), event!.faces, () => ({ width: 100, height: 100 }));
+    expect(verdict.kept).toBe(false);
+    expect(verdict.decline).toBeUndefined();
+    const state = { kept: [], sideNotes: [] } as unknown as Parameters<typeof farEnd.refuse>[1];
+    farEnd.refuse({ placements: 1, options: {} } as unknown as Parameters<typeof farEnd.refuse>[0], state, { current: base, faces: event!.faces, verdict, decisions: new Map(), split: false }, { at: 'verdict', why: verdict.reason });
+    expect(farEndDecisionsOf(state.kept)).toEqual([]);
+  }, 120000);
+
+  it('restore refuses a proposal that asks for the standing order or names a face twice', async () => {
+    const model = await run(text(FIXTURE));
+    for (const [edit, refused] of [
+      [(entry: Entry) => { entry.payload.binding.proposal[0]!.ports = copy(entry.payload.ports); }, /the proposal asks for the order that stands/],
+      [(entry: Entry) => { entry.payload.binding.proposal.push(copy(entry.payload.binding.proposal[0]!)); }, /the proposal names a face twice/],
+    ] as const) {
+      const forged = copy(model), entry = forged.reservations!.find(item => item.kind === 'farEndDecision') as unknown as Entry;
+      edit(entry);
+      expect(g5(forged)).toContain('port-order src0');
+      expect(() => restoreFinalLayout(JSON.stringify(forged))).toThrow(refused);
+    }
+  }, 120000);
+
+  it('restore measures the baseline tally from the saved model', async () => {
+    const model = await run(text(FIXTURE)), forged = copy(model), entry = forged.reservations!.find(item => item.kind === 'farEndDecision') as unknown as Entry;
+    // The saved model measures 5 bent links, 10 turns and 3 crossings; a claimed baseline of 0/0/0 makes a better trial (4/8/0) look worse.
+    entry.payload.tallies.base = { routed: { bent: 0, turns: 0 }, overlay: { bent: 0, turns: 0 }, crossings: 0 };
+    entry.payload.tallies.trial = { routed: { bent: 4, turns: 8 }, overlay: { bent: 0, turns: 0 }, crossings: 0 };
+    expect(() => restoreFinalLayout(JSON.stringify(forged))).toThrow(/names a baseline tally the model does not have/);
   }, 120000);
 });

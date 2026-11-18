@@ -97,7 +97,8 @@ export function guardRoutedTrial(routedBase: LayoutModel, routedTrial: LayoutMod
 }
 
 /** Which guard of a routed trial refused it (`guardRoutedTrialKind`). */
-export type GuardKind = 'removed-link' | 'span-wall' | 'promise' | 'unscored' | 'gate-finding' | 'constraint' | 'separation' | 'canvas';
+/** `gate-finding`: a new finding of error severity; `gate-warning`: new findings of warning severity only (it refuses the trial too). */
+export type GuardKind = 'removed-link' | 'span-wall' | 'promise' | 'unscored' | 'gate-finding' | 'gate-warning' | 'constraint' | 'separation' | 'canvas';
 /** The guards of `guardRoutedTrial`, with the guard that refused the trial named: the far-end round records a decision for some of them only (dense-16x9 ticket 49). */
 export function guardRoutedTrialKind(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>,
   canvasRefusal: (base: LayoutModel, trial: LayoutModel) => string | undefined = ownCanvasGrowth): { kind: GuardKind; reason: string } | TrialReading {
@@ -111,7 +112,12 @@ export function guardRoutedTrialKind(routedBase: LayoutModel, routedTrial: Layou
   const gatesNow = gateFindings(routedTrial), gatesThen = gateFindings(routedBase);
   if (gatesNow === undefined || gatesThen === undefined) return { kind: 'unscored', reason: 'the routed trial does not score' };
   const gateNew = namesAdded(gatesNow.findings, gatesThen.findings);
-  if (gateNew.length > 0) return { kind: 'gate-finding', reason: `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})` };
+  if (gateNew.length > 0) {
+    // Only a new error-severity finding is a gate the trial breaks (dense-16x9 ticket 49, review 2): a warning alone refuses the trial, and decides nothing.
+    const errorsNow = gateFindings(routedTrial, 'error'), errorsThen = gateFindings(routedBase, 'error');
+    const errorNew = errorsNow === undefined || errorsThen === undefined ? [] : namesAdded(errorsNow.findings, errorsThen.findings);
+    return { kind: errorNew.length > 0 ? 'gate-finding' : 'gate-warning', reason: `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})` };
+  }
   const constraintNew = namesAdded(constraintFindings(routedTrial), constraintFindings(routedBase));
   if (constraintNew.length > 0) return { kind: 'constraint', reason: `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})` };
   const separationNew = separationWorse(routedTrial, routedBase);
@@ -131,6 +137,8 @@ const tallyOf = (counts: ScoreCounts): UnifiedTally => ({ routed: { bent: counts
 /** The two layers of a tally summed, as a note names them. */
 export const countOfTally = (tally: UnifiedTally): Count => ({ bent: tally.routed.bent + tally.overlay.bent, turns: tally.routed.turns + tally.overlay.turns, crossings: tally.crossings });
 
+/** The tally of a routed model by the unified order's own measure (`gateFindings`), or `undefined` when it does not score: restore measures the baseline of a far-end decision with it. */
+export const measuredTally = (model: LayoutModel): UnifiedTally | undefined => { const read = gateFindings(model); return read === undefined ? undefined : tallyOf(read.counts); };
 /** The tallies of a routed baseline and of its routed trial, or `undefined` when one does not score: what a far-end decision names. */
 export function trialCounts(routedBase: LayoutModel, routedTrial: LayoutModel): { base: UnifiedTally; trial: UnifiedTally } | undefined {
   const then = gateFindings(routedBase), now = gateFindings(routedTrial);

@@ -66,6 +66,15 @@ export class TrunkBlocked extends SideHintRefusal {
 /** A refusal that stage 7f may also give (a trial's bands run): the centring invariant and the budget are the command's, never a trial's. */
 export const refusedAtBands = (error: unknown): error is PlacementRefusal => error instanceof PlacementRefusal && error.code !== 'centring' && error.code !== 'budget';
 
+/** The errors stage 7f itself threw (`bandsWithoutWithdrawnSeats` marks them where it calls 7f), so a reader of a refusal can tell 7f from a placement around it. */
+const thrownBy7f = new WeakSet<object>();
+export const markThrownBy7f = (error: unknown): void => { if (typeof error === 'object' && error !== null) thrownBy7f.add(error); };
+/**
+ * A deterministic refusal of stage 7f itself (dense-16x9 ticket 49, review 2): a placement refusal that 7f threw, not a skeleton or worker failure, and not a
+ * refusal of a placement that a 7f retry started (the seat-set retry places again inside the same call).
+ */
+export const refusedBy7f = (error: unknown): error is PlacementRefusal => refusedAtBands(error) && error.code !== 'skeleton' && thrownBy7f.has(error);
+
 /**
  * A refusal of a producer of 7e or 7f (DR-11): a postcondition of the net draft (`PostconditionRefusal`) or a bundle path with no room
  * (`BundleFeasibilityError`, code `bundle`; W09 can end there when its guard refuses the room). Every round withdraws its trial on one, at its

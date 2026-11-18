@@ -674,19 +674,23 @@ are the same. The notes `FAR_END_ORDER_TAKEN`, `FAR_END_ORDER_OWNED`, `FAR_END_O
 **A declined order is decided once** (dense-16x9 ticket 49; owner ruling 2026-11-18: the whole-sheet measure wins). When the round declines a
 trial as a decision of the whole-sheet measure, it records the decision in the ledger: a `farEndDecision` entry per proposed face that fails G5 on
 the baseline the trial was measured on. A decision has one of four reasons, a closed list (`FarEndDeclineReason`, review 1): a completed comparison
-worse by the unified order (`unified`, with the per-layer tallies of both sides), a new error-gate finding of the routed trial (`gate-finding`), the
-canvas cap (`canvas-cap`), or a refusal of the trial's geometry at 7f (`postcondition-7f`). An ELK fallback, a placement-run, ledger or predictor
+worse by the unified order (`unified`, with the per-layer tallies of both sides), a new error-severity gate finding of the routed trial
+(`gate-finding`; a new warning alone refuses the trial and decides nothing, review 2), the canvas cap (`canvas-cap`), or a refusal that 7f itself
+threw (`postcondition-7f`, `refusedBy7f`: not a skeleton or worker failure, and not a failure of the placement a 7f seat-set retry starts). An ELK fallback, a placement-run, ledger or predictor
 refusal, an unscored trial, any other guard, a trial that did not settle, a repeated proposal, a budget skip and a deadline record nothing. The entry
 holds the face in engine order, the pairs that stood the wrong way round there, the reason, its sentence, the tallies, and a **binding** to what
 earned it: the digest of the input document with its layout options (`inputDigest`), the proposal of the trial (the wanted order of every face it
 tried), and the digest of the far-end geometry the judge read (`baselineDigest`: every port anchor and the routed links). One reader judges a face
 for G5, for the round and for the publication (`readFace`, `far-end-faults.ts`): a face whose decision holds (same input, same baseline, its ports in
-the recorded order, exactly the recorded pairs wrong) passes G5 and is not proposed again. A decision is bound to one baseline, so no decision enters
-the ledger of a trial: a declined trial leaves the decisions in the kept ledger, and a kept trial is a new baseline. Any later move of a port in the
-command makes a decision stale, and the face is judged again. Stage 9 writes the decisions that hold into the published ledger (`linkLabels`) and
+the recorded order, exactly the recorded pairs wrong) passes G5 and is not proposed again. A decision is bound to one baseline, so no placement starts
+from a ledger with a decision (`trialLedger`: the round trials, the stagger rebase, the final flat-gap fit and the held-chord replay): a declined trial
+leaves the decisions in the kept ledger, and a kept trial is a new baseline. Any later move of a port in the command makes a decision stale, and the
+face is judged again: the final flat-gap fit runs after the far-end round, and a kept fit can do it (`test/fixtures/staged/a-final-flat-gap-trial-places-without-far-end-decisions.yaml`). Stage 9 writes the decisions that hold into the published ledger (`linkLabels`) and
 names each one that does not (`FAR_END_DECISION_STALE`, a warning, R6); that one is not published, and its face stands or falls by G5 alone. Restore
 refuses a decision that does not hold, that the far-end round of its node did not write, whose reason is outside the list, whose `unified` tallies are
-absent or do not show the trial worse by the judge's own comparator (`unifiedCompare`), or whose proposal does not name the face. The rule is the same
+absent or do not show the trial worse by the judge's own comparator (`unifiedCompare`), whose baseline tally is not the tally it measures on the saved
+model (`measuredTally`, review 2), or whose proposal does not name the face once with an order that differs from the standing one and puts every
+recorded pair the other way round (`proposalFault`, which the reader also reads). The publication filters with the same check. The rule is the same
 with `layout.moveBeforeGrow` off and on. No 7c rule may re-order a port: the
 permission stays as it is.
 
