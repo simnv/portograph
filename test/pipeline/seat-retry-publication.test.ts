@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 // fixture with a band run that withdraws its set; it isolates the state transition, not a sheet.
 const finding = { on: false };
 vi.mock('../../src/layout/direct-families.js', async actual => ({ ...await actual<Record<string, unknown>>(), crowdedHeldChords: () => ['link-3'] }));
+// The label stage is the boundary where the notes of the kept rounds join the published diagnostics (`publish`): here it only appends them.
+vi.mock('../../src/layout/link-labels.js', async actual => ({ ...await actual<Record<string, unknown>>(),
+  linkLabels: (model: { diagnostics: unknown[] }, notes: readonly unknown[] = []) => ({ ...model, diagnostics: [...model.diagnostics, ...notes] }) }));
 vi.mock('../../src/score/index.js', async actual => ({ ...await actual<Record<string, unknown>>(),
   score: (model: { seatProbe?: boolean }) => ({ snapshot: { gates: finding.on && model.seatProbe ? { G6: { severity: 'error', violations: [{ code: 'probe', elements: ['x'] }] } } : {} } }) }));
 
@@ -12,6 +15,7 @@ const { parse } = await import('../../src/index.js');
 const { createEnv } = await import('../../src/pipeline/env.js');
 const { firstState } = await import('../../src/pipeline/initial.js');
 const { refuseCrowdedChords } = await import('../../src/pipeline/driver.js');
+const { publish } = await import('../../src/pipeline/publish.js');
 const { ofKind } = await import('../../src/layout/reservations.js');
 const { withdrawSeatSet } = await import('../../src/layout/seat-set.js');
 const { createAttempt } = await import('../layout/phase-two-fixture.js');
@@ -57,6 +61,10 @@ describe('the publication replay is a kept placement of the seat-set retry (revi
     expect(places()).toBe(1);
     expect(env.seatSetDeclined).toBeUndefined();
     expect([s.routedFinal, s.kept7e]).toEqual([before, kept7e]);
-    expect(s.sideNotes.map(note => note.code)).toContain('HELD_CHORD_CROWDED');
+    // The warning names exactly the crowded chord the step read (R6), and the published model carries it with that owner (dense-16x9 ticket 38,
+    // review 1: no real input reaches this outcome since ticket 38, so this controlled state is its one witness).
+    const owners = (notes: readonly { code: string; owners?: readonly { kind: string; id?: string }[] }[]) => notes.filter(note => note.code === 'HELD_CHORD_CROWDED').map(note => note.owners);
+    expect(owners(s.sideNotes)).toEqual([[{ kind: 'link', id: 'link-3' }]]);
+    expect(owners((await publish(env, s)).diagnostics)).toEqual([[{ kind: 'link', id: 'link-3' }]]);
   }, 120000);
 });

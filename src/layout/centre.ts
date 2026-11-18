@@ -1517,12 +1517,14 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const why = applySeatSet(model, group, owned, seatWall(model, context));
     if (why === undefined) {
       // The seat decides where the row stands, so every wanted port it leaves off its feed is unresolved by this step's own rule (dense-16x9
-      // ticket 38; R1): the invariant (`readCentreViolations`) excuses exactly this set. Read with the half pixel the check reads
-      // (`SEAT_STANDS_EPS`), so the two never disagree on a port: a port the step leaves is never a violation the passes try to settle again.
+      // ticket 38; R1): the invariant (`readCentreViolations`) excuses exactly this set. Both read one distance test (`standsOffFeed`) and one
+      // ownership test (`otherRuleOwns`, as the producer reads, `ahead`): a port another rule owns is not this step's to name.
+      const owns = otherRuleOwns(model, true);
       for (const nodeId of group.nodes) for (const port of model.nodes[nodeId]!.ports) {
-        const at = portId(port.ref), x = wanted.get(at);
-        if (x !== undefined && port.anchor !== undefined && Math.abs(port.anchor.x - x) > SEAT_STANDS_EPS) unresolved.add(at);
+        const at = portId(port.ref), x = wanted.get(at), feed = seats.get(at);
+        if (x !== undefined && feed !== undefined && !owns(feed, at) && standsOffFeed(port, x)) unresolved.add(at);
       }
+      centreCheckTrace.hook?.(model, 'seated', [...unresolved]);
       return { unresolved, group, notes };
     }
     withdrawSeatSet(model, id, why);
@@ -1876,8 +1878,23 @@ function centreDraftFound(model: LayoutModel, budget: CentreBudget, publish?: ()
   // A round that changes neither the geometry nor what the check finds is a stall the passes cannot see: the rounds stop there and keep the
   // rest of the shared budget for the stages after 7c (ADR-0010). Each round spends a pass, so the rounds end on the budget too (R4).
   const check = (): string[] => { const view = publish?.() ?? model; return timed('centre-violations', () => centreViolations(view, true)); };
-  let found = withdrawRecorded(model) ? undefined : budget.remaining > 0 ? check() : [];
   let rounds = 0;
+  // The one exit of the rounds (dense-16x9 ticket 38, review 1). Every way out (settled, stalled, the budget spent before or during the rounds)
+  // ends on a final reading of the geometry: `read`, the reading of a check that ran after the last pass, or a check run here. With `publish` the
+  // check reads the geometry the caller publishes even when no pass is left: the budget decides whether a pass runs, never whether the result is
+  // read. A caller that publishes nothing of its own keeps the empty reading of a spent budget, as before. A reading with findings after a round,
+  // or the producer's own reading of what it publishes, records the stall and names its links.
+  const exit = (read: string[] | undefined): readonly string[] => {
+    const found = read ?? (publish !== undefined ? check() : []);
+    if (found.length > 0 && (rounds > 0 || publish !== undefined)) {
+      reportStall(model, [], 'Centering left an alignment off its feed after the last overlay windows and the passes the budget allowed; routing and the final gates decide the retained geometry.');
+    }
+    refreshWindowDeclines(model);
+    return found;
+  };
+  const withdrawn = withdrawRecorded(model);
+  if (!withdrawn && budget.remaining <= 0) return exit(undefined);
+  let found = withdrawn ? undefined : check();
   while (found === undefined || (found.length > 0 && budget.remaining > 0)) {
     const before = geometry(model), was = found;
     rounds++;
@@ -1886,17 +1903,14 @@ function centreDraftFound(model: LayoutModel, budget: CentreBudget, publish?: ()
     // A stall round: counted, so a test can prove that no step leaves a port its invariant then names (dense-16x9 ticket 38).
     if (was !== undefined && found.join() === was.join() && geometry(model).every((value, i) => Math.abs(value - before[i]!) <= 0.5)) { attemptCounters.centreStallRounds++; break; }
   }
-  if (rounds > 0 && found.length > 0) {
-    reportStall(model, [], 'Centering left an alignment off its feed after the last overlay windows and the passes the budget allowed; routing and the final gates decide the retained geometry.');
-  }
-  refreshWindowDeclines(model);
-  return found;
+  return exit(found);
 }
 /**
- * Test only (dense-16x9 ticket 38): the final finding set of the centre rule's producer on the draft it publishes (`producer`), and the finding set
- * the publication check reads on that draft (`publication`, at stage `centre`). Unset in production, so it costs one comparison.
+ * Test only (dense-16x9 ticket 38): the final finding set of the centre rule's producer on the draft it publishes (`producer`), the finding set
+ * the publication check reads on that draft (`publication`, at stage `centre`), and the ports a seated step names unresolved (`seated`, the
+ * group's ports it left off their feeds). Unset in production, so it costs one comparison.
  */
-export const centreCheckTrace: { hook?: (model: LayoutModel, reader: 'producer' | 'publication', found: readonly string[]) => void } = {};
+export const centreCheckTrace: { hook?: (model: LayoutModel, reader: 'producer' | 'publication' | 'seated', found: readonly string[]) => void } = {};
 /**
  * A `CENTRE_ALIGNMENT_INFEASIBLE` names a feed that a step, or the parent stand, could not put on one x. A later pass, a parent spread, the parent
  * stand or a move of 7f may still stand the link vertical (architecture-2 ticket 32). Read where the model stands, a warning whose links all stand
@@ -2197,6 +2211,39 @@ function recordTaps<T>(into: [string, string][] | undefined, forward: boolean, r
   verdictTap.sink = (name, value) => { into.push([name, value]); if (forward) sink(name, value); };
   try { return run(); } finally { verdictTap.sink = sink; }
 }
+/**
+ * Whether `port` stands off the feed x `x`: farther than the half pixel the centring step counts as standing (`SEAT_STANDS_EPS`). The one distance
+ * test of an off-feed port (dense-16x9 ticket 38, R1, R10): the seated step names such a port unresolved, and the invariant reads it as a candidate.
+ */
+function standsOffFeed(port: LayoutPort, x: number): boolean {
+  return port.anchor !== undefined && Math.abs(port.anchor.x - x) > SEAT_STANDS_EPS;
+}
+/**
+ * The wanted ports of a feed that another rule owns, so the centre step owes them no place under their feed (dense-16x9 ticket 38: the one
+ * ownership test the seated step and the invariant read, R1):
+ * - the link is a bundle member or a bar drop (7e and 7d place it);
+ * - a held cross-frame chord, read at publication only: a chord runs between two faces at any angle and its child port owes it no place under the
+ *   feed (ticket 100); the producer's own reading (`ahead`) keeps asking for the alignment, so the passes are the ones they were;
+ * - a port a bundle member uses: from 7e on the child port stays where 7e put it; a parent port 7e moved is a new feed x that 7f re-centres under,
+ *   so such a feed is excused only while the model stands exactly at the bundles stage;
+ * - an end of the feed on a bar (bar shaping owns its slots).
+ * `ahead`: a producer is running, and the model it makes is published one stage after the one it stands at.
+ */
+function otherRuleOwns(model: LayoutModel, ahead: boolean): (feed: Feed, child: string) => boolean {
+  const bundled = new Set(model.links.filter(link => link.bundle && link.attachments).flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
+  const afterBundles = (ahead ? ['bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'] : ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit']).includes(model.stage);
+  const atBundles = model.stage === (ahead ? 'bars' : 'bundles');
+  const drops = new Set(model.barDrops.map(drop => drop.link));
+  const isBar = (node: string): boolean => model.document.groups[model.document.nodes[node]!.group]!.shape === 'bar';
+  const byId = linkById(model);
+  return (feed, child) => {
+    const link = byId.get(feed.link);
+    if (link?.bundle || drops.has(feed.link)) return true;
+    if (!ahead && link !== undefined && isRoutedChord(model, link) && chordKind(model, link) === 'cross') return true;
+    if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) return true;
+    return isBar(feed.child.ref.node) || isBar(feed.parent.ref.node);
+  };
+}
 function readCentreViolations(model: LayoutModel, ahead: boolean, shared: CentreContext | undefined, reuse: boolean, targets: boolean): string[] {
   // The replay reads the geometry its producer decided on (R1): the bodies and boxes before the end trim of 7f (architecture-2 ticket 68). A
   // narrower sibling would let it keep a target the producer could not keep. A context built on the trimmed boxes is not read.
@@ -2204,17 +2251,8 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   const anchor = model.anchorTier;
   if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
   const context = shared ?? centreContext(model, anchor);
-  // Stage 7e re-anchors every port a bundle member uses. A child port it moved stays where 7e put it
-  // from then on; a parent port it moved is a new feed x that 7f re-centres under, so a feed on such
-  // a parent is excused only while the model sits exactly at the bundles stage.
-  const bundled = new Set(model.links.filter(link => link.bundle && link.attachments).flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
-  // `ahead`: a producer is running, and the model it makes is published one stage after the one it stands at.
-  const afterBundles = (ahead ? ['bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'] : ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit']).includes(model.stage);
-  const atBundles = model.stage === (ahead ? 'bars' : 'bundles');
-  const drops = new Set(model.barDrops.map(drop => drop.link));
-  const isBar = (node: string): boolean => model.document.groups[model.document.nodes[node]!.group]!.shape === 'bar';
+  const owns = otherRuleOwns(model, ahead);
   const result: string[] = [];
-  const byId = linkById(model);
   // The replay reads placement geometry alone; nothing it calls reads the freeze block, and on a
   // large model that block is more than a third of the JSON the per-group copy below would carry.
   const { freeze: _frozen, ...replayed } = model;
@@ -2249,14 +2287,9 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
       const candidates: { child: string; x: number; feed: Feed; port: LayoutPort }[] = [];
       for (const [child, x] of owned.wanted) {
         const feed = ownFeeds.get(child)!;
-        if (byId.get(feed.link)?.bundle || drops.has(feed.link)) continue;
-        // A held chord runs between two faces at any angle: its child port owes it no place under the feed (ticket 100, the centring of a chord that a title band once refused).
-        // Only the publication check excuses it: the centring loop's own check (`ahead`) keeps asking for the alignment, so the passes are the ones they were.
-        if (!ahead && isRoutedChord(model, byId.get(feed.link)!) && chordKind(model, byId.get(feed.link)!) === 'cross') continue;
-        if ((afterBundles && bundled.has(child)) || (atBundles && bundled.has(portId(feed.parent.ref)))) continue;
-        if (isBar(feed.child.ref.node) || isBar(feed.parent.ref.node)) continue;
+        if (owns(feed, child)) continue;
         const port = groupPorts.get(child)!;
-        if (Math.abs(port.anchor!.x - x) > SEAT_STANDS_EPS) candidates.push({ child, x, feed, port });
+        if (standsOffFeed(port, x)) candidates.push({ child, x, feed, port });
       }
       if (!candidates.length) { previous = group; continue; }
       if (replayedText === undefined) {
