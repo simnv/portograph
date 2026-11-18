@@ -21,6 +21,8 @@ import { withMoveBeforeGrow } from './move-before-grow.js';
 const sheet = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const fixture = sheet('a-child-row-stands-under-its-parents-ports');
 const run = async (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+/** `run` with `layout.moveBeforeGrow` set on the parsed document. */
+const runOn = async (yaml: string): Promise<LayoutModel> => layout(withMoveBeforeGrow(parse(yaml)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const seatSets = (model: LayoutModel) => ofKind(model.reservations ?? [], 'seatSet');
 const vertical = (model: LayoutModel, link: string): boolean => {
   const item = model.links.find(entry => entry.id === link)!;
@@ -158,9 +160,20 @@ describe('a seated row that also feeds the row below (dense-16x9 ticket 36, slic
     for (const id of ['c1', 'c2']) expect(legacy.nodes[id]!.bounds!.width, id).toBeGreaterThan(legacy.nodes.n1!.bounds!.width);
   }, 120000);
 
-  // Expected to fail until slice 3 (both adjacent rows): today G6 parallel clearance, the chord c2 > k1 against the detour of n1 > k1.
+  // Expected to fail until the full wrap reservation (after release 0.3.0; dense-16x9 ticket 50, owner ruling 2026-11-18): G6 parallel
+  // clearance, the chord c2 > k1 against the router's wrap of n1 > k1 round k1. The first test pins the failure by name, so the expected-fail
+  // cannot pass for another reason (before ticket 50c the helper's text match took the sheet's comment for the option, and it failed on the
+  // missing seat set instead).
+  it('slice 3: both adjacent rows: a-seated-row-and-the-row-below-stand-together fails G6 by name with the option on (link-6 with link-7)', async () => {
+    const model = await runOn(sheet('a-seated-row-and-the-row-below-stand-together'));
+    expect(model.document.layout?.moveBeforeGrow).toBe(true);
+    expect(seatSets(model).map(item => item.payload.row)).toContain('site#1');
+    expect(findings(model)).toEqual(['G6']);
+    expect(score(model).snapshot.gates.G6.violations.map(item => `${item.code} ${[...item.elements].sort().join('+')}`)).toEqual(['parallel-clearance link-6+link-7']);
+  }, 60000);
   it.fails('slice 3: both adjacent rows: a-seated-row-and-the-row-below-stand-together has no gate finding (now G6, link-6 with link-7)', async () => {
-    const model = await run(withMoveBeforeGrow(sheet('a-seated-row-and-the-row-below-stand-together')));
+    const model = await runOn(sheet('a-seated-row-and-the-row-below-stand-together'));
+    expect(model.document.layout?.moveBeforeGrow).toBe(true);
     expect(seatSets(model).map(item => item.payload.row)).toContain('site#1');
     expect(findings(model)).toEqual([]);
   }, 60000);
@@ -213,7 +226,7 @@ describe('a compared placement and the kept placement hold the same seat sets (d
 // The guard of the last repack refuses one set per round while the frame columns would crowd a fixed group, at most SEAT_SET_REDECISIONS rounds.
 describe('the sets are decided again at most SEAT_SET_REDECISIONS times (dense-16x9 ticket 36, slice 1)', () => {
   it('refuses one set per round, and past the bound every set of the run, each by name', async () => {
-    const model = await run(withMoveBeforeGrow(sheet('a-grid-group-stands-fixed-beside-frames')));
+    const model = await runOn(sheet('a-grid-group-stands-fixed-beside-frames'));
     const owner = seatNotes(model, 'SEAT_SET_DECLINED').filter(message => message.includes('(owner)') && message.includes('the grid spares, which gives no way'));
     const bound = `(the sets were decided ${SEAT_SET_REDECISIONS} times)`;
     expect(owner.filter(message => !message.includes(bound))).toHaveLength(SEAT_SET_REDECISIONS - 1);

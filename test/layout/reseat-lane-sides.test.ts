@@ -15,7 +15,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 import { withMoveBeforeGrow } from './move-before-grow.js';
 
 // The seat (ADR-0027) is an opt-in until ticket 15: every sheet of this file is read with `layout.moveBeforeGrow: true`.
-const parse = (text: string): ReturnType<typeof parseDocument> => parseDocument(withMoveBeforeGrow(text));
+const parse = (text: string): ReturnType<typeof parseDocument> => withMoveBeforeGrow(parseDocument(text));
 
 /**
  * The lane reseat of 7f (a corridor follows its child, ticket 02 of architecture-1) is the one move after the last centring of 7f. Two rules hold it

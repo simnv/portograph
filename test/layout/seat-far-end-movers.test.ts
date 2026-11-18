@@ -166,8 +166,8 @@ describe('no 7c mover takes a far end of a standing seat set along (dense-16x9 t
   // where the copy without it keeps the set, does not stand (`chordDecision`). Before, a step of a far-end row on this sheet left a row 28 px out of
   // its column at the replay, and the kept placement declined that set by the wall.
   it('keeps every set of a placement off the column wall through the step over chords', async () => {
-    const sheet = withMoveBeforeGrow(readFileSync(join(root, 'goldens/synthetic/four-locations-each-with-a-zone.yaml'), 'utf8'));
-    const model = await layout(parse(sheet), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const sheet = readFileSync(join(root, 'goldens/synthetic/four-locations-each-with-a-zone.yaml'), 'utf8');
+    const model = await layout(withMoveBeforeGrow(parse(sheet)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     const declined = (model.reservations ?? []).flatMap(entry => entry.kind === 'seatSetDeclined' ? [`${entry.payload.row}: ${entry.payload.why}`] : []);
     expect(declined.filter(item => item.includes(SEAT_WALL_COLUMN))).toEqual([]);
     expect(model.diagnostics.filter(d => d.code === 'SEAT_FAR_END_CLAMPED' && d.message.startsWith('the step over chords')).length).toBeGreaterThan(0);
@@ -176,8 +176,8 @@ describe('no 7c mover takes a far end of a standing seat set along (dense-16x9 t
   // A set withdrawn after 7c keeps its far ends fixed for the rest of the run: 7c held their rows, and the publication replay of the rule that
   // withdrew it reads them as 7c did. Before, the replay centred the far-end row again and refused the run ("Centring invariant violated").
   it('reads the far ends of a set withdrawn after 7c as fixed in the replays of that run', async () => {
-    const sheet = withMoveBeforeGrow(readFileSync(join(root, 'goldens/synthetic/a-flank-bundle-into-a-ranked-group-stays-beside-the-frame.yaml'), 'utf8'));
-    const model = await layout(parse(sheet), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const sheet = readFileSync(join(root, 'goldens/synthetic/a-flank-bundle-into-a-ranked-group-stays-beside-the-frame.yaml'), 'utf8');
+    const model = await layout(withMoveBeforeGrow(parse(sheet)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.diagnostics.filter(d => d.code === 'SEAT_SET_DECLINED' && d.message.includes('withdrawn at bundles')).length).toBe(1);
   }, 900000);
 });

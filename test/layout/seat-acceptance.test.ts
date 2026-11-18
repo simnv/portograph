@@ -9,7 +9,7 @@ import { withoutJointOrder } from './joint-off.js';
 import { withMoveBeforeGrow } from './move-before-grow.js';
 
 // The seat (ADR-0027) is an opt-in until ticket 15: every sheet of this file is read with `layout.moveBeforeGrow: true`.
-const parse = (text: string): ReturnType<typeof parseDocument> => parseDocument(withMoveBeforeGrow(text));
+const parse = (text: string): ReturnType<typeof parseDocument> => withMoveBeforeGrow(parseDocument(text));
 
 /**
  * The acceptance set of the seat (ADR-0027 and its addendum: a step is judged where it ends). These tests came from architecture-2 ticket 71

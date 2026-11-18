@@ -31,7 +31,7 @@ for (const [sheet, option] of SHEETS) it(`the producer of 7c and its publication
     else if (produced.has(model)) pairs.push({ producer: [...produced.get(model)!].sort(), publication: [...found].sort() });
   };
   const text = readFileSync(new URL(sheet, root), 'utf8');
-  await layout(parse(option === 'forced' ? withMoveBeforeGrow(text) : text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  await layout(option === 'forced' ? withMoveBeforeGrow(parse(text)) : parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(pairs.length, 'every 7c run of the sheet is read').toBeGreaterThan(0);
   expect(pairs.filter(pair => pair.producer.join('\n') !== pair.publication.join('\n'))).toEqual([]);
 }, 600000);

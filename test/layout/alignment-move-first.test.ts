@@ -16,8 +16,8 @@ import { withoutJointOrder } from './joint-off.js';
 import { withMoveBeforeGrow } from './move-before-grow.js';
 
 // The seat (ADR-0027) is an opt-in until ticket 15: every sheet of this file is read with `layout.moveBeforeGrow: true`.
-const parse = (text: string): ReturnType<typeof parseDocument> => parseDocument(withMoveBeforeGrow(text));
-const placed = (text: string): ReturnType<typeof placedDocument> => placedDocument(withMoveBeforeGrow(text));
+const parse = (text: string): ReturnType<typeof parseDocument> => withMoveBeforeGrow(parseDocument(text));
+const placed = (text: string): ReturnType<typeof placedDocument> => placedDocument(withMoveBeforeGrow(parseDocument(text)));
 
 // ADR-0027, dense-16x9 ticket 02: the seat moves a body inside the slack of its row before it grows the body.
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-child-moves-in-row-slack-before-it-grows.yaml', import.meta.url), 'utf8');

@@ -239,8 +239,8 @@ describe('the seat-set records prove their own evidence (dense-16x9 ticket 36a, 
   // Lifetime of `fixed`: from the withdrawal to the end of that placement run. The placement the command runs without the set writes the
   // decline again at its input, with no far ends, so its 7c moves those rows again.
   it('carries no fixed far ends past the placement that withdrew the set', async () => {
-    const text = withMoveBeforeGrow(readFileSync(new URL('../../goldens/synthetic/a-flank-bundle-into-a-ranked-group-stays-beside-the-frame.yaml', import.meta.url), 'utf8'));
-    const model = await layout(parse(text), opts);
+    const text = readFileSync(new URL('../../goldens/synthetic/a-flank-bundle-into-a-ranked-group-stays-beside-the-frame.yaml', import.meta.url), 'utf8');
+    const model = await layout(withMoveBeforeGrow(parse(text)), opts);
     expect(model.diagnostics.some(d => d.code === 'SEAT_SET_DECLINED' && d.message.includes('withdrawn at bundles'))).toBe(true);
     const declines = ofKind(model.reservations ?? [], 'seatSetDeclined').map(entry => entry.payload);
     expect(declines.length).toBeGreaterThan(0);

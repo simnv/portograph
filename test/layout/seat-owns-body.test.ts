@@ -22,8 +22,8 @@ import { withoutJointOrder } from './joint-off.js';
 import { withMoveBeforeGrow } from './move-before-grow.js';
 
 // The seat (ADR-0027) is an opt-in until ticket 15: every sheet of this file is read with `layout.moveBeforeGrow: true`.
-const parse = (text: string): ReturnType<typeof parseDocument> => parseDocument(withMoveBeforeGrow(text));
-const placed = (text: string): ReturnType<typeof placedDocument> => placedDocument(withMoveBeforeGrow(text));
+const parse = (text: string): ReturnType<typeof parseDocument> => withMoveBeforeGrow(parseDocument(text));
+const placed = (text: string): ReturnType<typeof placedDocument> => placedDocument(withMoveBeforeGrow(parseDocument(text)));
 
 // ADR-0027, the seat owns the body (dense-16x9 ticket 02, design note of 2026-11-15): a seat decides the feeds a body stands on, its x and its
 // width; `alignmentSeats` holds that one decision, and every later pass, the replay and the publication check read it. While a seat stands, the

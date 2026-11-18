@@ -9,8 +9,8 @@ import { withMoveBeforeGrow } from './move-before-grow.js';
 // Review 1 of dense-16x9 ticket 02: two fixes of the branch read `layout.moveBeforeGrow` (ADR-0027). No input shows that the default needs
 // them, and with the option on each of these sheets fails without its fix. The other fixes that read the option have their tests beside the
 // rule they hold: reseat-lane-sides.test.ts (the lane side and the record comparison) and seat-owns-body.test.ts (the close-up lane port).
-const sheet = (path: string): string => withMoveBeforeGrow(readFileSync(new URL(`../../goldens/${path}.yaml`, import.meta.url), 'utf8'));
-const publish = (text: string, options: { testSeatSets?: false } = {}): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...options });
+const sheet = (path: string): string => readFileSync(new URL(`../../goldens/${path}.yaml`, import.meta.url), 'utf8');
+const publish = (text: string, options: { testSeatSets?: false } = {}): Promise<LayoutModel> => layout(withMoveBeforeGrow(parse(text)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...options });
 
 describe('the fixes that read layout.moveBeforeGrow (ADR-0027)', () => {
   it('the end trim keeps the room 7f reserved for a link label: an-overlay-row-label-keeps-clear-of-both-group-borders publishes', async () => {
