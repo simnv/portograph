@@ -148,7 +148,10 @@ The design note `design-02-seat-2` proposed two clauses. The owner chose clause 
   map of `rowSeats`); a member whose own mean is the unit's seat is declined whole as any group. When
   the clamp carries every seat off its feeds, the seats are withdrawn (`ALIGNMENT_SEAT_REFUSED`), every
   recorded seat the withdrawal undoes gives its growth back and its record goes, the group goes back
-  to where its main move put it, and the rest of the step runs again there. A
+  to where its main move put it, and the rest of the step runs again there. The trade is accepted
+  where the step's own measure ties and later decisions (the course round, the overlay order) bend
+  links outside the step: on the review-2 reduction two straight links take 6 turns for a sheet
+  143 px narrower, with Q and the gates equal (ruling of 2026-11-18). A
   whole-step decline undid that move on every pass and left the unit at its stage-6 x. For a group
   that is not pooled, the move and the seat are one body's decision, and the step is declined whole.
 - Clause 1 is not changed: a seated body pulls only through the feeds of its kept ports. The

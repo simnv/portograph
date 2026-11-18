@@ -276,3 +276,100 @@ it('the misses after a withdrawal are read on the geometry the step leaves: a po
   expect(found.some(item => item.standing.some(key => key.includes('"b2"')))).toBe(true);
   expect(found.flatMap(item => item.standing.filter(key => item.unresolved.includes(key)))).toEqual([]);
 }, 120000);
+
+// Review 2, P2b (ruling of 2026-11-18: the trade is accepted and recorded). Eight nodes. Main (4b891688) draws a2 -> hub (link-3) and the tunnel
+// node-a -> node-b (link-10) straight: 825 px wide, routed turns 8, overlay turns 2. With the withdrawal (de91aa8e) row-b keeps its main move:
+// 682 px wide, routed turns 14, overlay turns 0. The step's own measure is a tie; the two links are lost by later decisions (the course round's
+// comparison and the overlay order of tier 1), which no step rule reads. Pinned so that a change of the course round shows here.
+const TRADE = `portograph: 2
+layout:
+  moveBeforeGrow: true
+groups:
+  core:
+    tier: 0
+  row-a:
+    tier: 1
+  row-b:
+    tier: 1
+nodes:
+  hub:
+    group: core
+    size:
+      width: 60
+      height: 45
+  relay-1:
+    group: core
+  relay-2:
+    group: core
+  relay-3:
+    group: core
+    size:
+      width: 100
+      height: 60
+  node-a:
+    group: row-a
+    ports:
+      - name: uplink-1
+      - name: eth2_102
+    size:
+      width: 140
+      height: 50
+  node-b:
+    group: row-b
+    ports:
+      - name: uplink-3
+    size:
+      width: 75
+      height: 46
+  b2:
+    group: row-b
+    size:
+      width: 127
+      height: 50
+  a2:
+    group: row-a
+    size:
+      width: 127
+      height: 50
+links:
+  - - node-a.uplink-1
+    - hub
+    - id: link-1
+  - - node-a.eth2_102
+    - hub
+    - id: link-2
+  - - node-b.uplink-3
+    - hub
+    - id: link-3
+      label: fibre 120M
+  - - node-a
+    - node-b
+    - id: tunnel
+  - - node-a
+    - relay-2
+    - id: ov-1
+      route: overlay
+  - - node-a
+    - relay-1
+    - id: ov-2
+      route: overlay
+  - - node-b
+    - relay-3
+    - id: ov-3
+      route: overlay
+  - - b2
+    - hub
+    - {}
+  - - b2
+    - relay-3
+    - route: overlay
+  - - a2
+    - hub
+    - {}
+`;
+
+it('the accepted trade of review 2: the withdrawal keeps the main move, and two links outside the step bend', async () => {
+  const model = await lay(TRADE);
+  const { routed, overlay } = score(model).snapshot.counts;
+  expect({ width: Math.round(model.canvas!.width), routed: routed.turns, overlay: overlay.turns }).toEqual({ width: 682, routed: 14, overlay: 0 });
+}, 120000);
