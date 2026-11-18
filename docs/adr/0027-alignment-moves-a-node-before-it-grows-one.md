@@ -142,11 +142,12 @@ The design note `design-02-seat-2` proposed two clauses. The owner chose clause 
   for a given-back body. With it in every step, the given-back record (`givenBack`) named no node on
   any corpus sheet, and nothing read it. The record, its second run of the passes and its check are
   removed.
-  Amended 2026-11-18 (dense-16x9 ticket 47): such a step withdraws its seats alone and keeps its main
-  move. A seat that survives the step window stands; when the clamp carries every seat off its feeds,
-  the seats are withdrawn (`ALIGNMENT_SEAT_REFUSED`), the group goes back to where its main move put
-  it, and the rest of the step runs again there. A whole-step decline undid the main move on every
-  pass and left a pooled row at its stage-6 x.
+  Amended 2026-11-18 (dense-16x9 ticket 47): for a member of a pooled row unit, such a step
+  withdraws its seats alone and keeps its main move, which is the unit's shared decision. When the
+  clamp carries every seat off its feeds, the seats are withdrawn (`ALIGNMENT_SEAT_REFUSED`), the
+  group goes back to where its main move put it, and the rest of the step runs again there. A
+  whole-step decline undid that move on every pass and left the unit at its stage-6 x. For a group
+  that is not pooled, the move and the seat are one body's decision, and the step is declined whole.
 - Clause 1 is not changed: a seated body pulls only through the feeds of its kept ports. The
   narrowed clause 1 (a left-out feed stops pulling only when the cap declined its target, or the
   order and pitch of its face exclude it) was built and measured, and it is not kept. A joint

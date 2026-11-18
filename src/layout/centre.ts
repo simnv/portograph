@@ -1591,9 +1591,9 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // growth toward them would only widen the unit and push the other members further off; its feeds pull the unit, as a solid block's feeds do.
   const pooled = rowSeat.has(id);
   const inBody = (node: LayoutNode, limit: WideningLimit): WideningLimit => pooled ? { low: Math.max(limit.low, node.bounds!.x), high: Math.min(limit.high, right(node.bounds!)) } : limit;
-  // The group after its main move and before any seat (dense-16x9 ticket 47): the step goes back to it when the clamp carries every seat it made off
-  // its feeds, and keeps the main move.
-  const beforeSeats = seated ? JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] } : undefined;
+  // A pooled unit after its main move and before any seat (dense-16x9 ticket 47): the step goes back to it when the clamp carries every seat it made
+  // off its feeds, and keeps the main move.
+  const beforeSeats = seated && pooled ? JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] } : undefined;
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
     const stops = walls.get(nodeId)!;
@@ -1707,12 +1707,13 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // A seat is judged where its step ends. By default this is ticket 71's rule for a body whose growth the centre rule gave back (`givenBack`); with
   // `layout.moveBeforeGrow` it holds for every body (ADR-0027, clause 5). A step that widens such a body and leaves every aligned port of the group
   // off its x after the pack and the clamp gives that alignment up, and the aligned targets are named as alignments the row cannot hold (R6).
-  // - With the option the seats alone are withdrawn (dense-16x9 ticket 47, ruling of 2026-11-18: a seat that survives the step window stands; one
-  //   the clamp carries off its feeds is withdrawn alone): the group goes back to where its main move put it, before any seat, and the rest of the
-  //   step runs again on that geometry. A seat the clamp leaves on a feed stands, and the clause does not hold.
-  // - Without it the step is declined whole, as a window that cannot hold the group is: the group stands near its feed with the widths it began the
-  //   step with. A whole-step decline undoes the alignment and the main move; the tier pack (`packClear`) and the stand near the feed can still
-  //   move the group.
+  // - For a member of a pooled row unit with the option, the seats alone are withdrawn (dense-16x9 ticket 47, rulings of 2026-11-18): the main move
+  //   of a pooled unit is the unit's shared decision, and one member's seat that the clamp carries off its feeds does not undo it. The group goes
+  //   back to where its main move put it, before any seat, and the rest of the step runs again on that geometry. A seat the clamp leaves on a feed
+  //   stands, and the clause does not hold.
+  // - Otherwise the move and the seat are one body's decision, and the step is declined whole, as a window that cannot hold the group is: the
+  //   group stands near its feed with the widths it began the step with. A whole-step decline undoes the alignment and the main move; the tier
+  //   pack (`packClear`) and the stand near the feed can still move the group.
   // The publication check replays this step, so it reads the same record (R1, R5).
   if (aligned.size && [...aligned].every(key => (endMisses.get(key) ?? 0) > 0.5)
     && group.nodes.some(nodeId => (seated || (model.givenBack !== undefined && Object.hasOwn(model.givenBack, nodeId))) && model.nodes[nodeId]!.bounds!.width > saved.nodes.find(node => node.id === nodeId)!.bounds!.width + EPS)) {

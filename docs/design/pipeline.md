@@ -1426,11 +1426,12 @@ alignment cap `ALIGNMENT_CAP_TIMES` = 5 times the width the node needs for itsel
 `ALIGNMENT_MAX_GROWTH` = 12 (`alignmentAllowance`). A seat that slides or grows a body is recorded (`alignmentSeats`, kept through
 publication with `alignmentTargets`) and owns the body: the main move reads only its kept feeds, and a seat whose kept port no longer
 stands is withdrawn and gives the body back to the box it had before its first seat. The centre rule runs its passes once (no
-`givenBack` record). A step that widens any body and leaves every aligned port of its group off its feed after the clamp withdraws its seats alone
-(clause 5; dense-16x9 ticket 47, ruling of 2026-11-18): a seat that survives the step window stands, and one that the clamp carries off its feeds
-is withdrawn (`ALIGNMENT_SEAT_REFUSED`, naming the clamp); the group goes back to where its main move put it, and the rest of the step runs
-again there. Without the option such a step is declined whole, main move included (ticket 71, for a body whose growth was given back). A
-whole-step decline undoes the alignment; the tier pack (`packClear`) can still move the group clear of the group before it.
+`givenBack` record). A step that widens any body and leaves every aligned port of its group off its feed after the clamp is declined whole,
+main move included (clause 5; without the option, ticket 71's rule for a body whose growth was given back). One exception (dense-16x9 ticket 47,
+rulings of 2026-11-18): for a member of a pooled row unit, the main move is the unit's shared decision, so the step withdraws its seats alone
+(`ALIGNMENT_SEAT_REFUSED`, naming the clamp), the group goes back to where its main move put it, and the rest of the step runs again there. A
+seat that survives the step window stands in both cases. A whole-step decline undoes the alignment; the tier pack (`packClear`) can still move
+the group clear of the group before it.
 At 7e a bent bundle block keeps the start of a face whose seat keeps a port. The publication check refuses a seat record in a model
 without the option, and a seat whose kept port stands off its feed, whatever the centring replay excuses (R5). ADR-0027 states the rule,
 its trades, its known failures and its acceptance set.

@@ -169,9 +169,7 @@ links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`))))))
       // The trim frees width beside edge-near, and the close-up would move edge-near toward edge-far. The perimeter lane of link-13 does not
       // follow a group, so before the guard the port left the lane it enters straight and link-13 took two turns its course had not promised.
       // The draft before the trim, with edge-near moved so that snk0 stands under the lane, as the course of link-13 asks.
-      // The forged growth keeps the ports of snk0 where they stand, so it reads the last draft in which every port of snk0 is on its top face (since
-      // dense-16x9 ticket 47 the step of edge-near keeps its main move, and a later draft takes a side hint onto the left face of snk0).
-      const draft = structuredClone([...drafts].reverse().find(item => item.nodes['snk0']!.ports.every(port => port.side === 'top'))!);
+      const draft = structuredClone(drafts.at(-1)!);
       const [port, lane] = underLane(draft);
       moveGroup(draft, draft.groups['edge-near']!, lane - port, 0);
       // snk0 as a growth in place left it: 100 px wider on its left, its ports where they stand; the group box grows with it.
