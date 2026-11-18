@@ -75,6 +75,7 @@ const EXPECTED_WEAKMAPS: Readonly<Record<string, { count: number; reason: string
   'src/layout/mutation.ts': { count: 1, reason: 'frozenDocumentText on deeply frozen baseline documents' },
   'src/layout/placement-attempt.ts': { count: 1, reason: 'replaysOn per-model replay counter state' },
   'src/pipeline/env.ts': { count: 1, reason: 'stage3Sizes Stage 3 baseline size snapshot for R1 validator' },
+  'src/pipeline/publication-fit.ts': { count: 1, reason: 'the publication fit of a published model, run once by the command (dense-16x9 ticket 42 review 1)' },
   'src/layout/decide.ts': { count: 2, reason: 'spent slide-growth budget state + call-local copies Verdict map' },
   'src/layout/approach.ts': { count: 1, reason: 'approachReach virtual port stem-reach metadata handoff' },
   'src/parse/validation.ts': { count: 1, reason: 'known AST source-location provenance map' },
