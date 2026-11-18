@@ -1357,7 +1357,9 @@ A run is also broken by a group the step does not centre (a bar, a group with no
 and between groups that a lane of 7a parts. The main move of a member the unit moves off its own x goes toward its seat; every other group moves
 toward its own mean, as before. The main move's overlay walls, the clamp into the step window and every guard of the step hold as they do for a
 group's own mean, so the seat stands inside the row's slack and every bound (frames, lanes, flanks, held chords). A member the unit moves off
-its own x aligns inside the bodies it has (no growth and, with `moveBeforeGrow`, no seat slide): a growth would widen the unit and push the other
+its own x aligns inside the bodies it has (no growth and, with `moveBeforeGrow`, no seat slide; the seat reads the same body limit as the growth,
+`seatNode` as `alignSide`, dense-16x9 ticket 47: a seat that grew a pooled body past it was carried off its feed by the clamp, and the step was
+declined whole, main move included, every pass): a growth would widen the unit and push the other
 members further off, so its feeds pull the unit and the ports its body does not reach are named (`CENTRE_ALIGNMENT_INFEASIBLE`). Such a member
 leaves its wanted ports unresolved by design, so the publication check excuses them only while its replay leaves the group's box and bodies
 where they stand (R5). The step measures a member's progress to its seat, not to its own feeds: measured to its feeds, a member on one side

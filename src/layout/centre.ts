@@ -376,10 +376,11 @@ interface SeatOutcome { kept: Set<string>; dx: number; from: number; capped: Set
  * chords), each held chord that follows a moved port, and the reservations a resize keeps, read on the box the group fits (`seatRefusal`). A
  * refused seat is undone whole and the next one is tried; when every try is refused, the body stays and `ALIGNMENT_SEAT_REFUSED` names the
  * first guard that refused (R6). A target outside the seat is named by the step (`CENTRE_ALIGNMENT_INFEASIBLE`); one whose own edges reach an
- * overlay wall is named to `stopped`.
+ * overlay wall is named to `stopped`. `siblings` bounds every growth and slide: the free row space beside the body, or the body itself for a
+ * member of a pooled run (the step's `inBody`); `window` bounds a slide.
  */
 function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, wanted: ReadonlyMap<string, number>, owes: (key: string) => boolean,
-  window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean, kept?: ReadonlySet<string>,
+  siblings: WideningLimit, window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean, kept?: ReadonlySet<string>,
   recordedFrom?: number): SeatOutcome {
   // The width of a seated body is measured from the record (ADR-0027, clause 4): the width before its first seat, never a box an earlier pass grew.
   const box = node.bounds!, from = Math.min(box.width, recordedFrom ?? Infinity), none: SeatOutcome = { kept: new Set(), dx: 0, from, capped: new Set() };
@@ -389,7 +390,6 @@ function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, want
   if (!targets.length) return none;
   // A body stage 5 seated (a stagger member, a feeding chain) or a grid cell keeps its place in the row; it aligns inside the width it may grow to.
   const movable = !isGridGroup(model, group.id) && !model.staggerRows?.some(row => row.group === group.id) && chainBlockOf(model, node.id) === undefined;
-  const siblings = siblingLimit(model, group, node);
   const refusedByCap: SeatCandidate[] = [];
   const candidates = seatCandidates(node, targets, { siblings, window, stops, kept }, movable, seatCap(model, node, from), refusedByCap);
   const saved = JSON.stringify(node);
@@ -1589,6 +1589,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const owedBefore = seated ? seatOwes(model, seats, links, direct) : () => true, owes = (key: string): boolean => owedBefore(key) || kept.has(key);
   // A group of a pooled run (`rowSeats`, dense-16x9 ticket 27) aligns inside the bodies it has: no member of the run stands at its own feeds, so a
   // growth toward them would only widen the unit and push the other members further off; its feeds pull the unit, as a solid block's feeds do.
+  // One limit for both branches (R1): the growth of `alignSide` and every seat (slide, growth in place, move+grow) of `seatNode` read it. A
+  // seat that grew a pooled body past it was undone with the whole step after the clamp, main move included, every pass (dense-16x9 ticket 47).
   const pooled = rowSeat.has(id);
   const inBody = (node: LayoutNode, limit: WideningLimit): WideningLimit => pooled ? { low: Math.max(limit.low, node.bounds!.x), high: Math.min(limit.high, right(node.bounds!)) } : limit;
   for (const nodeId of group.rowOrder!) {
@@ -1610,7 +1612,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const keptHere = record === undefined ? new Set([...kept].filter(key => nodePorts.has(key))) : Object.hasOwn(record, nodeId) ? new Set(record[nodeId]!.ports) : undefined;
     const recorded = record !== undefined && Object.hasOwn(record, nodeId) ? record[nodeId]! : undefined;
     const seatedFrom = node.bounds!.x;
-    const seat = seatNode(model, group, node, wanted, owes, inBody(node, rowWindow), stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from);
+    const seat = seatNode(model, group, node, wanted, owes, inBody(node, siblingLimit(model, group, node)), inBody(node, rowWindow), stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from);
     for (const key of seat.kept) aligned.add(key);
     // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
     const box = node.bounds!;
