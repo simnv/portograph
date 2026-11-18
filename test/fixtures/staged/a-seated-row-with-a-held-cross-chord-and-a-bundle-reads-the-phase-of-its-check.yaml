@@ -1,0 +1,37 @@
+# Expected: a seated row (dense-16x9 ticket 36) `k1` with a held cross-frame chord (k1.b1 to z2) and a bundle (k1.b2, k1.b3 to n5) below it.
+# The two phases answer the chord's port differently by design: a producer check (ahead) asks for the alignment, the publication excuses the
+# chord. A seated step replayed in a check reads the phase of that check, so the 7f passes settle: no PLACEMENT_NON_CONVERGENCE and no
+# CENTRE_ALIGNMENT_OPEN. With a replay that read the other phase, the passes stalled (review 3 of ticket 38, mutant at the group replay).
+# The sheet has no gate finding on main and on the branch. Staged with the ticket's other phase sheets (no corpus row: a test-only change).
+# Test-only input owned by dense-16x9 ticket 38; test/pipeline/seated-step-reads-the-invariant.test.ts reads it.
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  up: { tier: 0 }
+  site: { tier: 1, label: "One site in ranks" }
+  down: { tier: 2 }
+nodes:
+  t0: { group: up, ports: [{ name: a, side: bottom }, { name: b, side: bottom }] }
+  p1: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  p2: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  c1: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  c2: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  k1: { group: site, ports: [{ name: t1, side: top }, { name: t3, side: top }, { name: b1, side: bottom }, { name: b2, side: bottom }, { name: b3, side: bottom }] }
+  z1: { group: down, ports: [{ name: in, side: top }] }
+  n4: { group: down }
+  n5: { group: down }
+  n6: { group: down }
+  n7: { group: down }
+  n8: { group: down }
+  n9: { group: down }
+  z2: { group: down, ports: [{ name: in, side: top }] }
+links:
+  - { from: t0.a, to: p1.up }
+  - { from: t0.b, to: p2.up }
+  - { from: p1.d1, to: c1.u1 }
+  - { from: p2.d1, to: c2.u1 }
+  - { from: c1.b, to: k1.t1 }
+  - { from: c2.b, to: k1.t3 }
+  - { from: k1.b1, to: z2.in }
+  - { from: k1.b2, to: n5 }
+  - { from: k1.b3, to: n5 }

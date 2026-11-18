@@ -1,0 +1,40 @@
+# Expected: the staged shared-port sheet (a bundle member n1.b to k1.t1 shares k1.t1 with the ordinary feed c1.b to k1.t1) with a plain row
+# below as the anchor tier. The parent-port clause of the ownership test excuses a feed only at the bundles stage, so the two phases differ
+# there by design (measured on c1.b). A seated step replayed in a check reads the phase of that
+# check: the sheet publishes with no PLACEMENT_NON_CONVERGENCE and no CENTRE_ALIGNMENT_OPEN. At 687e7bf4 it was refused at publication
+# ("link-5: c1.b sits at x 301 instead of its feed x 521.75"), the review-2 defect through the parent-port clause.
+# The sheet has no gate finding on main and on the branch. Staged with the ticket's other phase sheets (no corpus row: a test-only change).
+# Test-only input owned by dense-16x9 ticket 38; test/pipeline/seated-step-reads-the-invariant.test.ts reads it.
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  up: { tier: 0 }
+  site: { tier: 1, label: "One site in ranks" }
+  down: { tier: 2 }
+nodes:
+  t0: { group: up, ports: [{ name: a, side: bottom }, { name: b, side: bottom }] }
+  p1: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  p2: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  c1: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  n1: { group: site, ports: [{ name: b, side: bottom }, { name: b2, side: bottom }] }
+  c2: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  k1: { group: site, ports: [{ name: t1, side: top }, { name: t3, side: top }, { name: t4, side: top }, { name: b1, side: bottom }, { name: b2, side: bottom }] }
+  n4: { group: down }
+  n5: { group: down }
+  n6: { group: down }
+  n7: { group: down }
+  n8: { group: down }
+  n9: { group: down }
+  z1: { group: down, ports: [{ name: in, side: top }] }
+  z2: { group: down, ports: [{ name: in, side: top }] }
+links:
+  - { from: t0.a, to: p1.up }
+  - { from: t0.b, to: p2.up }
+  - { from: p1.d1, to: c1.u1 }
+  - { from: p2.d1, to: c2.u1 }
+  - { from: c1.b, to: k1.t1 }
+  - { from: c2.b, to: k1.t3 }
+  - { from: n1.b, to: k1.t1 }
+  - { from: n1.b2, to: k1.t4 }
+  - { from: k1.b1, to: z1.in }
+  - { from: k1.b2, to: z2.in }

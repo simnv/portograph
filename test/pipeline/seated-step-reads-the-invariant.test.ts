@@ -13,14 +13,17 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // The callers of the one ownership test (`otherRuleOwns(model, ahead)`, src/layout/centre.ts) and the phase each one passes (review 2):
 // - `readCentreViolations` (the invariant): the `ahead` of its check.
 //   - true: the producer's own checks in centre.ts (`centreDraftFound`, the two stall reads, `flagUnverifiedCentring`, `openLinks` for
-//     `recordOpen`, `recordDeclineFindings`).
+//     `recordOpen`); and `recordDeclineFindings`, whose one caller is the reseat judge (decide.ts), which reads one draft in both phases.
 //   - false: the publication (`publishedCentreViolations` in mutation.ts `validateRegionClaims`) and the placement judges (`centreViolations(model)`
-//     in decide.ts, gap-room.ts, placement-attempt.ts).
+//     in decide.ts, gap-room.ts, placement-attempt.ts). The judges read the 7f draft, which stands at `bundles`: with false they judge `bundles`,
+//     while the draft publishes at `bands`. The two differ in one clause (a feed whose parent port a bundle member uses is excused at `bundles`
+//     only); the same on main, and it cannot refuse a seated row, because the replay inside a judge takes the judge's phase (review 3).
 // - `centreGroupStepRaw`, the seated step: the `ahead` its caller hands down through `centreGroupStep` and `centreGroupStepChecked`, with no default.
 //   - The producer's passes (`centreDraftFound` → the tier loop): true, the stage it makes is published one stage on.
 //   - The replay of a group inside `readCentreViolations`: the `ahead` of that check.
 //   - The replay of a tier's row units (`rowUnitFaults`, called by `readCentreViolations`): the `ahead` of that check.
-// So in one check the step and the invariant answer for the same stage.
+// So in one check the step and the invariant answer for the same stage. The phase of the row-unit replay changes no answer (it reads only the
+// step's group), so no test holds it by behaviour; it is passed for one reading (R1).
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-seated-row-names-the-ports-its-seat-leaves-off-their-feeds.yaml', import.meta.url), 'utf8');
 
 it('a seated row leaves no stall round, and centring converges', async () => {
@@ -94,7 +97,8 @@ const judged = (stage: LayoutStage, ahead: boolean): LayoutStage => ahead ? LAYO
 it('for every stage from 7c to 7f, the seated step gives the owner the publication gives, for every port', async () => {
   // The publication's answers (the invariant of a check that does not read ahead), by stage and port; and every seated step's answer: a
   // replay inside a check, or a producer step, which reads ahead. Both are keyed by the stage they judge. The one clause the two phases read
-  // differently by design (a held cross chord excuses its port only at publication) does not occur here: the sheet has no cross chord.
+  // differently by design (a held cross chord excuses its port only at publication) meets no step answer here: link-1 (t0.a to p1.up) is a held
+  // cross chord, but no seated row has a wanted port on it. The phase sheets below include a seated row that has one.
   const published = new Map<string, boolean>(), steps: { key: string; owned: boolean }[] = [];
   centreCheckTrace.owner = (model, reader, _check, ahead, child, owned) => {
     const key = `${judged(model.stage, ahead)} ${child}`;
@@ -112,4 +116,28 @@ it('for every stage from 7c to 7f, the seated step gives the owner the publicati
   // The shared port: the centre rule answers for it at 7c and 7d, the bundle from 7e on.
   const shared = (stage: string): boolean | undefined => [...published].find(([key]) => key.startsWith(`${stage} port:["k1",`) && key.includes('"t1"'))?.[1];
   expect(['centre', 'bars', 'bundles', 'bands'].map(shared)).toEqual([false, false, true, true]);
+}, 120000);
+
+// Review 3 (R1): each replayed seated step asks for the phase of the check that replays it, and gives that check's owner, joined by check id.
+// The test above keys an answer by the stage it judges and so does not see a replay that asks for the other phase. On the two phase sheets
+// such a replay stalls the 7f passes (PLACEMENT_NON_CONVERGENCE, CENTRE_ALIGNMENT_OPEN); the staged shared-port sheet fails it on 8 answers.
+const PHASE_SHEETS: readonly (readonly [string, string])[] = [
+  ['the shared-port sheet', 'a-seated-row-port-a-bundle-shares-keeps-its-feed-until-the-bundles'],
+  ['a held cross chord and a bundle on one seated row', 'a-seated-row-with-a-held-cross-chord-and-a-bundle-reads-the-phase-of-its-check'],
+  ['a feed whose port a bundle uses, with a row below', 'a-seated-row-feed-whose-port-a-bundle-uses-reads-the-phase-of-its-check'],
+];
+for (const [name, file] of PHASE_SHEETS) it(`${name}: a replayed seated step reads the phase of its check`, async () => {
+  const checks = new Map<string, { ahead: boolean; owned: boolean }>(), replays: { key: string; ahead: boolean; owned: boolean }[] = [];
+  centreCheckTrace.owner = (_model, reader, check, ahead, child, owned) => {
+    if (reader === 'invariant') checks.set(`${check} ${child}`, { ahead, owned });
+    else if (check !== undefined) replays.push({ key: `${check} ${child}`, ahead, owned });
+  };
+  let model;
+  try {
+    model = await layout(parse(readFileSync(new URL(`../fixtures/staged/${file}.yaml`, import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  } finally { delete centreCheckTrace.owner; }
+  expect(replays.length).toBeGreaterThan(0);
+  expect(replays.filter(step => checks.get(step.key)?.ahead !== step.ahead || checks.get(step.key)?.owned !== step.owned).map(step => step.key)).toEqual([]);
+  expect(model.stage).toBe('link-labels');
+  expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE' || item.code === 'CENTRE_ALIGNMENT_OPEN').map(item => item.code)).toEqual([]);
 }, 120000);
