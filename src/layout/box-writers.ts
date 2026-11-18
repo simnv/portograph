@@ -115,5 +115,5 @@ export const BOX_WRITERS: readonly BoxWriter[] = [
   { id: 'W35', file: 'src/layout/overlay-place.ts', fn: 'sweep', guard: { kind: 'guarded', by: 'a window clamp between the walls of the tier (groups, frame columns, lanes); a free overlay group has no routed port' } },
   { id: 'W36', file: 'src/layout/overlay-place.ts', fn: 'sweepMembers', guard: { kind: 'guarded', by: 'a window clamp between the member walls' } },
   { id: 'W11', file: 'src/layout/end-trim.ts', fn: 'untrimmedModel', guard: { kind: 'scratch', why: 'rebuilds the pre-trim geometry on a copy' } },
-  { id: 'W41', file: 'src/layout/centre.ts', fn: 'farEndShifted', guard: { kind: 'scratch', why: 'translates a far-end row on a copy that blockMoveRefusal reads before holdFarEnds (W40) moves the row after the chord freeze (dense-16x9 ticket 57)' } },
+  { id: 'W41', file: 'src/layout/centre.ts', fn: 'farEndShifted', guard: { kind: 'scratch', why: 'translates a far-end row on a copy, its frames derived again, that blockMoveRefusal reads before holdFarEnds (W40) moves the row after the chord freeze (dense-16x9 ticket 57)' } },
 ];

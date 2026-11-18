@@ -1239,8 +1239,8 @@ set froze the parent row and gave a new G5 (`an-allocated-run-ends-on-the-tip-of
 clamp at the lanes too (`reservedWindow`) gave 1978 bends, +14 on `a-single-feed-port-follows-its-child-over-a-pushed-row` (14 to 28),
 whose G5 it cleared. With both deviations the corpus keeps 1966 bends, the same gate findings, no sheet worse and no column-wall withdrawal. Every mover clamps its shift to the range
 and names the clamp (`SEAT_FAR_END_CLAMPED`, info): the centring step (`holdFarEnds` keeps the step when its far ports moved as one inside
-the range, else moves the group by the clamped shift; after the chord freeze that shift stands only where `blockMoveRefusal` accepts it on a
-copy, dense-16x9 ticket 57), the stand near the feed, the pack of the tier (`packClear`, and `tailReservation` ends
+the range, else moves the group by the clamped shift; after the chord freeze, an empty freeze too, that shift stands only where `blockMoveRefusal` accepts it
+on a copy with its frames derived again, and the clamp names the block, dense-16x9 ticket 57), the stand near the feed, the pack of the tier (`packClear`, and `tailReservation` ends
 the groups before it where the range ends), and the child-frame pack (`settleRows`, which refuses a clamped pack whole). A parent spread
 leaves a far-end row where it stands. The overlay window (`placeOverlayFree`) holds a far-end row as a wall of its pack; it moves only the
 groups `overlayFreeGroups` lists, and a far end is the end of a routed link out of its row, so the list holds none today and the guard keeps

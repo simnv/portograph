@@ -9,7 +9,7 @@ import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, rightWallReach, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { holdsMove, holdsNodeMove, resizeEvidence, resizeHolds, seatRefusal, type ResizeEvidence } from './move-reservations.js';
 import { rowRoomKeptByStep } from './label-room-guard.js';
-import { cellReach, frameDepth } from './frames.js';
+import { cellReach, deriveFrames, frameDepth } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
@@ -1256,7 +1256,7 @@ interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>;
  * loop drops the value for the rest.
  */
 interface CarriedReadings { held: Set<string>; breached: Set<string> }
-type GroupStep = { unresolved: Set<string>; group: LayoutGroup; carry?: CarriedReadings; notes: TargetNotes };
+export type GroupStep = { unresolved: Set<string>; group: LayoutGroup; carry?: CarriedReadings; notes: TargetNotes };
 /** The centring pass the producer runs now (`CentreBudget.passes`), written on the targets a producer step records; a replay (`warn` off) writes 0. Read by nothing for a decision. */
 let stepPass = 0;
 const carryCache = readCache('centreCarry');
@@ -1287,8 +1287,8 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
   });
 }
 /** What the step of a far-end row may give back (`holdFarEnds`): its group and nodes, the labels, the diagnostics, the ledger, and the far ports' x. */
-interface FarEndSnapshot { text: string; labels: LayoutModel['labels']; diagnostics: LayoutModel['diagnostics']; reservations: LayoutModel['reservations']; far: Map<string, number> }
-function farEndSnapshot(model: LayoutModel, id: string): FarEndSnapshot {
+export interface FarEndSnapshot { text: string; labels: LayoutModel['labels']; diagnostics: LayoutModel['diagnostics']; reservations: LayoutModel['reservations']; far: Map<string, number> }
+export function farEndSnapshot(model: LayoutModel, id: string): FarEndSnapshot {
   const group = model.groups[id]!, far = new Map<string, number>();
   for (const entry of model.reservations ?? []) if (entry.kind === 'seatSet') for (const eq of [...entry.payload.seats, ...entry.payload.holds]) {
     if (group.nodes.includes(eq.far.node)) far.set(portId(eq.far), findPort(model, eq.far)!.anchor!.x);
@@ -1303,7 +1303,9 @@ function farEndSnapshot(model: LayoutModel, id: string): FarEndSnapshot {
  * of its box) when the move guard holds (`holdsMove`), named (`SEAT_FAR_END_CLAMPED`); the feeds it leaves off their x stay open. From 7e on a
  * translation is not judged here, so the row stays where the step began.
  */
-function holdFarEnds(model: LayoutModel, id: string, range: FarEndRange, saved: FarEndSnapshot, step: GroupStep): GroupStep {
+/** Test only (review 1 of dense-16x9 ticket 57): the model each `holdFarEnds` that gives its step back stands on, read before the translation is judged. */
+export const farEndHoldTrace: { given?: (model: LayoutModel, id: string) => void } = {};
+export function holdFarEnds(model: LayoutModel, id: string, range: FarEndRange, saved: FarEndSnapshot, step: GroupStep): GroupStep {
   const was = JSON.parse(saved.text) as { group: LayoutGroup; nodes: LayoutNode[] }, group = model.groups[id]!;
   const shifts = [...saved.far].map(([key, x]) => { const [ref] = [...group.nodes].flatMap(node => model.nodes[node]!.ports).filter(port => portId(port.ref) === key); return ref?.anchor === undefined ? NaN : ref.anchor.x - x; });
   const intact = shifts.every(shift => Number.isFinite(shift) && Math.abs(shift - shifts[0]!) <= PLACEMENT_EPS);
@@ -1313,23 +1315,37 @@ function holdFarEnds(model: LayoutModel, id: string, range: FarEndRange, saved: 
   for (const node of was.nodes) model.nodes[node.id] = node;
   model.labels = saved.labels; model.diagnostics = saved.diagnostics;
   if (saved.reservations === undefined) delete model.reservations; else model.reservations = saved.reservations;
+  farEndHoldTrace.given?.(model, id);
   // The translation asks the move guard as the stand near the feed does; a move it refuses keeps the row where the step began. After the chord freeze
-  // the translation is an optional move, so the one judge of a move after the freeze reads it too (dense-16x9 tickets 33 and 57): it stands only where
-  // every solid block keeps its reservation on a copy that makes it.
-  const free = !CHORD_STAGES.includes(model.stage) && Math.abs(shift.dx) > EPS && holdsMove(model, [{ group: was.group, bounds: { ...was.group.bounds!, x: was.group.bounds!.x + shift.dx } }])
-    && (model.frozenChords === undefined || !model.blockReservations?.length || blockMoveRefusal(model, farEndShifted(model, id, shift.dx)) === undefined);
+  // (an empty freeze too) the translation is an optional move, so the one judge of a move after the freeze reads it as well (dense-16x9 tickets 33
+  // and 57): it stands only where every solid block keeps its reservation on a copy that makes it, frames rebuilt (review 1 of ticket 57).
+  const tried = !CHORD_STAGES.includes(model.stage) && Math.abs(shift.dx) > EPS && holdsMove(model, [{ group: was.group, bounds: { ...was.group.bounds!, x: was.group.bounds!.x + shift.dx } }]);
+  const judged = tried && model.frozenChords !== undefined && !!model.blockReservations?.length;
+  const trial = judged ? farEndShifted(model, id, shift.dx) : undefined;
+  const refusal = !judged ? undefined : trial === undefined ? { key: '', fault: 'the frames of the moved row cannot be derived' } : blockMoveRefusal(model, trial);
+  const free = tried && refusal === undefined;
   const kept = free ? shift.dx : 0;
   if (free) { moveGroup(model, was.group, kept, 0); rebuildNodeGeometry(model, was.group.nodes, 'current'); }
-  nameFarEndClamp(model, 'the centring step', id, asked, kept, intact ? range.why : `the step moves the far ends apart; ${range.why}`);
+  const why = refusal !== undefined ? `the move would leave the reservation of a solid block (${refusal.fault})` : intact ? range.why : `the step moves the far ends apart; ${range.why}`;
+  nameFarEndClamp(model, 'the centring step', id, asked, kept, why);
   const ports = new Map(was.group.nodes.flatMap(node => model.nodes[node]!.ports.map(port => [portId(port.ref), port] as const)));
   const open = new Set([...step.notes.wanted].filter(([key, want]) => { const at = ports.get(key)?.anchor?.x; return at === undefined || Math.abs(at - want) > 0.5; }).map(([key]) => key));
   return { unresolved: open, group: was.group, notes: { ...step.notes, grown: new Map(), declined: new Map(), seated: new Map() } };
 }
-/** A copy of `model` with row `id` translated by `dx`: what `holdFarEnds` asks the judge of a move after the freeze about before it moves the row. */
-function farEndShifted(model: LayoutModel, id: string, dx: number): LayoutModel {
+/**
+ * A copy of `model` with row `id` translated by `dx`: what `holdFarEnds` asks the judge of a move after the freeze about before it moves the row.
+ * The frames are derived again on the copy, as `chordsHold` projects them for the move guard, so the judge reads the frame edges the move
+ * publishes and not the edges before it (review 1 of dense-16x9 ticket 57). Undefined when the frames of the copy cannot be derived.
+ */
+function farEndShifted(model: LayoutModel, id: string, dx: number): LayoutModel | undefined {
   const trial = JSON.parse(JSON.stringify(model)) as LayoutModel, group = trial.groups[id]!;
   moveGroup(trial, group, dx, 0);
   rebuildNodeGeometry(trial, group.nodes, 'current');
+  if (trial.document.frames) {
+    const frames = deriveFrames(trial);
+    if (frames === undefined) return undefined;
+    trial.frames = frames;
+  }
   return trial;
 }
 /**
