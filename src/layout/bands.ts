@@ -116,6 +116,33 @@ function cantonBoxes(model: LayoutModel): Map<string, Rect> {
   return boxes;
 }
 
+/**
+ * The first and last sub-tier of every frame (`cantonTiers` for each), from one index of the frame tree: a reader of all frames walks the
+ * tree once, not once per frame (dense-16x9 ticket 52, review 1).
+ */
+export function frameTierSpans(model: LayoutModel): Map<string, { first: number; last: number }> {
+  const frames = model.document.frames ?? {}, childrenOf = new Map<string, string[]>(), spans = new Map<string, { first: number; last: number }>();
+  for (const child in frames) {
+    const parent = frames[child]!.parent;
+    if (parent === undefined) continue;
+    const list = childrenOf.get(parent);
+    if (list) list.push(child);
+    else childrenOf.set(parent, [child]);
+  }
+  const span = (id: string): { first: number; last: number } => {
+    const known = spans.get(id);
+    if (known) return known;
+    let first = Infinity, last = -Infinity;
+    for (const cell of frames[id]?.cells ?? []) { const tier = model.groups[cell]!.tier!; first = Math.min(first, tier); last = Math.max(last, tier); }
+    for (const child of childrenOf.get(id) ?? []) { const inner = span(child); first = Math.min(first, inner.first); last = Math.max(last, inner.last); }
+    const result = { first, last };
+    spans.set(id, result);
+    return result;
+  };
+  for (const id in frames) span(id);
+  return spans;
+}
+
 /** The first and the last sub-tier a canton spans. */
 export function cantonTiers(model: LayoutModel, id: string): { first: number; last: number } {
   const tiers = frameSubtreeCells(model.document.frames ?? {}, id).map(cell => model.groups[cell]!.tier!);

@@ -308,7 +308,11 @@ need_i = max( depth(own lower end),
                                  upper-stand jog: jogDepth = max(depth(d) + k, the O5 band below
                                  over the jog); the run keeps k from the jog, O4),
               O5 bands anchored to the band below, over the span, plus their clearance )
-drop d:  lb_d = own upper tip row;  need_d = depth(own lower end) + (k where it has a jog)
+drop d:  lb_d = own upper tip row;  need_d = depth(own lower end).  A jogged drop holds both sides
+         of its jog (ticket 52, review 1): upper stand lb_d = max(own upper tip row, O5 bands
+         anchored above over the jog), need_d = jogDepth(d); lower stand lb_d = jog row (one k
+         below the upper tip, or past an O5 band above), need_d = max(depth(own lower end), O5
+         bands anchored below over the jog). The jog keeps e from the frame edge on its other side.
 residual r between the two tiers:  need_r = depth(upper tip, from low) + 2k + depth(lower tip)
 H      = max( floor, max_i ( y_i − low + need_i ), max_d ( lb_d − low + need_d ), need_r )
 growth = max( 0, H − (bandTop − low) )

@@ -1,0 +1,75 @@
+# Expected: the jog of link-4 in the gap between the cantons north and south stands the group-edge margin clear of both frame edges; the gap grows by name for it, and G6 passes with the option on and off, in both node orders.
+portograph: 2
+groups:
+  u:
+    tier: 0
+    canton: north
+  uc:
+    parent: u
+  d:
+    tier: 1
+    canton: south
+  dc:
+    parent: d
+  other:
+    tier: 1
+  feed:
+    tier: 0
+  north:
+    label: north
+  south:
+    label: south
+nodes:
+  up:
+    group: u
+  x:
+    group: uc
+  y:
+    group: uc
+    ports:
+      - name: p
+        side: bottom
+    size:
+      width: 68
+      height: 45
+  z:
+    group: uc
+  a:
+    group: dc
+  b:
+    group: dc
+    ports:
+      - name: q
+        side: top
+    size:
+      width: 87
+      height: 45
+  c:
+    group: dc
+  lower:
+    group: d
+  peer:
+    group: other
+  source:
+    group: feed
+links:
+  - - up
+    - x
+  - - up
+    - y
+  - - up
+    - z
+  - - a
+    - lower
+  - - b
+    - lower
+  - - c
+    - lower
+  - - source
+    - peer
+  - - y.p
+    - b.q
+    - id: bridge
+      route: orthogonal
+  - - source
+    - lower

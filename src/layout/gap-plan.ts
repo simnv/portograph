@@ -3,7 +3,7 @@ import type { Diagnostic, LayoutLink, LayoutModel, PathSegment } from '../model/
 import { bottom, EPS, right, samePoint, segmentDistance } from '../geometry/planar.js';
 import { measureText } from '../text/index.js';
 import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
-import { cantonTiers, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke } from './bands.js';
+import { frameTierSpans, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke } from './bands.js';
 import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type NestedTip, type TierGap } from './gap-runs.js';
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
 import { isRoutedChord, seatsRowsAgainst } from './frame-paths.js';
@@ -1073,7 +1073,21 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame, forced: For
     needs.set(unit.id, actual);
     raise(rows.get(unit.id)! - low + actual, unit.id);
   }
-  for (const drop of drops) raise(drop.upper.y - low + (drop.jogged && drop.stand === 'upper' ? jogDepth(drop) : drop.depth + (drop.jogged ? keep : 0)), drop.id);
+  // A jogged drop holds both sides of its interval (dense-16x9 ticket 52, review 1). On its upper x the jog hangs `jogDepth` above the band below,
+  // and the gap must also hold the upper tip and every O5 band anchored above over the jog's x; on its lower x the jog stands at `jogOf`, and the gap
+  // must also hold the lower tip and every O5 band anchored below. Before, each stand read one side only, and a jog could stand inside the margin
+  // of the opposite frame edge with no growth.
+  for (const drop of drops) {
+    if (!drop.jogged) { raise(drop.upper.y - low + drop.depth, drop.id); continue; }
+    const x0 = Math.min(drop.upper.x, drop.lower.x), x1 = Math.max(drop.upper.x, drop.lower.x);
+    let above = drop.upper.y, below = drop.depth;
+    for (const obstacle of frame.obstacles) {
+      if (obstacle.owner === drop.link || obstacle.x1 <= x0 + EPS || obstacle.x0 >= x1 - EPS) continue;
+      if (obstacle.anchor === 'above') above = Math.max(above, obstacle.bound);
+      else if (obstacle.anchor === 'below') below = Math.max(below, obstacle.bound);
+    }
+    raise(drop.stand === 'upper' ? above - low + jogDepth(drop) : jogOf(drop) - low + below, drop.id);
+  }
   for (const item of residual) if (item.upper && item.lower) raise(item.upper.y - low + 2 * keep + (bandTop - item.lower.y), item.id);
 
   const height = Math.max(frame.floor, demand);
@@ -1301,8 +1315,9 @@ function gapPlanOf(model: LayoutModel, gap: TierGap, dodging: boolean): GapPlan 
   // edge (`groupBoxes`), so the plan reads it too (dense-16x9 ticket 52; before, only a canton's). A frame that ends at this gap's upper
   // band is an O5 band anchored to it, one that starts at this gap's lower band is anchored to that, both with the group-edge margin.
   // One that spans the gap is no wall: its members' own boxes and lanes already are.
+  const spans = frameTierSpans(model);
   for (const frame of model.frames ?? []) {
-    const box = frame.box, x0 = box.x - margin, x1 = right(box) + margin, tiers = cantonTiers(model, frame.id);
+    const box = frame.box, x0 = box.x - margin, x1 = right(box) + margin, tiers = spans.get(frame.id)!;
     if (tiers.last === gap.above) {
       if (bottom(box) + margin > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + margin });
     } else if (tiers.first === gap.below) {
