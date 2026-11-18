@@ -46,8 +46,7 @@ describe('a move keeps the separation to a foreign frame (dense-16x9 ticket 48)'
     ['a-grid-group-stands-fixed-beside-frames', 'as written'], ['a-grid-group-stands-fixed-beside-frames', 'nodes reversed'],
   ] as const) {
     it(`publishes no G9 with layout.moveBeforeGrow: ${name}, ${form}`, async () => {
-      const yaml = withMoveBeforeGrow(text(name));
-      const model = await layout(parse(form === 'as written' ? yaml : reversed(yaml)), options);
+      const model = await layout(withMoveBeforeGrow(parse(form === 'as written' ? text(name) : reversed(text(name)))), options);
       expect(g9(model)).toEqual([]);
     }, 120000);
   }
