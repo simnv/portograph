@@ -1731,8 +1731,9 @@ split otherwise. The validator still replays the one 7f room producer.
 
 `topUpBandClearance` rebuilds every moved node's pills and text, including lower-tier cascades, before
 `holdColumnsAfterPush` and `reserveLinkLabelRoom` read them. The pack of `holdColumnsAfterPush` reads every hard separation as part of
-its window (dense-16x9 ticket 48): a child frame whose move would break or deepen one stays where it stands, named by
-`FRAME_PACK_SEPARATION_HELD`. Placement reserves the gaps; this move only checks.
+its window (dense-16x9 ticket 48), the gaps a canton owns included (the close-up of the cantons after it closes a wide gap and does not open a short one): a child
+frame whose move would break or deepen one stays where it stands, named by `FRAME_PACK_SEPARATION_HELD`. The warning goes
+when a later pack moves the child or finds it packed. Placement reserves the gaps; this move only checks.
 
 **Direct families come first** (architecture-2 ticket 22; `docs/design/routed-chords.md`, Section 15). Before `freezeChords`,
 `planDirectFamilies` counts the orthogonal crossings of each facing pair on a copy, and decides each triggered family's chords
@@ -2265,11 +2266,18 @@ converge: a held lane that may pass a foreign frame makes the frame reserved sec
 first lane.
 
 A held lane grows its frame in every sub-tier of the frame, but its slot reads only the sub-tiers the
-link crosses. So once the held lanes stand, and before any foreign lane is reserved, the units beside a
-grown frame edge give way, outward and whole, each unit after them in turn, by what the beside gap
-(`besideGap`, the gap G9 reads) lacks (`separateHeldFrames`, dense-16x9 ticket 48). The grown frame stays,
-because its cells hold the sources of its lanes. A unit that holds a lane source, stands in a sub-tier no
-link crosses or would reach a reserved lane stays, and `LANE_FRAME_GAP_HELD` names it.
+link crosses. So once the held lanes stand, and before any foreign lane is reserved, the units beyond
+each grown frame edge give way outward as one chain (`separateHeldFrames`, dense-16x9 ticket 48): the unit
+nearest the edge moves by what the beside gap (`besideGap`, the gap G9 reads) lacks, and each unit after
+it by what its own gap then lacks. The grown frame stays, because its cells hold the sources of its lanes.
+A unit that holds a lane source, stands in a sub-tier no link crosses or would reach a reserved lane
+cannot move. A flank moves with the group it flanks. Every unit the chain does not move bounds its
+room, a grid, a bar or a unit of another tier included: the chain is judged whole on the hard
+separations of the model with all its moves in place (`separationsBrokenBy`, the gaps of a canton
+included). The slot of a held lane reads these chains while the allocator can still choose it: a slot
+whose chains take the whole lack wins over a nearer slot whose chains cannot. A chain that cannot take
+the whole lack takes the largest part that breaks or deepens no separation. It commits whole or not at
+all, and `LANE_FRAME_GAP_HELD` names what stays short.
 
 Sibling frames of one tier are columns. A column is the frame box plus `COLUMN_SLACK` (20 px) on
 each side. `packFrameColumns` (`src/layout/columns.ts`) runs in stage 4 after ELK and packs the
