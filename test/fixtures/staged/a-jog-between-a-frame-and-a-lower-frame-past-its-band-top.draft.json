@@ -1,0 +1,3380 @@
+{
+  "document": {
+    "portograph": 2,
+    "profile": "network",
+    "groups": {
+      "uc#0": {
+        "label": "uc",
+        "shape": "row",
+        "tier": 0,
+        "frame": "uc",
+        "documentTier": 0
+      },
+      "uc#1": {
+        "label": "uc",
+        "shape": "row",
+        "tier": 1,
+        "frame": "uc",
+        "documentTier": 0
+      },
+      "u#2": {
+        "label": "u",
+        "shape": "row",
+        "tier": 2,
+        "frame": "u",
+        "documentTier": 0
+      },
+      "dc#0": {
+        "label": "dc",
+        "shape": "row",
+        "tier": 3,
+        "frame": "dc",
+        "documentTier": 1
+      },
+      "dc#1": {
+        "label": "dc",
+        "shape": "row",
+        "tier": 4,
+        "frame": "dc",
+        "documentTier": 1
+      },
+      "d#2": {
+        "label": "d",
+        "shape": "row",
+        "tier": 5,
+        "frame": "d",
+        "documentTier": 1
+      },
+      "other": {
+        "label": "other",
+        "shape": "ranked",
+        "tier": 3,
+        "documentTier": 1
+      },
+      "feed": {
+        "label": "feed",
+        "shape": "ranked",
+        "tier": 2,
+        "documentTier": 0
+      }
+    },
+    "nodes": {
+      "up": {
+        "group": "u#2",
+        "label": "up",
+        "ports": [
+          {
+            "anonymous": true,
+            "ordinal": 1
+          },
+          {
+            "anonymous": true,
+            "ordinal": 2
+          },
+          {
+            "anonymous": true,
+            "ordinal": 3
+          }
+        ]
+      },
+      "x": {
+        "group": "uc#0",
+        "label": "x",
+        "ports": [
+          {
+            "anonymous": true,
+            "ordinal": 1
+          }
+        ]
+      },
+      "y": {
+        "group": "uc#1",
+        "label": "y",
+        "ports": [
+          {
+            "name": "p",
+            "ordinal": 1,
+            "side": "bottom"
+          },
+          {
+            "anonymous": true,
+            "ordinal": 1
+          }
+        ],
+        "size": {
+          "width": 68,
+          "height": 45
+        }
+      },
+      "z": {
+        "group": "uc#0",
+        "label": "z",
+        "ports": [
+          {
+            "anonymous": true,
+            "ordinal": 1
+          }
+        ]
+      },
+      "a": {
+        "group": "dc#1",
+        "label": "a",
+        "ports": [
+          {
+            "anonymous": true,
+            "ordinal": 1
+          }
+        ]
+      },
+      "b": {
+        "group": "dc#0",
+        "label": "b",
+        "ports": [
+          {
+            "name": "q",
+            "ordinal": 1,
+            "side": "top"
+          },
+          {
+            "anonymous": true,
+            "ordinal": 1
+          }
+        ],
+        "size": {
+          "width": 87,
+          "height": 45
+        }
+      },
+      "c": {
+        "group": "dc#1",
+        "label": "c",
+        "ports": [
+          {
+            "anonymous": true,
+            "ordinal": 1
+          }
+        ]
+      },
+      "lower": {
+        "group": "d#2",
+        "label": "lower",
+        "ports": [
+          {
+            "anonymous": true,
+            "ordinal": 1
+          },
+          {
+            "anonymous": true,
+            "ordinal": 2
+          },
+          {
+            "anonymous": true,
+            "ordinal": 3
+          },
+          {
+            "anonymous": true,
+            "ordinal": 4
+          }
+        ]
+      },
+      "peer": {
+        "group": "other",
+        "label": "peer",
+        "ports": [
+          {
+            "anonymous": true,
+            "ordinal": 1
+          }
+        ]
+      },
+      "source": {
+        "group": "feed",
+        "label": "source",
+        "ports": [
+          {
+            "anonymous": true,
+            "ordinal": 1
+          },
+          {
+            "anonymous": true,
+            "ordinal": 2
+          }
+        ]
+      }
+    },
+    "links": [
+      {
+        "from": {
+          "node": "up",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "x",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      },
+      {
+        "from": {
+          "node": "up",
+          "anonymous": true,
+          "ordinal": 2
+        },
+        "to": {
+          "node": "y",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      },
+      {
+        "from": {
+          "node": "up",
+          "anonymous": true,
+          "ordinal": 3
+        },
+        "to": {
+          "node": "z",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "bridge",
+        "route": "orthogonal",
+        "from": {
+          "node": "y",
+          "name": "p",
+          "ordinal": 1
+        },
+        "to": {
+          "node": "b",
+          "name": "q",
+          "ordinal": 1
+        }
+      },
+      {
+        "from": {
+          "node": "a",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "lower",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      },
+      {
+        "from": {
+          "node": "b",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "lower",
+          "anonymous": true,
+          "ordinal": 2
+        }
+      },
+      {
+        "from": {
+          "node": "c",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "lower",
+          "anonymous": true,
+          "ordinal": 3
+        }
+      },
+      {
+        "from": {
+          "node": "source",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "lower",
+          "anonymous": true,
+          "ordinal": 4
+        }
+      },
+      {
+        "from": {
+          "node": "source",
+          "anonymous": true,
+          "ordinal": 2
+        },
+        "to": {
+          "node": "peer",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      }
+    ],
+    "frames": {
+      "north": {
+        "label": "north",
+        "kind": "canton",
+        "cells": []
+      },
+      "u": {
+        "label": "u",
+        "parent": "north",
+        "cells": [
+          "u#2"
+        ]
+      },
+      "uc": {
+        "label": "uc",
+        "parent": "u",
+        "cells": [
+          "uc#0",
+          "uc#1"
+        ]
+      },
+      "d": {
+        "label": "d",
+        "cells": [
+          "d#2"
+        ]
+      },
+      "dc": {
+        "label": "dc",
+        "parent": "d",
+        "cells": [
+          "dc#0",
+          "dc#1"
+        ]
+      }
+    }
+  },
+  "stage": "bundles",
+  "groups": {
+    "uc#0": {
+      "id": "uc#0",
+      "owner": {
+        "kind": "group",
+        "id": "uc#0"
+      },
+      "layer": "routed",
+      "nodes": [
+        "x",
+        "z"
+      ],
+      "tier": 0,
+      "frame": "uc",
+      "bounds": {
+        "x": 72,
+        "y": 12,
+        "width": 142.08333333333331,
+        "height": 78
+      },
+      "rowOrder": [
+        "x",
+        "z"
+      ]
+    },
+    "uc#1": {
+      "id": "uc#1",
+      "owner": {
+        "kind": "group",
+        "id": "uc#1"
+      },
+      "layer": "routed",
+      "nodes": [
+        "y"
+      ],
+      "tier": 1,
+      "frame": "uc",
+      "bounds": {
+        "x": 72,
+        "y": 150,
+        "width": 142.08333333333331,
+        "height": 77.5
+      },
+      "rowOrder": [
+        "y"
+      ]
+    },
+    "u#2": {
+      "id": "u#2",
+      "owner": {
+        "kind": "group",
+        "id": "u#2"
+      },
+      "layer": "routed",
+      "nodes": [
+        "up"
+      ],
+      "tier": 2,
+      "frame": "u",
+      "bounds": {
+        "x": 94,
+        "y": 307.5,
+        "width": 56,
+        "height": 110
+      },
+      "rowOrder": [
+        "up"
+      ]
+    },
+    "dc#0": {
+      "id": "dc#0",
+      "owner": {
+        "kind": "group",
+        "id": "dc#0"
+      },
+      "layer": "routed",
+      "nodes": [
+        "b"
+      ],
+      "tier": 3,
+      "frame": "dc",
+      "bounds": {
+        "x": 72,
+        "y": 477.5,
+        "width": 142.08333333333331,
+        "height": 100.5
+      },
+      "rowOrder": [
+        "b"
+      ]
+    },
+    "dc#1": {
+      "id": "dc#1",
+      "owner": {
+        "kind": "group",
+        "id": "dc#1"
+      },
+      "layer": "routed",
+      "nodes": [
+        "a",
+        "c"
+      ],
+      "tier": 4,
+      "frame": "dc",
+      "bounds": {
+        "x": 72,
+        "y": 671,
+        "width": 142.08333333333331,
+        "height": 55
+      },
+      "rowOrder": [
+        "a",
+        "c"
+      ]
+    },
+    "d#2": {
+      "id": "d#2",
+      "owner": {
+        "kind": "group",
+        "id": "d#2"
+      },
+      "layer": "routed",
+      "nodes": [
+        "lower"
+      ],
+      "tier": 5,
+      "frame": "d",
+      "bounds": {
+        "x": 72,
+        "y": 786,
+        "width": 142.08333333333331,
+        "height": 78
+      },
+      "rowOrder": [
+        "lower"
+      ]
+    },
+    "other": {
+      "id": "other",
+      "owner": {
+        "kind": "group",
+        "id": "other"
+      },
+      "layer": "routed",
+      "nodes": [
+        "peer"
+      ],
+      "tier": 3,
+      "bounds": {
+        "x": 337.5,
+        "y": 490,
+        "width": 93.67529296875,
+        "height": 121
+      },
+      "rowOrder": [
+        "peer"
+      ]
+    },
+    "feed": {
+      "id": "feed",
+      "owner": {
+        "kind": "group",
+        "id": "feed"
+      },
+      "layer": "routed",
+      "nodes": [
+        "source"
+      ],
+      "tier": 2,
+      "bounds": {
+        "x": 337.5,
+        "y": 287.5,
+        "width": 93.67529296875,
+        "height": 98
+      },
+      "rowOrder": [
+        "source"
+      ]
+    }
+  },
+  "nodes": {
+    "up": {
+      "id": "up",
+      "owner": {
+        "kind": "group",
+        "id": "u#2"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "up",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "up"
+          },
+          "layer": "routed",
+          "courseHint": true,
+          "naturalSide": "top",
+          "side": "left",
+          "anchor": {
+            "x": 94,
+            "y": 346.5
+          },
+          "engineOrder": 0
+        },
+        {
+          "ref": {
+            "node": "up",
+            "anonymous": true,
+            "ordinal": 2
+          },
+          "owner": {
+            "kind": "node",
+            "id": "up"
+          },
+          "layer": "routed",
+          "side": "top",
+          "anchor": {
+            "x": 122,
+            "y": 330.5
+          },
+          "engineOrder": 0
+        },
+        {
+          "ref": {
+            "node": "up",
+            "anonymous": true,
+            "ordinal": 3
+          },
+          "owner": {
+            "kind": "node",
+            "id": "up"
+          },
+          "layer": "routed",
+          "courseHint": true,
+          "naturalSide": "top",
+          "side": "left",
+          "anchor": {
+            "x": 94,
+            "y": 358.5
+          },
+          "engineOrder": 1
+        }
+      ],
+      "size": {
+        "width": 56,
+        "height": 44
+      },
+      "sidePitch": {
+        "bottom": 12,
+        "right": 12,
+        "top": 12,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 10,
+        "right": 10,
+        "bottom": 10,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 32.70458984375,
+        "height": 31
+      },
+      "sizeFloor": {
+        "width": 50,
+        "height": 35
+      },
+      "bounds": {
+        "x": 94,
+        "y": 330.5,
+        "width": 56,
+        "height": 44
+      }
+    },
+    "x": {
+      "id": "x",
+      "owner": {
+        "kind": "group",
+        "id": "uc#0"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "x",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "x"
+          },
+          "layer": "routed",
+          "courseHint": true,
+          "naturalSide": "bottom",
+          "side": "left",
+          "anchor": {
+            "x": 72,
+            "y": 72.5
+          },
+          "engineOrder": 0
+        }
+      ],
+      "size": {
+        "width": 50,
+        "height": 35
+      },
+      "sidePitch": {
+        "bottom": 12,
+        "right": 12,
+        "top": 12,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 10,
+        "right": 10,
+        "bottom": 10,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 26.0205078125,
+        "height": 31
+      },
+      "sizeFloor": {
+        "width": 50,
+        "height": 35
+      },
+      "bounds": {
+        "x": 72,
+        "y": 55,
+        "width": 50,
+        "height": 35
+      }
+    },
+    "y": {
+      "id": "y",
+      "owner": {
+        "kind": "group",
+        "id": "uc#1"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "y",
+            "name": "p",
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "y"
+          },
+          "layer": "routed",
+          "side": "bottom",
+          "anchor": {
+            "x": 159,
+            "y": 195
+          },
+          "engineOrder": 1,
+          "pill": {
+            "size": {
+              "width": 24,
+              "height": 11
+            },
+            "bounds": {
+              "x": 153.5,
+              "y": 183,
+              "width": 11,
+              "height": 24
+            },
+            "textRotation": -90,
+            "radius": 2,
+            "owner": {
+              "kind": "node",
+              "id": "y"
+            },
+            "layer": "routed"
+          }
+        },
+        {
+          "ref": {
+            "node": "y",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "y"
+          },
+          "layer": "routed",
+          "side": "bottom",
+          "anchor": {
+            "x": 125,
+            "y": 195
+          },
+          "engineOrder": 0
+        }
+      ],
+      "sizeFloor": {
+        "width": 68,
+        "height": 45
+      },
+      "sidePitch": {
+        "bottom": 34,
+        "right": 12,
+        "top": 12,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 10,
+        "right": 10,
+        "bottom": 16,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 25.85791015625,
+        "height": 37
+      },
+      "size": {
+        "width": 88,
+        "height": 45
+      },
+      "bounds": {
+        "x": 98,
+        "y": 150,
+        "width": 88,
+        "height": 45
+      }
+    },
+    "z": {
+      "id": "z",
+      "owner": {
+        "kind": "group",
+        "id": "uc#0"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "z",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "z"
+          },
+          "layer": "routed",
+          "side": "bottom",
+          "anchor": {
+            "x": 170.5,
+            "y": 90
+          },
+          "engineOrder": 0
+        }
+      ],
+      "sidePitch": {
+        "bottom": 34,
+        "right": 12,
+        "top": 12,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 10,
+        "right": 10,
+        "bottom": 10,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 25.3701171875,
+        "height": 31
+      },
+      "sizeFloor": {
+        "width": 50,
+        "height": 35
+      },
+      "size": {
+        "width": 54,
+        "height": 35
+      },
+      "bounds": {
+        "x": 143.5,
+        "y": 55,
+        "width": 54,
+        "height": 35
+      }
+    },
+    "a": {
+      "id": "a",
+      "owner": {
+        "kind": "group",
+        "id": "dc#1"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "a",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "a"
+          },
+          "layer": "routed",
+          "side": "bottom",
+          "anchor": {
+            "x": 117.58333333333331,
+            "y": 706
+          },
+          "engineOrder": 0
+        }
+      ],
+      "sidePitch": {
+        "bottom": 12,
+        "right": 12,
+        "top": 12,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 10,
+        "right": 10,
+        "bottom": 10,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 26.01171875,
+        "height": 31
+      },
+      "sizeFloor": {
+        "width": 50,
+        "height": 35
+      },
+      "size": {
+        "width": 50,
+        "height": 35
+      },
+      "bounds": {
+        "x": 92.58333333333331,
+        "y": 671,
+        "width": 50,
+        "height": 35
+      }
+    },
+    "b": {
+      "id": "b",
+      "owner": {
+        "kind": "group",
+        "id": "dc#0"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "b",
+            "name": "q",
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "b"
+          },
+          "layer": "routed",
+          "side": "top",
+          "anchor": {
+            "x": 170.58333333333331,
+            "y": 533
+          },
+          "engineOrder": 0,
+          "pill": {
+            "size": {
+              "width": 24,
+              "height": 11
+            },
+            "bounds": {
+              "x": 165.08333333333331,
+              "y": 521,
+              "width": 11,
+              "height": 24
+            },
+            "textRotation": -90,
+            "radius": 2,
+            "owner": {
+              "kind": "node",
+              "id": "b"
+            },
+            "layer": "routed"
+          }
+        },
+        {
+          "ref": {
+            "node": "b",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "b"
+          },
+          "layer": "routed",
+          "courseHint": true,
+          "naturalSide": "bottom",
+          "side": "left",
+          "anchor": {
+            "x": 127.08333333333331,
+            "y": 555.5
+          },
+          "engineOrder": 0
+        }
+      ],
+      "sizeFloor": {
+        "width": 87,
+        "height": 45
+      },
+      "size": {
+        "width": 87,
+        "height": 45
+      },
+      "sidePitch": {
+        "bottom": 12,
+        "right": 12,
+        "top": 15,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 16,
+        "right": 10,
+        "bottom": 10,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 26.29296875,
+        "height": 37
+      },
+      "bounds": {
+        "x": 127.08333333333331,
+        "y": 533,
+        "width": 87,
+        "height": 45
+      }
+    },
+    "c": {
+      "id": "c",
+      "owner": {
+        "kind": "group",
+        "id": "dc#1"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "c",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "c"
+          },
+          "layer": "routed",
+          "side": "bottom",
+          "anchor": {
+            "x": 189.08333333333331,
+            "y": 706
+          },
+          "engineOrder": 0
+        }
+      ],
+      "sidePitch": {
+        "bottom": 12,
+        "right": 12,
+        "top": 12,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 10,
+        "right": 10,
+        "bottom": 10,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 25.29541015625,
+        "height": 31
+      },
+      "sizeFloor": {
+        "width": 50,
+        "height": 35
+      },
+      "size": {
+        "width": 50,
+        "height": 35
+      },
+      "bounds": {
+        "x": 164.08333333333331,
+        "y": 671,
+        "width": 50,
+        "height": 35
+      }
+    },
+    "lower": {
+      "id": "lower",
+      "owner": {
+        "kind": "group",
+        "id": "d#2"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "lower",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "lower"
+          },
+          "layer": "routed",
+          "side": "top",
+          "anchor": {
+            "x": 117.58333333333331,
+            "y": 786
+          },
+          "engineOrder": 0
+        },
+        {
+          "ref": {
+            "node": "lower",
+            "anonymous": true,
+            "ordinal": 2
+          },
+          "owner": {
+            "kind": "node",
+            "id": "lower"
+          },
+          "layer": "routed",
+          "courseHint": true,
+          "naturalSide": "top",
+          "side": "left",
+          "anchor": {
+            "x": 101.58333333333331,
+            "y": 803.5
+          },
+          "engineOrder": 0
+        },
+        {
+          "ref": {
+            "node": "lower",
+            "anonymous": true,
+            "ordinal": 3
+          },
+          "owner": {
+            "kind": "node",
+            "id": "lower"
+          },
+          "layer": "routed",
+          "side": "top",
+          "anchor": {
+            "x": 189.08333333333331,
+            "y": 786
+          },
+          "engineOrder": 1
+        },
+        {
+          "ref": {
+            "node": "lower",
+            "anonymous": true,
+            "ordinal": 4
+          },
+          "owner": {
+            "kind": "node",
+            "id": "lower"
+          },
+          "layer": "routed",
+          "courseHint": true,
+          "naturalSide": "top",
+          "side": "right",
+          "anchor": {
+            "x": 205.08333333333331,
+            "y": 803.5
+          },
+          "engineOrder": 0
+        }
+      ],
+      "size": {
+        "width": 103.5,
+        "height": 35
+      },
+      "sidePitch": {
+        "bottom": 12,
+        "right": 12,
+        "top": 12,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 10,
+        "right": 10,
+        "bottom": 10,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 48.5205078125,
+        "height": 31
+      },
+      "sizeFloor": {
+        "width": 50,
+        "height": 35
+      },
+      "bounds": {
+        "x": 101.58333333333331,
+        "y": 786,
+        "width": 103.5,
+        "height": 35
+      }
+    },
+    "peer": {
+      "id": "peer",
+      "owner": {
+        "kind": "group",
+        "id": "other"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "peer",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "peer"
+          },
+          "layer": "routed",
+          "side": "top",
+          "anchor": {
+            "x": 384.337646484375,
+            "y": 533
+          },
+          "engineOrder": 0
+        }
+      ],
+      "sidePitch": {
+        "bottom": 12,
+        "right": 12,
+        "top": 12,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 10,
+        "right": 10,
+        "bottom": 10,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 42.7197265625,
+        "height": 31
+      },
+      "sizeFloor": {
+        "width": 50,
+        "height": 35
+      },
+      "size": {
+        "width": 50,
+        "height": 35
+      },
+      "bounds": {
+        "x": 359.337646484375,
+        "y": 533,
+        "width": 50,
+        "height": 35
+      }
+    },
+    "source": {
+      "id": "source",
+      "owner": {
+        "kind": "group",
+        "id": "feed"
+      },
+      "layer": "routed",
+      "ports": [
+        {
+          "ref": {
+            "node": "source",
+            "anonymous": true,
+            "ordinal": 1
+          },
+          "owner": {
+            "kind": "node",
+            "id": "source"
+          },
+          "layer": "routed",
+          "courseHint": true,
+          "naturalSide": "bottom",
+          "side": "right",
+          "anchor": {
+            "x": 411.17529296875,
+            "y": 348
+          },
+          "engineOrder": 0
+        },
+        {
+          "ref": {
+            "node": "source",
+            "anonymous": true,
+            "ordinal": 2
+          },
+          "owner": {
+            "kind": "node",
+            "id": "source"
+          },
+          "layer": "routed",
+          "side": "bottom",
+          "anchor": {
+            "x": 384.337646484375,
+            "y": 365.5
+          },
+          "engineOrder": 0
+        }
+      ],
+      "size": {
+        "width": 53.67529296875,
+        "height": 35
+      },
+      "sidePitch": {
+        "bottom": 12,
+        "right": 12,
+        "top": 12,
+        "left": 12
+      },
+      "contentInsets": {
+        "top": 10,
+        "right": 10,
+        "bottom": 10,
+        "left": 10
+      },
+      "contentSize": {
+        "width": 53.67529296875,
+        "height": 31
+      },
+      "sizeFloor": {
+        "width": 53.67529296875,
+        "height": 35
+      },
+      "bounds": {
+        "x": 357.5,
+        "y": 330.5,
+        "width": 53.67529296875,
+        "height": 35
+      }
+    }
+  },
+  "links": [
+    {
+      "id": "link-1",
+      "sourceIndex": 0,
+      "owner": {
+        "kind": "link",
+        "id": "link-1"
+      },
+      "from": {
+        "node": "up",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "to": {
+        "node": "x",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "up",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "x",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      },
+      "technique": "orthogonal",
+      "fixedSegments": [
+        {
+          "from": {
+            "x": 94,
+            "y": 346.5
+          },
+          "to": {
+            "x": 1.25,
+            "y": 346.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-1"
+          },
+          "lane": "perimeter:link-1"
+        },
+        {
+          "from": {
+            "x": 1.25,
+            "y": 346.5
+          },
+          "to": {
+            "x": 1.25,
+            "y": 72.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-1"
+          },
+          "lane": "perimeter:link-1"
+        },
+        {
+          "from": {
+            "x": 1.25,
+            "y": 72.5
+          },
+          "to": {
+            "x": 72,
+            "y": 72.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-1"
+          },
+          "lane": "perimeter:link-1"
+        }
+      ]
+    },
+    {
+      "id": "link-2",
+      "sourceIndex": 1,
+      "owner": {
+        "kind": "link",
+        "id": "link-2"
+      },
+      "from": {
+        "node": "up",
+        "anonymous": true,
+        "ordinal": 2
+      },
+      "to": {
+        "node": "y",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "up",
+          "anonymous": true,
+          "ordinal": 2
+        },
+        "to": {
+          "node": "y",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      },
+      "technique": "straight",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-2"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 122,
+              "y": 330.5
+            },
+            "to": {
+              "x": 125,
+              "y": 195
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-2"
+            },
+            "straight": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-3",
+      "sourceIndex": 2,
+      "owner": {
+        "kind": "link",
+        "id": "link-3"
+      },
+      "from": {
+        "node": "up",
+        "anonymous": true,
+        "ordinal": 3
+      },
+      "to": {
+        "node": "z",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "up",
+          "anonymous": true,
+          "ordinal": 3
+        },
+        "to": {
+          "node": "z",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      },
+      "technique": "orthogonal",
+      "fixedSegments": [
+        {
+          "from": {
+            "x": 94,
+            "y": 358.5
+          },
+          "to": {
+            "x": -10.25,
+            "y": 358.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-3"
+          },
+          "lane": "perimeter:link-3"
+        },
+        {
+          "from": {
+            "x": -10.25,
+            "y": 358.5
+          },
+          "to": {
+            "x": -10.25,
+            "y": 139.25
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-3"
+          },
+          "lane": "perimeter:link-3"
+        }
+      ]
+    },
+    {
+      "id": "link-4",
+      "sourceIndex": 3,
+      "owner": {
+        "kind": "link",
+        "id": "link-4"
+      },
+      "from": {
+        "node": "y",
+        "name": "p",
+        "ordinal": 1
+      },
+      "to": {
+        "node": "b",
+        "name": "q",
+        "ordinal": 1
+      },
+      "family": "routed",
+      "layer": "routed",
+      "technique": "orthogonal",
+      "attachments": {
+        "from": {
+          "node": "y",
+          "name": "p",
+          "ordinal": 1
+        },
+        "to": {
+          "node": "b",
+          "name": "q",
+          "ordinal": 1
+        }
+      },
+      "fixedSegments": [
+        {
+          "from": {
+            "x": 178.5,
+            "y": 276.75
+          },
+          "to": {
+            "x": 178.5,
+            "y": 428.25
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-4"
+          },
+          "lane": "lane:\"link-4\":2"
+        }
+      ]
+    },
+    {
+      "id": "link-5",
+      "sourceIndex": 4,
+      "owner": {
+        "kind": "link",
+        "id": "link-5"
+      },
+      "from": {
+        "node": "a",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "to": {
+        "node": "lower",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "a",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "lower",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      },
+      "technique": "straight",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-5"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 117.58333333333331,
+              "y": 706
+            },
+            "to": {
+              "x": 117.58333333333331,
+              "y": 786
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-5"
+            },
+            "straight": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-6",
+      "sourceIndex": 5,
+      "owner": {
+        "kind": "link",
+        "id": "link-6"
+      },
+      "from": {
+        "node": "b",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "to": {
+        "node": "lower",
+        "anonymous": true,
+        "ordinal": 2
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "b",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "lower",
+          "anonymous": true,
+          "ordinal": 2
+        }
+      },
+      "technique": "orthogonal",
+      "fixedSegments": [
+        {
+          "from": {
+            "x": 127.08333333333331,
+            "y": 555.5
+          },
+          "to": {
+            "x": 41.25,
+            "y": 555.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-6"
+          },
+          "lane": "perimeter:link-6"
+        },
+        {
+          "from": {
+            "x": 41.25,
+            "y": 555.5
+          },
+          "to": {
+            "x": 41.25,
+            "y": 803.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-6"
+          },
+          "lane": "perimeter:link-6"
+        },
+        {
+          "from": {
+            "x": 41.25,
+            "y": 803.5
+          },
+          "to": {
+            "x": 101.58333333333331,
+            "y": 803.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-6"
+          },
+          "lane": "perimeter:link-6"
+        }
+      ]
+    },
+    {
+      "id": "link-7",
+      "sourceIndex": 6,
+      "owner": {
+        "kind": "link",
+        "id": "link-7"
+      },
+      "from": {
+        "node": "c",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "to": {
+        "node": "lower",
+        "anonymous": true,
+        "ordinal": 3
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "c",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "lower",
+          "anonymous": true,
+          "ordinal": 3
+        }
+      },
+      "technique": "straight",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-7"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 189.08333333333331,
+              "y": 706
+            },
+            "to": {
+              "x": 189.08333333333331,
+              "y": 786
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-7"
+            },
+            "straight": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-8",
+      "sourceIndex": 7,
+      "owner": {
+        "kind": "link",
+        "id": "link-8"
+      },
+      "from": {
+        "node": "source",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "to": {
+        "node": "lower",
+        "anonymous": true,
+        "ordinal": 4
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "source",
+          "anonymous": true,
+          "ordinal": 1
+        },
+        "to": {
+          "node": "lower",
+          "anonymous": true,
+          "ordinal": 4
+        }
+      },
+      "fixedSegments": [
+        {
+          "from": {
+            "x": 411.17529296875,
+            "y": 348
+          },
+          "to": {
+            "x": 441.92529296875,
+            "y": 348
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-8"
+          },
+          "lane": "perimeter:link-8"
+        },
+        {
+          "from": {
+            "x": 441.92529296875,
+            "y": 348
+          },
+          "to": {
+            "x": 441.92529296875,
+            "y": 803.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-8"
+          },
+          "lane": "perimeter:link-8"
+        },
+        {
+          "from": {
+            "x": 441.92529296875,
+            "y": 803.5
+          },
+          "to": {
+            "x": 205.08333333333331,
+            "y": 803.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-8"
+          },
+          "lane": "perimeter:link-8"
+        }
+      ]
+    },
+    {
+      "id": "link-9",
+      "sourceIndex": 8,
+      "owner": {
+        "kind": "link",
+        "id": "link-9"
+      },
+      "from": {
+        "node": "source",
+        "anonymous": true,
+        "ordinal": 2
+      },
+      "to": {
+        "node": "peer",
+        "anonymous": true,
+        "ordinal": 1
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "source",
+          "anonymous": true,
+          "ordinal": 2
+        },
+        "to": {
+          "node": "peer",
+          "anonymous": true,
+          "ordinal": 1
+        }
+      },
+      "technique": "straight",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-9"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 384.337646484375,
+              "y": 365.5
+            },
+            "to": {
+              "x": 384.337646484375,
+              "y": 533
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-9"
+            },
+            "straight": true
+          }
+        ]
+      }
+    }
+  ],
+  "tierBands": [
+    {
+      "tier": 0,
+      "groups": [
+        "uc#0"
+      ],
+      "bounds": {
+        "x": 72,
+        "y": 12,
+        "width": 142.08333333333331,
+        "height": 78
+      }
+    },
+    {
+      "tier": 1,
+      "groups": [
+        "uc#1"
+      ],
+      "bounds": {
+        "x": 72,
+        "y": 150,
+        "width": 142.08333333333331,
+        "height": 77.5
+      }
+    },
+    {
+      "tier": 2,
+      "groups": [
+        "u#2",
+        "feed"
+      ],
+      "bounds": {
+        "x": 94,
+        "y": 287.5,
+        "width": 337.17529296875,
+        "height": 130
+      }
+    },
+    {
+      "tier": 3,
+      "groups": [
+        "dc#0",
+        "other"
+      ],
+      "bounds": {
+        "x": 72,
+        "y": 477.5,
+        "width": 359.17529296875,
+        "height": 133.5
+      }
+    },
+    {
+      "tier": 4,
+      "groups": [
+        "dc#1"
+      ],
+      "bounds": {
+        "x": 72,
+        "y": 671,
+        "width": 142.08333333333331,
+        "height": 55
+      }
+    },
+    {
+      "tier": 5,
+      "groups": [
+        "d#2"
+      ],
+      "bounds": {
+        "x": 72,
+        "y": 786,
+        "width": 142.08333333333331,
+        "height": 78
+      }
+    }
+  ],
+  "regions": [
+    {
+      "id": "tiers:0:1",
+      "kind": "tiers",
+      "upperTier": 0,
+      "lowerTier": 1,
+      "bounds": {
+        "x": 72,
+        "y": 90,
+        "width": 142.08333333333331,
+        "height": 60
+      }
+    },
+    {
+      "id": "tiers:1:2",
+      "kind": "tiers",
+      "upperTier": 1,
+      "lowerTier": 2,
+      "bounds": {
+        "x": 72,
+        "y": 227.5,
+        "width": 359.17529296875,
+        "height": 60
+      }
+    },
+    {
+      "id": "tiers:2:3",
+      "kind": "tiers",
+      "upperTier": 2,
+      "lowerTier": 3,
+      "bounds": {
+        "x": 72,
+        "y": 417.5,
+        "width": 359.17529296875,
+        "height": 60
+      }
+    },
+    {
+      "id": "tiers:3:4",
+      "kind": "tiers",
+      "upperTier": 3,
+      "lowerTier": 4,
+      "bounds": {
+        "x": 72,
+        "y": 611,
+        "width": 359.17529296875,
+        "height": 60
+      }
+    },
+    {
+      "id": "tiers:4:5",
+      "kind": "tiers",
+      "upperTier": 4,
+      "lowerTier": 5,
+      "bounds": {
+        "x": 72,
+        "y": 726,
+        "width": 142.08333333333331,
+        "height": 60
+      }
+    }
+  ],
+  "labels": [
+    {
+      "id": "node:\"up\":node",
+      "owner": {
+        "kind": "node",
+        "id": "up"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 115.647705078125,
+        "y": 347,
+        "width": 12.70458984375,
+        "height": 11
+      },
+      "text": "up",
+      "lines": [
+        "up"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    },
+    {
+      "id": "node:\"x\":node",
+      "owner": {
+        "kind": "node",
+        "id": "x"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 93.98974609375,
+        "y": 67,
+        "width": 6.0205078125,
+        "height": 11
+      },
+      "text": "x",
+      "lines": [
+        "x"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    },
+    {
+      "id": "node:\"y\":node",
+      "owner": {
+        "kind": "node",
+        "id": "y"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 139.071044921875,
+        "y": 164,
+        "width": 5.85791015625,
+        "height": 11
+      },
+      "text": "y",
+      "lines": [
+        "y"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    },
+    {
+      "id": "pill:{\"node\":\"y\",\"name\":\"p\",\"ordinal\":1}",
+      "owner": {
+        "kind": "node",
+        "id": "y"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "y",
+        "name": "p",
+        "ordinal": 1
+      },
+      "text": "p",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "p"
+      ],
+      "textRotation": -90,
+      "bounds": {
+        "x": 153.5,
+        "y": 192.1962890625,
+        "width": 11,
+        "height": 5.607421875
+      }
+    },
+    {
+      "id": "node:\"z\":node",
+      "owner": {
+        "kind": "node",
+        "id": "z"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 167.81494140625,
+        "y": 67,
+        "width": 5.3701171875,
+        "height": 11
+      },
+      "text": "z",
+      "lines": [
+        "z"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    },
+    {
+      "id": "node:\"a\":node",
+      "owner": {
+        "kind": "node",
+        "id": "a"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 114.57747395833331,
+        "y": 683,
+        "width": 6.01171875,
+        "height": 11
+      },
+      "text": "a",
+      "lines": [
+        "a"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    },
+    {
+      "id": "node:\"b\":node",
+      "owner": {
+        "kind": "node",
+        "id": "b"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 167.43684895833331,
+        "y": 553,
+        "width": 6.29296875,
+        "height": 11
+      },
+      "text": "b",
+      "lines": [
+        "b"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    },
+    {
+      "id": "pill:{\"node\":\"b\",\"name\":\"q\",\"ordinal\":1}",
+      "owner": {
+        "kind": "node",
+        "id": "b"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "b",
+        "name": "q",
+        "ordinal": 1
+      },
+      "text": "q",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "q"
+      ],
+      "textRotation": -90,
+      "bounds": {
+        "x": 165.08333333333331,
+        "y": 530.1962890625,
+        "width": 11,
+        "height": 5.607421875
+      }
+    },
+    {
+      "id": "node:\"c\":node",
+      "owner": {
+        "kind": "node",
+        "id": "c"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 186.43562825520831,
+        "y": 683,
+        "width": 5.29541015625,
+        "height": 11
+      },
+      "text": "c",
+      "lines": [
+        "c"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    },
+    {
+      "id": "node:\"lower\":node",
+      "owner": {
+        "kind": "node",
+        "id": "lower"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 139.07307942708331,
+        "y": 798,
+        "width": 28.5205078125,
+        "height": 11
+      },
+      "text": "lower",
+      "lines": [
+        "lower"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    },
+    {
+      "id": "node:\"peer\":node",
+      "owner": {
+        "kind": "node",
+        "id": "peer"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 372.977783203125,
+        "y": 545,
+        "width": 22.7197265625,
+        "height": 11
+      },
+      "text": "peer",
+      "lines": [
+        "peer"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    },
+    {
+      "id": "node:\"source\":node",
+      "owner": {
+        "kind": "node",
+        "id": "source"
+      },
+      "layer": "routed",
+      "role": "node",
+      "bounds": {
+        "x": 367.5,
+        "y": 342.5,
+        "width": 33.67529296875,
+        "height": 11
+      },
+      "text": "source",
+      "lines": [
+        "source"
+      ],
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 700,
+      "lineHeight": 11
+    }
+  ],
+  "lanes": [
+    {
+      "id": "lane:\"link-4\":2",
+      "owner": {
+        "kind": "link",
+        "id": "link-4"
+      },
+      "layer": "routed",
+      "group": "u#2",
+      "tier": 2,
+      "side": "right",
+      "x": 178.5,
+      "bounds": {
+        "x": 161.5,
+        "width": 34,
+        "y": 276.75,
+        "height": 151.5
+      }
+    },
+    {
+      "id": "perimeter:link-1",
+      "kind": "perimeter",
+      "owner": {
+        "kind": "link",
+        "id": "link-1"
+      },
+      "layer": "routed",
+      "group": "uc#0",
+      "tier": 0,
+      "side": "left",
+      "span": {
+        "top": 0,
+        "bottom": 2
+      },
+      "ring": 0,
+      "x": 1.25,
+      "bounds": {
+        "x": -4.5,
+        "y": 72.5,
+        "width": 11.5,
+        "height": 274
+      }
+    },
+    {
+      "id": "perimeter:link-3",
+      "kind": "perimeter",
+      "owner": {
+        "kind": "link",
+        "id": "link-3"
+      },
+      "layer": "routed",
+      "group": "uc#0",
+      "tier": 0,
+      "side": "left",
+      "span": {
+        "top": 1,
+        "bottom": 2
+      },
+      "ring": 1,
+      "aligned": true,
+      "x": -10.25,
+      "bounds": {
+        "x": -16,
+        "y": 139.25,
+        "width": 11.5,
+        "height": 219.25
+      }
+    },
+    {
+      "id": "perimeter:link-6",
+      "kind": "perimeter",
+      "owner": {
+        "kind": "link",
+        "id": "link-6"
+      },
+      "layer": "routed",
+      "group": "dc#0",
+      "tier": 3,
+      "side": "left",
+      "span": {
+        "top": 3,
+        "bottom": 5
+      },
+      "ring": 0,
+      "x": 41.25,
+      "bounds": {
+        "x": 35.5,
+        "y": 555.5,
+        "width": 11.5,
+        "height": 248
+      }
+    },
+    {
+      "id": "perimeter:link-8",
+      "kind": "perimeter",
+      "owner": {
+        "kind": "link",
+        "id": "link-8"
+      },
+      "layer": "routed",
+      "group": "feed",
+      "tier": 2,
+      "side": "right",
+      "span": {
+        "top": 2,
+        "bottom": 5
+      },
+      "ring": 0,
+      "x": 441.92529296875,
+      "bounds": {
+        "x": 436.17529296875,
+        "y": 348,
+        "width": 11.5,
+        "height": 455.5
+      }
+    }
+  ],
+  "bundles": [],
+  "junctions": [],
+  "labelBands": [
+    {
+      "id": "label-band:uc",
+      "group": "uc",
+      "host": "uc#0",
+      "owner": {
+        "kind": "group",
+        "id": "uc#0"
+      },
+      "layer": "routed",
+      "side": "top",
+      "bounds": {
+        "x": 72,
+        "y": 12,
+        "width": 142.08333333333331,
+        "height": 23
+      },
+      "clearance": 20
+    },
+    {
+      "id": "label-band:u",
+      "group": "u",
+      "host": "u#2",
+      "owner": {
+        "kind": "group",
+        "id": "u#2"
+      },
+      "layer": "routed",
+      "side": "bottom",
+      "bounds": {
+        "x": 94,
+        "y": 394.5,
+        "width": 56,
+        "height": 23
+      },
+      "clearance": 20
+    },
+    {
+      "id": "label-band:dc",
+      "group": "dc",
+      "host": "dc#0",
+      "owner": {
+        "kind": "group",
+        "id": "dc#0"
+      },
+      "layer": "routed",
+      "side": "top",
+      "bounds": {
+        "x": 72,
+        "y": 477.5,
+        "width": 142.08333333333331,
+        "height": 23
+      },
+      "clearance": 32.5
+    },
+    {
+      "id": "label-band:d",
+      "group": "d",
+      "host": "d#2",
+      "owner": {
+        "kind": "group",
+        "id": "d#2"
+      },
+      "layer": "routed",
+      "side": "bottom",
+      "bounds": {
+        "x": 72,
+        "y": 841,
+        "width": 142.08333333333331,
+        "height": 23
+      },
+      "clearance": 20
+    },
+    {
+      "id": "label-band:other",
+      "group": "other",
+      "owner": {
+        "kind": "group",
+        "id": "other"
+      },
+      "layer": "routed",
+      "side": "bottom",
+      "bounds": {
+        "x": 337.5,
+        "y": 588,
+        "width": 93.67529296875,
+        "height": 23
+      },
+      "clearance": 20
+    },
+    {
+      "id": "label-band:feed",
+      "group": "feed",
+      "owner": {
+        "kind": "group",
+        "id": "feed"
+      },
+      "layer": "routed",
+      "side": "top",
+      "bounds": {
+        "x": 337.5,
+        "y": 287.5,
+        "width": 93.67529296875,
+        "height": 23
+      },
+      "clearance": 20
+    },
+    {
+      "id": "label-band:north",
+      "group": "north",
+      "owner": {
+        "kind": "group",
+        "id": "north"
+      },
+      "layer": "routed",
+      "side": "top",
+      "bounds": {
+        "x": 12,
+        "y": -51,
+        "width": 245.5,
+        "height": 23
+      },
+      "clearance": 20
+    }
+  ],
+  "barDrops": [],
+  "groupLinks": [],
+  "obstacles": [],
+  "diagnostics": [
+    {
+      "stage": "placement",
+      "severity": "warning",
+      "code": "CENTRE_WINDOW_DECLINED",
+      "message": "u#2 declines its alignment: aligned it is 56.0 px wide and its window holds 47.0 px, so link-2 keeps a jog; routing completes it.",
+      "owners": [
+        {
+          "kind": "group",
+          "id": "u#2"
+        },
+        {
+          "kind": "link",
+          "id": "link-2"
+        }
+      ]
+    },
+    {
+      "stage": "placement",
+      "severity": "warning",
+      "code": "CENTRE_ALIGNMENT_INFEASIBLE",
+      "message": "link-4 keeps a jog: its port cannot reach the other port's x within its face; routing completes it.",
+      "owners": [
+        {
+          "kind": "link",
+          "id": "link-4"
+        }
+      ]
+    }
+  ],
+  "runtime": {
+    "stages": []
+  },
+  "frames": [
+    {
+      "id": "north",
+      "label": "north",
+      "kind": "canton",
+      "cells": [],
+      "box": {
+        "x": 12,
+        "y": -51,
+        "width": 245.5,
+        "height": 488.5
+      },
+      "tier": 0
+    },
+    {
+      "id": "u",
+      "label": "u",
+      "parent": "north",
+      "cells": [
+        "u#2"
+      ],
+      "box": {
+        "x": 32,
+        "y": -8,
+        "width": 205.5,
+        "height": 425.5
+      },
+      "tier": 0
+    },
+    {
+      "id": "uc",
+      "label": "uc",
+      "parent": "u",
+      "cells": [
+        "uc#0",
+        "uc#1"
+      ],
+      "box": {
+        "x": 52,
+        "y": 12,
+        "width": 165.5,
+        "height": 215.5
+      },
+      "tier": 0
+    },
+    {
+      "id": "d",
+      "label": "d",
+      "cells": [
+        "d#2"
+      ],
+      "box": {
+        "x": 52,
+        "y": 457.5,
+        "width": 202.08333333333331,
+        "height": 406.5
+      },
+      "tier": 3
+    },
+    {
+      "id": "dc",
+      "label": "dc",
+      "parent": "d",
+      "cells": [
+        "dc#0",
+        "dc#1"
+      ],
+      "box": {
+        "x": 72,
+        "y": 477.5,
+        "width": 162.08333333333331,
+        "height": 248.5
+      },
+      "tier": 3
+    }
+  ],
+  "groupLifts": [],
+  "reservations": [
+    {
+      "id": "nodeFloor:node:up:",
+      "kind": "nodeFloor",
+      "owner": {
+        "kind": "node",
+        "id": "up"
+      },
+      "producer": "course",
+      "revision": 2,
+      "activeFrom": "size",
+      "payload": {
+        "node": "up",
+        "min": {
+          "width": 56,
+          "height": 35
+        }
+      }
+    },
+    {
+      "id": "nodeFloor:node:x:",
+      "kind": "nodeFloor",
+      "owner": {
+        "kind": "node",
+        "id": "x"
+      },
+      "producer": "course",
+      "revision": 2,
+      "activeFrom": "size",
+      "payload": {
+        "node": "x",
+        "min": {
+          "width": 50,
+          "height": 35
+        }
+      }
+    },
+    {
+      "id": "nodeFloor:node:b:",
+      "kind": "nodeFloor",
+      "owner": {
+        "kind": "node",
+        "id": "b"
+      },
+      "producer": "course",
+      "revision": 2,
+      "activeFrom": "size",
+      "payload": {
+        "node": "b",
+        "min": {
+          "width": 87,
+          "height": 45
+        }
+      }
+    },
+    {
+      "id": "nodeFloor:node:lower:",
+      "kind": "nodeFloor",
+      "owner": {
+        "kind": "node",
+        "id": "lower"
+      },
+      "producer": "course",
+      "revision": 2,
+      "activeFrom": "size",
+      "payload": {
+        "node": "lower",
+        "min": {
+          "width": 68,
+          "height": 35
+        }
+      }
+    },
+    {
+      "id": "nodeFloor:node:source:",
+      "kind": "nodeFloor",
+      "owner": {
+        "kind": "node",
+        "id": "source"
+      },
+      "producer": "course",
+      "revision": 2,
+      "activeFrom": "size",
+      "payload": {
+        "node": "source",
+        "min": {
+          "width": 53.67529296875,
+          "height": 35
+        }
+      }
+    },
+    {
+      "id": "course:link:link-1:",
+      "kind": "course",
+      "owner": {
+        "kind": "link",
+        "id": "link-1"
+      },
+      "producer": "course",
+      "revision": 2,
+      "activeFrom": "sides-one",
+      "payload": {
+        "course": {
+          "link": "link-1",
+          "kind": "transit",
+          "side": "left",
+          "from": {
+            "face": "left"
+          },
+          "to": {
+            "face": "left"
+          },
+          "runs": [
+            "perimeter"
+          ]
+        },
+        "maxTurns": 2
+      }
+    },
+    {
+      "id": "course:link:link-3:",
+      "kind": "course",
+      "owner": {
+        "kind": "link",
+        "id": "link-3"
+      },
+      "producer": "course",
+      "revision": 2,
+      "activeFrom": "sides-one",
+      "payload": {
+        "course": {
+          "link": "link-3",
+          "kind": "transit",
+          "side": "left",
+          "from": {
+            "face": "left"
+          },
+          "to": {
+            "face": "bottom"
+          },
+          "runs": [
+            "perimeter",
+            "tier-gap"
+          ]
+        },
+        "maxTurns": 3
+      }
+    },
+    {
+      "id": "course:link:link-6:",
+      "kind": "course",
+      "owner": {
+        "kind": "link",
+        "id": "link-6"
+      },
+      "producer": "course",
+      "revision": 2,
+      "activeFrom": "sides-one",
+      "payload": {
+        "course": {
+          "link": "link-6",
+          "kind": "transit",
+          "side": "left",
+          "from": {
+            "face": "left"
+          },
+          "to": {
+            "face": "left"
+          },
+          "runs": [
+            "perimeter"
+          ]
+        },
+        "maxTurns": 2
+      }
+    },
+    {
+      "id": "course:link:link-8:",
+      "kind": "course",
+      "owner": {
+        "kind": "link",
+        "id": "link-8"
+      },
+      "producer": "course",
+      "revision": 2,
+      "activeFrom": "sides-one",
+      "payload": {
+        "course": {
+          "link": "link-8",
+          "kind": "transit",
+          "side": "right",
+          "from": {
+            "face": "right"
+          },
+          "to": {
+            "face": "right"
+          },
+          "runs": [
+            "perimeter"
+          ]
+        },
+        "maxTurns": 2
+      }
+    }
+  ],
+  "courses": [
+    {
+      "link": "link-1",
+      "kind": "transit",
+      "side": "left",
+      "from": {
+        "face": "left"
+      },
+      "to": {
+        "face": "left"
+      },
+      "runs": [
+        "perimeter"
+      ]
+    },
+    {
+      "link": "link-3",
+      "kind": "transit",
+      "side": "left",
+      "from": {
+        "face": "left"
+      },
+      "to": {
+        "face": "bottom"
+      },
+      "runs": [
+        "perimeter",
+        "tier-gap"
+      ]
+    },
+    {
+      "link": "link-6",
+      "kind": "transit",
+      "side": "left",
+      "from": {
+        "face": "left"
+      },
+      "to": {
+        "face": "left"
+      },
+      "runs": [
+        "perimeter"
+      ]
+    },
+    {
+      "link": "link-8",
+      "kind": "transit",
+      "side": "right",
+      "from": {
+        "face": "right"
+      },
+      "to": {
+        "face": "right"
+      },
+      "runs": [
+        "perimeter"
+      ]
+    }
+  ],
+  "canvas": {
+    "x": -16,
+    "y": -51,
+    "width": 463.67529296875,
+    "height": 915
+  },
+  "feedSplits": [],
+  "freeze": {
+    "version": 1,
+    "topology": [
+      {
+        "node": "up",
+        "ports": [
+          {
+            "ref": {
+              "node": "up",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "left",
+            "courseHint": true,
+            "naturalSide": "top"
+          },
+          {
+            "ref": {
+              "node": "up",
+              "anonymous": true,
+              "ordinal": 2
+            },
+            "side": "top"
+          },
+          {
+            "ref": {
+              "node": "up",
+              "anonymous": true,
+              "ordinal": 3
+            },
+            "side": "left",
+            "courseHint": true,
+            "naturalSide": "top"
+          }
+        ]
+      },
+      {
+        "node": "x",
+        "ports": [
+          {
+            "ref": {
+              "node": "x",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "left",
+            "courseHint": true,
+            "naturalSide": "bottom"
+          }
+        ]
+      },
+      {
+        "node": "y",
+        "ports": [
+          {
+            "ref": {
+              "node": "y",
+              "name": "p",
+              "ordinal": 1
+            },
+            "side": "bottom"
+          },
+          {
+            "ref": {
+              "node": "y",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "bottom"
+          }
+        ]
+      },
+      {
+        "node": "z",
+        "ports": [
+          {
+            "ref": {
+              "node": "z",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "bottom"
+          }
+        ]
+      },
+      {
+        "node": "a",
+        "ports": [
+          {
+            "ref": {
+              "node": "a",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "bottom"
+          }
+        ]
+      },
+      {
+        "node": "b",
+        "ports": [
+          {
+            "ref": {
+              "node": "b",
+              "name": "q",
+              "ordinal": 1
+            },
+            "side": "top"
+          },
+          {
+            "ref": {
+              "node": "b",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "left",
+            "courseHint": true,
+            "naturalSide": "bottom"
+          }
+        ]
+      },
+      {
+        "node": "c",
+        "ports": [
+          {
+            "ref": {
+              "node": "c",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "bottom"
+          }
+        ]
+      },
+      {
+        "node": "lower",
+        "ports": [
+          {
+            "ref": {
+              "node": "lower",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "top"
+          },
+          {
+            "ref": {
+              "node": "lower",
+              "anonymous": true,
+              "ordinal": 2
+            },
+            "side": "left",
+            "courseHint": true,
+            "naturalSide": "top"
+          },
+          {
+            "ref": {
+              "node": "lower",
+              "anonymous": true,
+              "ordinal": 3
+            },
+            "side": "top"
+          },
+          {
+            "ref": {
+              "node": "lower",
+              "anonymous": true,
+              "ordinal": 4
+            },
+            "side": "right",
+            "courseHint": true,
+            "naturalSide": "top"
+          }
+        ]
+      },
+      {
+        "node": "peer",
+        "ports": [
+          {
+            "ref": {
+              "node": "peer",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "top"
+          }
+        ]
+      },
+      {
+        "node": "source",
+        "ports": [
+          {
+            "ref": {
+              "node": "source",
+              "anonymous": true,
+              "ordinal": 1
+            },
+            "side": "right",
+            "courseHint": true,
+            "naturalSide": "bottom"
+          },
+          {
+            "ref": {
+              "node": "source",
+              "anonymous": true,
+              "ordinal": 2
+            },
+            "side": "bottom"
+          }
+        ]
+      }
+    ],
+    "floors": [
+      {
+        "node": "up",
+        "size": {
+          "width": 50,
+          "height": 35
+        }
+      },
+      {
+        "node": "x",
+        "size": {
+          "width": 50,
+          "height": 35
+        }
+      },
+      {
+        "node": "y",
+        "size": {
+          "width": 68,
+          "height": 45
+        }
+      },
+      {
+        "node": "z",
+        "size": {
+          "width": 50,
+          "height": 35
+        }
+      },
+      {
+        "node": "a",
+        "size": {
+          "width": 50,
+          "height": 35
+        }
+      },
+      {
+        "node": "b",
+        "size": {
+          "width": 87,
+          "height": 45
+        }
+      },
+      {
+        "node": "c",
+        "size": {
+          "width": 50,
+          "height": 35
+        }
+      },
+      {
+        "node": "lower",
+        "size": {
+          "width": 50,
+          "height": 35
+        }
+      },
+      {
+        "node": "peer",
+        "size": {
+          "width": 50,
+          "height": 35
+        }
+      },
+      {
+        "node": "source",
+        "size": {
+          "width": 53.67529296875,
+          "height": 35
+        }
+      }
+    ],
+    "courses": [
+      {
+        "link": "link-1",
+        "kind": "transit",
+        "side": "left",
+        "from": {
+          "face": "left"
+        },
+        "to": {
+          "face": "left"
+        },
+        "runs": [
+          "perimeter"
+        ]
+      },
+      {
+        "link": "link-3",
+        "kind": "transit",
+        "side": "left",
+        "from": {
+          "face": "left"
+        },
+        "to": {
+          "face": "bottom"
+        },
+        "runs": [
+          "perimeter",
+          "tier-gap"
+        ]
+      },
+      {
+        "link": "link-6",
+        "kind": "transit",
+        "side": "left",
+        "from": {
+          "face": "left"
+        },
+        "to": {
+          "face": "left"
+        },
+        "runs": [
+          "perimeter"
+        ]
+      },
+      {
+        "link": "link-8",
+        "kind": "transit",
+        "side": "right",
+        "from": {
+          "face": "right"
+        },
+        "to": {
+          "face": "right"
+        },
+        "runs": [
+          "perimeter"
+        ]
+      }
+    ],
+    "feedSplits": [],
+    "nodeFloors": [
+      {
+        "node": "up",
+        "size": {
+          "width": 56,
+          "height": 35
+        }
+      },
+      {
+        "node": "x",
+        "size": {
+          "width": 50,
+          "height": 35
+        }
+      },
+      {
+        "node": "b",
+        "size": {
+          "width": 87,
+          "height": 45
+        }
+      },
+      {
+        "node": "lower",
+        "size": {
+          "width": 68,
+          "height": 35
+        }
+      },
+      {
+        "node": "source",
+        "size": {
+          "width": 53.67529296875,
+          "height": 35
+        }
+      }
+    ]
+  },
+  "alignmentTargets": {
+    "up|top": [],
+    "b|top": [],
+    "peer|top": [
+      {
+        "port": "port:[\"peer\",true,null,1]",
+        "link": "link-9",
+        "far": "port:[\"source\",true,null,2]",
+        "owes": "any",
+        "pass": 1,
+        "state": "kept"
+      }
+    ],
+    "lower|top": [
+      {
+        "port": "port:[\"lower\",true,null,1]",
+        "link": "link-5",
+        "far": "port:[\"a\",true,null,1]",
+        "owes": "vertical",
+        "pass": 1,
+        "state": "kept"
+      },
+      {
+        "port": "port:[\"lower\",true,null,3]",
+        "link": "link-7",
+        "far": "port:[\"c\",true,null,1]",
+        "owes": "vertical",
+        "pass": 1,
+        "state": "kept"
+      }
+    ]
+  },
+  "anchorTier": 0,
+  "alignedExtents": {},
+  "frozenChords": [
+    "link-2",
+    "link-5",
+    "link-7",
+    "link-9"
+  ],
+  "stemDepths": []
+}

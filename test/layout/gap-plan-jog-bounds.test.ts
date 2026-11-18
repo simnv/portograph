@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
-import { planGap, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
+import { planGap, tierGapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
+import { tierGaps } from '../../src/layout/gap-runs.js';
+import { moveBands } from '../../src/layout/gap-room.js';
+import { rebuildLaneExtents } from '../../src/layout/lanes.js';
+import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
+import { rebuildRegions } from '../../src/layout/regions.js';
+import { moveGroup } from '../../src/layout/skeleton-geometry.js';
+import type { LayoutModel } from '../../src/model/layout.js';
 import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../../src/theme/geometry.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createAttempt } from './phase-two-fixture.js';
@@ -61,4 +68,43 @@ describe('a jogged drop holds the frame edges on both sides of its gap, on a she
       }, 120000);
     }
   }
+});
+
+/**
+ * Review 2: the edge of a lower frame bounds a jog whatever the sign of its bound. The staged draft is the 7e output (`bundles`) of the sheet
+ * above without the canton `south` (generic names): the replay puts the last cell of `u` in its child frame, raises the sibling group `other` by
+ * 55 px and draws every link 24 px wide, so the margin is 22. `north` ends at 457.50 and the frame `d` starts at 500, 22.50 below the band top of
+ * tier 3 (477.50): its bound is -0.50. Dropped, the jog of link-4 stood at 498 (2 px from `d`) with no growth and no residual; held, the plan
+ * grows the gap 1.50 px by name and the jog stands 22 px from each edge.
+ */
+describe('a jogged drop holds a lower frame that starts past its band top (dense-16x9 ticket 52, review 2)', () => {
+  it('grows the gap by name and seats the jog the margin from both frame edges', () => {
+    const model = JSON.parse(readFileSync(new URL('../fixtures/staged/a-jog-between-a-frame-and-a-lower-frame-past-its-band-top.draft.json', import.meta.url), 'utf8')) as LayoutModel;
+    const frames = model.document.frames!;
+    frames['u']!.cells = ['uc#0']; frames['uc']!.cells = ['u#2', 'uc#1'];
+    model.groups['uc#0']!.frame = 'u'; model.groups['u#2']!.frame = 'uc';
+    for (const link of model.links) link.strokeWidth = 24;
+    moveGroup(model, model.groups['other']!, 0, -55);
+    rebuildNodeGeometry(model, model.groups['other']!.nodes, 'current');
+    rebuildRegions(model); rebuildLaneExtents(model);
+    const read = () => tierGapPlan(model, tierGaps(model).find(gap => gap.above === 2 && gap.below === 3)!);
+    const before = model.frames!.find(item => item.id === 'd')!.box.y, band = model.tierBands.find(item => item.tier === 3)!.bounds!.y;
+    // The edge of `d` stands past the band top by more than the margin (`d` starts 22.50 below it): a bound of -0.50 below the band.
+    expect(before - band).toBeGreaterThan(22);
+    // The plan grows the gap as 7f applies it, until it asks for nothing (a bounded replay).
+    const plans: ReturnType<typeof read>[] = [];
+    for (let round = 0; round < 3; round++) {
+      const plan = read();
+      plans.push(plan);
+      if (plan.growth <= 1e-9) break;
+      moveBands(model, new Map([[3, plan.growth]]));
+    }
+    expect(plans.at(-1)!.growth).toBeCloseTo(0, 6);
+    expect(plans.some(plan => plan.setBy === 'link-4#1' && plan.growth > 0)).toBe(true);
+    for (const plan of plans) expect(plan.residual).toEqual([]);
+    const north = model.frames!.find(item => item.id === 'north')!.box, top = north.y + north.height, foot = model.frames!.find(item => item.id === 'd')!.box.y;
+    const jog = (plans.at(-1)!.parts.find(part => part.id === 'link-4#1') as { jog?: number }).jog!;
+    expect(jog - top).toBeGreaterThanOrEqual(22 - 1e-6);
+    expect(foot - jog).toBeGreaterThanOrEqual(22 - 1e-6);
+  });
 });

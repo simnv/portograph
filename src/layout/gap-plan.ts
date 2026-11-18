@@ -1324,8 +1324,9 @@ function gapPlanOf(model: LayoutModel, gap: TierGap, dodging: boolean): GapPlan 
     if (tiers.last === gap.above) {
       if (bottom(box) + margin > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + margin });
     } else if (tiers.first === gap.below) {
-      const bound = margin + bandTop - box.y;
-      if (bound > 0) obstacles.push({ x0, x1, anchor: 'below', bound });
+      // Whatever the sign of its bound, as a group box and a node (review 2): a jog can stand below the band top, and the edge of a frame
+      // that starts past it still bounds the jog.
+      obstacles.push({ x0, x1, anchor: 'below', bound: margin + bandTop - box.y });
     }
   }
   // A span that crosses a through-lane's reserved run is residual (Section 1 item 6).

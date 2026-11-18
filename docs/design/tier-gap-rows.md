@@ -168,6 +168,8 @@ never sees.
   edge, stand outside every member box), so a frame that ends at the upper band is anchored to that band, one that starts at the
   lower band to that one, with the group-edge margin. Every frame box is read, as G6 reads it (`groupBoxes`); until dense-16x9
   ticket 52 only a canton's was, and a row stood 5.75 px below the edge of a frame that holds a child frame in its last sub-tier.
+  A frame anchored to the lower band keeps its bound whatever its sign, as a group box and a node do: a jog can stand below the
+  band top, and the edge of a frame that starts past it still bounds the jog (ticket 52, review 2).
 - **O6, cycles.** O1 and O2 together can form a cycle. One shape: two aligned node pairs joined by
   an X (tickets 41 and 43), where each part's upper leg stands on the other's lower x. Another:
   A 0 → 100, B 100 → 200, C 200 → 0, a pure O2 three-cycle. Rule: while the graph of O1 ∪ O2 has a
