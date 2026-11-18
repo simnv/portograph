@@ -1,0 +1,32 @@
+# Expected: the nodes of `an-allocated-run-ends-on-the-tip-of-a-lone-port` listed in reverse, with `moveBeforeGrow`. The seat set of stage 6
+# puts `mid` left of the frame `zone`, so the lane of the router-switch link, foreign to `zone`, and the lane of `b`-`e`, which ends in `zone`,
+# pass the same margin of the cell `zone#2`. A frame's held lanes are reserved before the lanes foreign to it (decision review ticket 23), also
+# a held lane of the tier pass: the held lane stands next to the cell and the foreign lane beyond the room the frame grows to hold it. Before
+# dense-16x9 ticket 46 the foreign lane was reserved first, the held lane stood beyond it, and 7a threw "Lane crosses occupied group zone#2".
+# Every gate passes. Test-only input owned by dense-16x9 ticket 46; test/layout/r3-move-before-grow.test.ts reads it.
+portograph: 2
+layout: {moveBeforeGrow: true}
+profile: network
+groups:
+  wan: { tier: 0 }
+  site: { tier: 1 }
+  zone: { parent: site }
+nodes:
+  e: { group: site, class: server }
+  d: { group: site, class: server }
+  c: { group: zone, class: ntp-stratum2 }
+  b: { group: zone, class: ntp-stratum2 }
+  a: { group: zone, class: load-balancer }
+  mid: { group: site, class: switch }
+  router: { group: site, class: router }
+  provider: { group: wan, class: provider }
+links:
+  - [router, provider, { class: dashed }]
+  - [router, mid, { class: physical, route: orthogonal }]
+  - [router, c, { class: physical, route: orthogonal }]
+  - [router, b, { class: physical, route: orthogonal }]
+  - [c, a, { class: physical, route: orthogonal }]
+  - [mid, a, { class: physical, route: orthogonal }]
+  - [a, d, { class: physical, route: orthogonal }]
+  - [b, e, { class: physical, route: orthogonal }]
+  - [mid, router, { class: physical, route: orthogonal }]

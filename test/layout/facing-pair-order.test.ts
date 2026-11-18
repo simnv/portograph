@@ -22,6 +22,15 @@ import { reversed } from '../../scripts/r3-lib.mjs';
  */
 const yaml = readFileSync(new URL('../../goldens/synthetic/an-allocated-run-ends-on-the-tip-of-a-lone-port.yaml', import.meta.url), 'utf8');
 const inputs = { 'as written': yaml, 'links reversed': reversed(yaml, 'links') as string, 'nodes reversed': reversed(yaml, 'nodes') as string };
+/**
+ * The parsed sheet, with `layout.moveBeforeGrow` set on the document when `on` (ADR-0027). With the option the seat set of stage 6 put `mid` left of
+ * the zone in the `nodes` order, and 7a threw "Lane crosses occupied group": a held lane reserved after a foreign lane stood beyond it (dense-16x9
+ * ticket 46).
+ */
+const parsed = (text: string, on: boolean) => {
+  const document = parse(text);
+  return on ? { ...document, layout: { ...document.layout, moveBeforeGrow: true } } : document;
+};
 
 /** The links between `a` and `b` in x order of their ends at `at`. */
 const order = (model: LayoutModel, a: string, b: string, at: string): string[] => model.links
@@ -40,9 +49,10 @@ describe('a facing pair keeps one order at both ends', () => {
     }, 60000);
   }
 
-  for (const [name, text] of Object.entries(inputs)) {
-    it(`passes every gate (${name})`, async () => {
-      const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  for (const [name, text] of Object.entries(inputs)) for (const on of [false, true]) {
+    it(`passes every gate (${name}${on ? ', layout.moveBeforeGrow' : ''})`, async () => {
+      const model = await layout(parsed(text, on), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      expect(model.document.layout?.moveBeforeGrow === true).toBe(on);
       const report = score(model).snapshot;
       expect(Object.entries(report.gates).filter(([, gate]) => gate.violations.length).map(([id]) => id)).toEqual([]);
       expect(model.removedLinks ?? []).toEqual([]);

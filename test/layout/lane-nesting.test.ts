@@ -29,9 +29,11 @@ const inputs = orders3(fixture('an-allocated-run-ends-on-the-tip-of-a-lone-port'
 /** The dedicated sheet: `u` in tier 0, `v` in tier 2, the anchor tier between, the two links written both ways (`v` is held on a tie). */
 const pairInputs = orders3(fixture('a-facing-pair-nests-its-lanes-in-the-face-order'));
 
-/** The model 7a receives. */
-async function beforeLanes(text: string): Promise<LayoutModel> {
-  const model = sizeNodes(sidesOne(resolve(parse(text))));
+/** The model 7a receives; with `layout.moveBeforeGrow` set on the parsed document when `on` (the seat sets of stage 6, dense-16x9 ticket 46). */
+async function beforeLanes(text: string, on = false): Promise<LayoutModel> {
+  const document = parse(text);
+  const model = sizeNodes(sidesOne(resolve(on ? { ...document, layout: { ...document.layout, moveBeforeGrow: true } } : document)));
+  expect(model.document.layout?.moveBeforeGrow === true).toBe(on);
   await skeleton(model, { createAttempt });
   return rows(sidesTwo(model));
 }
@@ -53,9 +55,9 @@ function orders(model: LayoutModel, node: string): { ports: string[]; lanes: str
 }
 
 describe('7a nests the lanes of a facing pair in the face order', () => {
-  for (const [name, text] of Object.entries(inputs)) {
-    it(`the router-switch lanes keep the order of both faces (${name})`, async () => {
-      const placed = lanes(await beforeLanes(text));
+  for (const [name, text] of Object.entries(inputs)) for (const on of [false, true]) {
+    it(`the router-switch lanes keep the order of both faces (${name}${on ? ', layout.moveBeforeGrow' : ''})`, async () => {
+      const placed = lanes(await beforeLanes(text, on));
       const mid = orders(placed, 'mid'), router = orders(placed, 'router');
       expect(mid.ports).toHaveLength(2);
       expect(router.ports).toEqual(mid.ports);
