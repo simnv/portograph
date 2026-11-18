@@ -376,11 +376,10 @@ interface SeatOutcome { kept: Set<string>; dx: number; from: number; capped: Set
  * chords), each held chord that follows a moved port, and the reservations a resize keeps, read on the box the group fits (`seatRefusal`). A
  * refused seat is undone whole and the next one is tried; when every try is refused, the body stays and `ALIGNMENT_SEAT_REFUSED` names the
  * first guard that refused (R6). A target outside the seat is named by the step (`CENTRE_ALIGNMENT_INFEASIBLE`); one whose own edges reach an
- * overlay wall is named to `stopped`. `siblings` bounds every growth and slide: the free row space beside the body, or the body itself for a
- * member of a pooled run (the step's `inBody`); `window` bounds a slide.
+ * overlay wall is named to `stopped`.
  */
 function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, wanted: ReadonlyMap<string, number>, owes: (key: string) => boolean,
-  siblings: WideningLimit, window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean, kept?: ReadonlySet<string>,
+  window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean, kept?: ReadonlySet<string>,
   recordedFrom?: number): SeatOutcome {
   // The width of a seated body is measured from the record (ADR-0027, clause 4): the width before its first seat, never a box an earlier pass grew.
   const box = node.bounds!, from = Math.min(box.width, recordedFrom ?? Infinity), none: SeatOutcome = { kept: new Set(), dx: 0, from, capped: new Set() };
@@ -390,6 +389,7 @@ function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, want
   if (!targets.length) return none;
   // A body stage 5 seated (a stagger member, a feeding chain) or a grid cell keeps its place in the row; it aligns inside the width it may grow to.
   const movable = !isGridGroup(model, group.id) && !model.staggerRows?.some(row => row.group === group.id) && chainBlockOf(model, node.id) === undefined;
+  const siblings = siblingLimit(model, group, node);
   const refusedByCap: SeatCandidate[] = [];
   const candidates = seatCandidates(node, targets, { siblings, window, stops, kept }, movable, seatCap(model, node, from), refusedByCap);
   const saved = JSON.stringify(node);
@@ -1589,10 +1589,11 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const owedBefore = seated ? seatOwes(model, seats, links, direct) : () => true, owes = (key: string): boolean => owedBefore(key) || kept.has(key);
   // A group of a pooled run (`rowSeats`, dense-16x9 ticket 27) aligns inside the bodies it has: no member of the run stands at its own feeds, so a
   // growth toward them would only widen the unit and push the other members further off; its feeds pull the unit, as a solid block's feeds do.
-  // One limit for both branches (R1): the growth of `alignSide` and every seat (slide, growth in place, move+grow) of `seatNode` read it. A
-  // seat that grew a pooled body past it was undone with the whole step after the clamp, main move included, every pass (dense-16x9 ticket 47).
   const pooled = rowSeat.has(id);
   const inBody = (node: LayoutNode, limit: WideningLimit): WideningLimit => pooled ? { low: Math.max(limit.low, node.bounds!.x), high: Math.min(limit.high, right(node.bounds!)) } : limit;
+  // The group after its main move and before any seat (dense-16x9 ticket 47): the step goes back to it when the clamp carries every seat it made off
+  // its feeds, and keeps the main move.
+  const beforeSeats = seated ? JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] } : undefined;
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
     const stops = walls.get(nodeId)!;
@@ -1612,7 +1613,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const keptHere = record === undefined ? new Set([...kept].filter(key => nodePorts.has(key))) : Object.hasOwn(record, nodeId) ? new Set(record[nodeId]!.ports) : undefined;
     const recorded = record !== undefined && Object.hasOwn(record, nodeId) ? record[nodeId]! : undefined;
     const seatedFrom = node.bounds!.x;
-    const seat = seatNode(model, group, node, wanted, owes, inBody(node, siblingLimit(model, group, node)), inBody(node, rowWindow), stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from);
+    const seat = seatNode(model, group, node, wanted, owes, inBody(node, rowWindow), stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from);
     for (const key of seat.kept) aligned.add(key);
     // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
     const box = node.bounds!;
@@ -1644,6 +1645,14 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
       if (warn) placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
     }
   }
+  // The window of the step, read once the group is packed and fitted (`settle`).
+  let low = -Infinity, high = Infinity;
+  /**
+   * The rest of the step on the geometry it has: the row pack, the region fit, the window, the clamp, and the post-conditions. A window that
+   * cannot hold the group or a broken post-condition declines the step whole (the result to return); otherwise the ports off their feed are
+   * unresolved. Run once, and once more when the clamp carries every seat off its feeds (dense-16x9 ticket 47).
+   */
+  const settle = (): { unresolved: Set<string>; group: LayoutGroup; notes: TargetNotes } | undefined => {
   // Per row, not per row order: the first node of a grid row does not have to clear the last node
   // of the row above it, and pushing it clear would shear the grid into a staircase.
   for (const row of packRowsOf(model, group)) {
@@ -1656,7 +1665,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   fitRegionGroup(model, group);
   // The window is the same one the push respects. A left flank bounds this group as a right flank
   // does, and the final clamp reads `low`. A bound that only moves the group first is undone.
-  const { low, high } = stepWindow(model, context, tier, list, id, previous, tail);
+  ({ low, high } = stepWindow(model, context, tier, list, id, previous, tail));
   if (group.bounds!.width > high - low) {
     // A declined step leaves every feed of the group off its x: it names them (R6, architecture-2 ticket 31).
     if (warn && seats.size) {
@@ -1690,14 +1699,38 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const port = group.nodes.flatMap(id => model.nodes[id]!.ports).find(port => portId(port.ref) === key)!;
     if (Math.abs(port.anchor!.x - want) > 0.5) unresolved.add(key);
   }
-  const endMisses = misses();
+  return undefined;
+  };
+  const declined = settle();
+  if (declined !== undefined) return declined;
+  let endMisses = misses();
   // A seat is judged where its step ends. By default this is ticket 71's rule for a body whose growth the centre rule gave back (`givenBack`); with
-  // `layout.moveBeforeGrow` it holds for every body (ADR-0027, clause 5). A step that widens such a body
-  // and leaves every aligned port of the group off its x after the pack and the clamp is declined whole, as a window that cannot hold the group is:
-  // the group stands near its feed with the widths it began the step with, and the aligned targets are named as alignments the row cannot hold (R6).
+  // `layout.moveBeforeGrow` it holds for every body (ADR-0027, clause 5). A step that widens such a body and leaves every aligned port of the group
+  // off its x after the pack and the clamp gives that alignment up, and the aligned targets are named as alignments the row cannot hold (R6).
+  // - With the option the seats alone are withdrawn (dense-16x9 ticket 47, ruling of 2026-11-18: a seat that survives the step window stands; one
+  //   the clamp carries off its feeds is withdrawn alone): the group goes back to where its main move put it, before any seat, and the rest of the
+  //   step runs again on that geometry. A seat the clamp leaves on a feed stands, and the clause does not hold.
+  // - Without it the step is declined whole, as a window that cannot hold the group is: the group stands near its feed with the widths it began the
+  //   step with. A whole-step decline undoes the alignment and the main move; the tier pack (`packClear`) and the stand near the feed can still
+  //   move the group.
   // The publication check replays this step, so it reads the same record (R1, R5).
   if (aligned.size && [...aligned].every(key => (endMisses.get(key) ?? 0) > 0.5)
     && group.nodes.some(nodeId => (seated || (model.givenBack !== undefined && Object.hasOwn(model.givenBack, nodeId))) && model.nodes[nodeId]!.bounds!.width > saved.nodes.find(node => node.id === nodeId)!.bounds!.width + EPS)) {
+    if (beforeSeats !== undefined) {
+      const withdrawn = [...new Set(beforeSeats.nodes.filter(node => node.ports.some(port => aligned.has(portId(port.ref)))).map(node => node.id))].sort();
+      if (warn) for (const nodeId of withdrawn) {
+        const named = [...new Set(model.nodes[nodeId]!.ports.map(port => portId(port.ref)).filter(key => aligned.has(key)).map(key => seats.get(key)!.link))].sort();
+        placementWarning(model, SEAT_REFUSED, `${nodeId} keeps its place and width: the clamp into the step window carries its seat off its feeds; ${named.join(', ')} keep${named.length === 1 ? 's' : ''} a jog and routing completes ${named.length === 1 ? 'it' : 'them'}.`, named);
+      }
+      Object.assign(group, beforeSeats.group);
+      for (const node of beforeSeats.nodes) model.nodes[node.id] = node;
+      // A recorded seat this step withdrew gives its growth back again (ADR-0027, clause 4), on the geometry before the seats.
+      for (const nodeId of notes.unseated ?? []) giveBackGrowth(model, model.nodes[nodeId]!, record![nodeId]!.from, record![nodeId]!.at);
+      notes.seated.clear(); notes.grown.clear(); aligned.clear();
+      const again = settle();
+      if (again !== undefined) return again;
+      endMisses = misses();
+    } else {
     if (warn) for (const feed of own) {
       if (!aligned.has(portId(feed.child.ref))) continue;
       placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
@@ -1708,6 +1741,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     standNearFeed(model, context, tier, id, saved.group, began + Math.max(farthestLeft, Math.min(toMean, farthestRight)), low, high);
     // The step is declined whole: the record holds no growth or seat of it, and no decline judged against its geometry stands (ticket 66).
     return { unresolved: new Set(wanted.keys()), group: saved.group, notes: { ...notes, grown: new Map(), declined: new Map(), seated: new Map(), unseated: new Set() } };
+    }
   }
   // A step that leaves fewer verticals standing than it found (ticket 65) keeps the geometry it found, clamped into its window, when that keeps more
   // and passes the same post-conditions and the overlay guard (ticket 66: no overlay link the step draws straight loses its straight chord). A keep

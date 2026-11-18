@@ -1357,9 +1357,8 @@ A run is also broken by a group the step does not centre (a bar, a group with no
 and between groups that a lane of 7a parts. The main move of a member the unit moves off its own x goes toward its seat; every other group moves
 toward its own mean, as before. The main move's overlay walls, the clamp into the step window and every guard of the step hold as they do for a
 group's own mean, so the seat stands inside the row's slack and every bound (frames, lanes, flanks, held chords). A member the unit moves off
-its own x aligns inside the bodies it has (no growth and, with `moveBeforeGrow`, no seat slide; the seat reads the same body limit as the growth,
-`seatNode` as `alignSide`, dense-16x9 ticket 47: a seat that grew a pooled body past it was carried off its feed by the clamp, and the step was
-declined whole, main move included, every pass): a growth would widen the unit and push the other
+its own x aligns inside the bodies it has (no growth; with `moveBeforeGrow` its seat may grow the body, and the step judges that seat
+after the clamp, as clause 5 below says): a growth would widen the unit and push the other
 members further off, so its feeds pull the unit and the ports its body does not reach are named (`CENTRE_ALIGNMENT_INFEASIBLE`). Such a member
 leaves its wanted ports unresolved by design, so the publication check excuses them only while its replay leaves the group's box and bodies
 where they stand (R5). The step measures a member's progress to its seat, not to its own feeds: measured to its feeds, a member on one side
@@ -1427,7 +1426,11 @@ alignment cap `ALIGNMENT_CAP_TIMES` = 5 times the width the node needs for itsel
 `ALIGNMENT_MAX_GROWTH` = 12 (`alignmentAllowance`). A seat that slides or grows a body is recorded (`alignmentSeats`, kept through
 publication with `alignmentTargets`) and owns the body: the main move reads only its kept feeds, and a seat whose kept port no longer
 stands is withdrawn and gives the body back to the box it had before its first seat. The centre rule runs its passes once (no
-`givenBack` record), and a step that widens any body and leaves every aligned port of its group off its feed is declined whole (clause 5).
+`givenBack` record). A step that widens any body and leaves every aligned port of its group off its feed after the clamp withdraws its seats alone
+(clause 5; dense-16x9 ticket 47, ruling of 2026-11-18): a seat that survives the step window stands, and one that the clamp carries off its feeds
+is withdrawn (`ALIGNMENT_SEAT_REFUSED`, naming the clamp); the group goes back to where its main move put it, and the rest of the step runs
+again there. Without the option such a step is declined whole, main move included (ticket 71, for a body whose growth was given back). A
+whole-step decline undoes the alignment; the tier pack (`packClear`) can still move the group clear of the group before it.
 At 7e a bent bundle block keeps the start of a face whose seat keeps a port. The publication check refuses a seat record in a model
 without the option, and a seat whose kept port stands off its feed, whatever the centring replay excuses (R5). ADR-0027 states the rule,
 its trades, its known failures and its acceptance set.

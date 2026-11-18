@@ -80,8 +80,9 @@ describe('the three regression classes of a per-step decline', () => {
   // Under the alignment cap (ADR-0027) `w1` of `widened-child-packs-tier` stays 52 px wide: its two parents stand more than five times its need
   // apart. The premise, a child that the passes widen, is rebuilt with a label that makes the body need more: `w1` then stood 272 px wide over
   // both parents, with the 2 bends the test pinned.
-  // Expected to fail: 2 bends before, now 5; `w1` stays 139 px, the step that grows it is declined (ticket 15).
-  it.fails('pass order: widened-child-packs-tier keeps the growth a later pass completes (bends 2)', async () => {
+  // 2 bends before, 5 while the step that grows `w1` was declined whole (ticket 15), 2 again since dense-16x9 ticket 47: a seat the clamp carries
+  // off its feeds is withdrawn alone, and the main move of the step stands.
+  it('pass order: widened-child-packs-tier keeps the growth a later pass completes (bends 2)', async () => {
     const widenedChild = source('widened-child-packs-tier').replace('label: "w1"', 'label: "w1 route reflector wide"');
     expect(widenedChild).not.toBe(source('widened-child-packs-tier'));
     expect(bends(await runText(widenedChild))).toBe(2);

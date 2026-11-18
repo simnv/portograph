@@ -1,0 +1,60 @@
+# Expected (dense-16x9 ticket 47, ruling of 2026-11-18): with `layout.moveBeforeGrow: true` (ADR-0027) a seat that survives the step window
+# stands; a seat that the clamp of the step carries off its feeds is withdrawn alone, and the main move of the step stands. `row-a` and `row-b`
+# are fed by `hub` and stand as one unit. As written, the seat of `node-b` grows the body over its feed, the clamp carries the port off again,
+# and the seat is withdrawn (`ALIGNMENT_SEAT_REFUSED` names the clamp): `row-b` stands at x 202 where its main move put it, `node-b` keeps its
+# 55 px body, the canvas is 370 x 322 and every overlay is straight. Before, the whole step was declined every pass: `row-b` stood at its
+# stage-6 x 607, the canvas was 716 px wide and the overlay `ov-3` bent. With the nodes block reversed the seat survives the clamp and stands:
+# `node-b` grows to 209 px and every link is straight (canvas 524 px). Test: test/layout/seat-clamp-withdrawal.test.ts.
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  core:
+    tier: 0
+  row-a:
+    tier: 1
+  row-b:
+    tier: 1
+nodes:
+  hub:
+    group: core
+  relay-1:
+    group: core
+  relay-2:
+    group: core
+  relay-3:
+    group: core
+  node-a:
+    group: row-a
+    ports:
+    - name: uplink-1
+    - name: eth2_102
+  node-b:
+    group: row-b
+    ports:
+    - name: uplink-3
+links:
+- - node-a.uplink-1
+  - hub
+  - id: link-1
+- - node-a.eth2_102
+  - hub
+  - id: link-2
+- - node-b.uplink-3
+  - hub
+  - id: link-3
+    label: fibre 120M
+- - node-a
+  - node-b
+  - id: tunnel
+- - node-a
+  - relay-2
+  - id: ov-1
+    route: overlay
+- - node-a
+  - relay-1
+  - id: ov-2
+    route: overlay
+- - node-b
+  - relay-3
+  - id: ov-3
+    route: overlay
