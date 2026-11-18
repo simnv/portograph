@@ -11,6 +11,8 @@ import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { farEndDecisionsOf } from '../../src/layout/reservations.js';
 import { routedLinksOf } from '../../src/layout/far-end-order.js';
 import { readFaces, staleFarEndDecisions } from '../../src/layout/far-end-faults.js';
+import * as trunk from '../../src/layout/trunk.js';
+import { PostconditionRefusal } from '../../src/layout/placement-refusal.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -161,9 +163,9 @@ describe('a far-end decision earns its evidence on the trial and holds it at res
     const model = await run(readFileSync(new URL('../fixtures/staged/a-final-flat-gap-trial-places-without-far-end-decisions.yaml', import.meta.url), 'utf8'));
     expect(model.links.length).toBe(37);
     expect(model.removedLinks ?? []).toEqual([]);
-    // The kept final fit moves the ports: the decision of `snk1` top is stale on the published sheet, named and not published.
+    // The far-end round declines `snk1` top only on a follow-up proposal, which decides nothing (review 3, finding 4; ticket 59): no record to go stale.
     expect(model.diagnostics.filter(item => item.code === 'FLAT_BLOCK_GAP_FINAL').length).toBe(1);
-    expect(model.diagnostics.filter(item => item.code === 'FAR_END_DECISION_STALE').map(item => item.owners)).toEqual([[{ kind: 'node', id: 'snk1' }]]);
+    expect(model.diagnostics.filter(item => item.code === 'FAR_END_DECISION_STALE')).toEqual([]);
     expect(farEndDecisionsOf(model.reservations ?? [])).toEqual([]);
     expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
   }, 240000);
@@ -242,4 +244,81 @@ describe('a far-end decision earns its evidence on the trial and holds it at res
     entry.payload.tallies.trial = { routed: { bent: 4, turns: 8 }, overlay: { bent: 0, turns: 0 }, crossings: 0 };
     expect(() => restoreFinalLayout(JSON.stringify(forged))).toThrow(/names a baseline tally the model does not have/);
   }, 120000);
+});
+
+describe('a far-end decision holds only the proposal the far-end round generates (dense-16x9 ticket 49, review 3)', () => {
+  const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+  type Ref = { node: string; ordinal: number };
+  const withOption = (yaml: string, on: boolean): string => { const sheet = readYaml(yaml) as Record<string, unknown>; sheet.layout = { ...(sheet.layout as object ?? {}), moveBeforeGrow: on }; return writeYaml(sheet); };
+  type Entry = { payload: { ports: Ref[]; binding: { proposal: { node: string; side: string; ports: Ref[] }[] } } };
+
+  it('restore refuses a proposal the round does not generate: another order of the face, or an appended untried face', async () => {
+    const model = await run(text(FIXTURE));
+    const entry = (saved: LayoutModel): Entry => saved.reservations!.find(item => item.kind === 'farEndDecision') as unknown as Entry;
+    const ordinals = (saved: LayoutModel): number[] => entry(saved).payload.binding.proposal[0]!.ports.map(ref => ref.ordinal);
+    // The control: `src0` bottom stands 3,2,1, and the round generates and judges 2,3,1.
+    expect(entry(model).payload.ports.map(ref => ref.ordinal)).toEqual([3, 2, 1]);
+    expect(ordinals(model)).toEqual([2, 3, 1]);
+    expect(g5(restoreFinalLayout(JSON.stringify(model)))).toEqual([]);
+    const reorder = copy(model), face = entry(reorder).payload.binding.proposal[0]!;
+    // 1,2,3 also puts the recorded pair 3/2 the other way round, but the trial of that order earns no decision.
+    face.ports = [1, 2, 3].map(ordinal => entry(reorder).payload.ports.find(ref => ref.ordinal === ordinal)!);
+    const appended = copy(model);
+    entry(appended).payload.binding.proposal.push({ node: 'src1', side: 'bottom', ports: appended.nodes.src1!.ports.filter(port => port.side === 'bottom').map(port => port.ref) as Ref[] });
+    for (const forged of [reorder, appended]) {
+      expect(g5(forged)).toEqual(['port-order src0']);
+      expect(() => restoreFinalLayout(JSON.stringify(forged))).toThrow(/the proposal is not the one the far-end round generates on the sheet/);
+    }
+  }, 120000);
+
+  it('a reader that throws inside the trial\'s 7f postcondition decides nothing; a measured 7f refusal decides (finding 2)', async () => {
+    const outcome = async (mode: 'reader' | 'geometry'): Promise<{ injected: boolean; reasons: string[] }> => {
+      const reserve = farEnd.reserve, real = trunk.trunkHeads;
+      let wrapped = false, inTrialBand = false, injected = false;
+      // The first far-end trial's 7f run: `reader` throws once from the trunk reader inside the 7f postcondition; `geometry` throws a measured missing-exit refusal.
+      const spy = vi.spyOn(farEnd, 'reserve').mockImplementation((env, state, offer) => {
+        const ledger = reserve(env, state, offer);
+        if (!wrapped) {
+          wrapped = true;
+          const bands = env.bands;
+          env.bands = async (...args: Parameters<typeof bands>) => {
+            if (injected) return bands(...args);
+            inTrialBand = true;
+            try {
+              if (mode === 'geometry') { injected = true; throw new PostconditionRefusal('bands', [{ kind: 'groupExit', subject: 'g', detail: 'required exit lost' }]); }
+              return await bands(...args);
+            } finally { inTrialBand = false; }
+          };
+        }
+        return ledger;
+      });
+      const read = vi.spyOn(trunk, 'trunkHeads').mockImplementation((model, ...rest) => {
+        if (inTrialBand && !injected && new Error().stack?.includes('postconditions.ts')) { injected = true; throw new TypeError('temporary reader failure'); }
+        return real(model, ...rest);
+      });
+      try {
+        const model = await run(text(FIXTURE));
+        return { injected, reasons: farEndDecisionsOf(model.reservations ?? []).map(item => item.payload.reason) };
+      } finally { read.mockRestore(); spy.mockRestore(); }
+    };
+    expect(await outcome('reader')).toEqual({ injected: true, reasons: [] });
+    expect(await outcome('geometry')).toEqual({ injected: true, reasons: ['postcondition-7f'] });
+  }, 240000);
+
+  // Ticket 59 (needs-triage): a follow-up proposal reads the refused trial's own geometry, which the saved model does not hold; its decline decides
+  // nothing, and the face stands by G5. These pins change when ticket 59 sorts the follow-up from saved geometry.
+  for (const name of ['v7-1-1', 'v7-5-1']) {
+    it(`ticket 59: ${name} with the option on declines a follow-up proposal, records nothing and keeps three G5 findings on snk1; the option off has no G5`, async () => {
+      const on = await run(withOption(sweep(name), true));
+      expect(on.diagnostics.some(item => item.code === 'FAR_END_ORDER_DECLINED')).toBe(true);
+      expect(farEndDecisionsOf(on.reservations ?? [])).toEqual([]);
+      expect(g5(on)).toEqual(['port-order snk1', 'port-order snk1', 'port-order snk1']);
+      expect(g5(await run(withOption(sweep(name), false)))).toEqual([]);
+    }, 120000);
+  }
+  it('ticket 59: a-corridor-moves-after-the-grid-settles with nodes reversed declines only a follow-up and keeps G5 on its four faces', async () => {
+    const model = await run(reversedNodes(text('a-corridor-moves-after-the-grid-settles')));
+    expect(farEndDecisionsOf(model.reservations ?? [])).toEqual([]);
+    expect(g5(model).sort()).toEqual(['port-order lab3wrp001', 'port-order lab3wrp003', 'port-order lab6slb002', 'port-order sa-edge3']);
+  }, 240000);
 });

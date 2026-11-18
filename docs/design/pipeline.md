@@ -676,7 +676,7 @@ trial as a decision of the whole-sheet measure, it records the decision in the l
 the baseline the trial was measured on. A decision has one of four reasons, a closed list (`FarEndDeclineReason`, review 1): a completed comparison
 worse by the unified order (`unified`, with the per-layer tallies of both sides), a new error-severity gate finding of the routed trial
 (`gate-finding`; a new warning alone refuses the trial and decides nothing, review 2), the canvas cap (`canvas-cap`), or a refusal that 7f itself
-threw (`postcondition-7f`, `refusedBy7f`: not a skeleton or worker failure, and not a failure of the placement a 7f seat-set retry starts). An ELK fallback, a placement-run, ledger or predictor
+threw (`postcondition-7f`, `refusedBy7f`: not a skeleton or worker failure, not a failure of the placement a 7f seat-set retry starts, and not a refusal built from a value a 7f check caught, `qualifyingRefusal`, review 3). A decline of a follow-up proposal (`verdict.next`, which reads the refused trial's own geometry) decides nothing: restore cannot generate it from the saved model (review 3; ticket 59). An ELK fallback, a placement-run, ledger or predictor
 refusal, an unscored trial, any other guard, a trial that did not settle, a repeated proposal, a budget skip and a deadline record nothing. The entry
 holds the face in engine order, the pairs that stood the wrong way round there, the reason, its sentence, the tallies, and a **binding** to what
 earned it: the digest of the input document with its layout options (`inputDigest`), the proposal of the trial (the wanted order of every face it
@@ -690,7 +690,7 @@ names each one that does not (`FAR_END_DECISION_STALE`, a warning, R6); that one
 refuses a decision that does not hold, that the far-end round of its node did not write, whose reason is outside the list, whose `unified` tallies are
 absent or do not show the trial worse by the judge's own comparator (`unifiedCompare`), whose baseline tally is not the tally it measures on the saved
 model (`measuredTally`, review 2), or whose proposal does not name the face once with an order that differs from the standing one and puts every
-recorded pair the other way round (`proposalFault`, which the reader also reads). The publication filters with the same check. The rule is the same
+recorded pair the other way round (`proposalFault`), or whose proposal is not the one the round generates from the saved model: the reader computes the first proposal again with the round's own generator (`proposeFarEndOrder`, with the decisions of a lower revision) and requires that the recorded proposal equals it or one of its split groups (`proposalGroups`), every face and every order (`generatedProposalFault`, review 3). The reader reads both checks, and the round writes a decision only when both pass. The publication filters with the same check. The rule is the same
 with `layout.moveBeforeGrow` off and on. No 7c rule may re-order a port: the
 permission stays as it is.
 

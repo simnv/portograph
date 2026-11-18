@@ -1,9 +1,8 @@
-# Expected (dense-16x9 ticket 49, review 2): two inputs in one sheet: `a-flat-gap-is-chosen-again-after-the-fan-round` and the far-end golden
-# `a-far-end-order-a-full-trial-measures-worse-is-decided-once`, its group tiers 2 lower. The far-end round declines `snk1` top and `src0`
-# bottom (a new G6 error finding of the routed trial) and records the decision of `snk1` top; then the final flat-gap choice places the sheet
-# once more and is kept (`FLAT_BLOCK_GAP_FINAL`). That trial is another placement, so it starts from the kept ledger without the decision
-# (`trialLedger`). The kept trial moves the ports, so the decision is stale on the published sheet: the publication names it
-# (`FAR_END_DECISION_STALE`, a warning) and does not publish it, and G5 judges the faces (G5 on `src0` and `snk1`). Before the fix the final
+# Expected (dense-16x9 ticket 49, reviews 2 and 3): two inputs in one sheet: `a-flat-gap-is-chosen-again-after-the-fan-round` and the far-end
+# golden `a-far-end-order-a-full-trial-measures-worse-is-decided-once`, its group tiers 2 lower. The far-end round declines `snk1` top only on a
+# follow-up proposal, which decides nothing (review 3: restore cannot generate a follow-up from the saved model; ticket 59), so no decision is
+# recorded. Then the final flat-gap choice places the sheet once more and is kept (`FLAT_BLOCK_GAP_FINAL`). That trial is another placement, so
+# it starts from the kept ledger without any decision (`trialLedger`). G5 judges the faces (G5 on `src0` and `snk1`). Before review 2 the final
 # trial carried the decision into stage 5, which refused it on the fresh placement and threw; main b07ab8ed publishes the sheet. All 37 links
 # publish, and the layout restores. Staged, not in goldens/synthetic: the sheet keeps a G5, and the corpus gate takes a new sheet with an error
 # finding as a failure. Test-only input owned by dense-16x9 ticket 49; test/pipeline/far-end-decision.test.ts reads it.

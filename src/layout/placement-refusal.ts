@@ -71,9 +71,10 @@ const thrownBy7f = new WeakSet<object>();
 export const markThrownBy7f = (error: unknown): void => { if (typeof error === 'object' && error !== null) thrownBy7f.add(error); };
 /**
  * A deterministic refusal of stage 7f itself (dense-16x9 ticket 49, review 2): a placement refusal that 7f threw, not a skeleton or worker failure, and not a
- * refusal of a placement that a 7f retry started (the seat-set retry places again inside the same call).
+ * refusal of a placement that a 7f retry started (the seat-set retry places again inside the same call), and not a refusal built from a caught value
+ * (`qualifyingRefusal`, review 3): a reader that threw inside a 7f check measured nothing.
  */
-export const refusedBy7f = (error: unknown): error is PlacementRefusal => refusedAtBands(error) && error.code !== 'skeleton' && thrownBy7f.has(error);
+export const refusedBy7f = (error: unknown): error is PlacementRefusal => refusedAtBands(error) && qualifyingRefusal(error) && error.code !== 'skeleton' && thrownBy7f.has(error);
 
 /**
  * A refusal of a producer of 7e or 7f (DR-11): a postcondition of the net draft (`PostconditionRefusal`) or a bundle path with no room

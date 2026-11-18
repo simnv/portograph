@@ -227,7 +227,7 @@ export function proposalGroups(model: LayoutModel, faces: readonly FarEndFace[])
 }
 
 /** The identity of a proposal: the faces and their sequences, for the repeated-state check. */
-export const proposalKey = (faces: readonly FarEndFace[]): string => JSON.stringify(faces.map(face => [face.node, face.side, face.ports.map(portId)]));
+export const proposalKey = (faces: readonly { node: string; side: Side; ports: readonly PortRef[] }[]): string => JSON.stringify(faces.map(face => [face.node, face.side, face.ports.map(portId)]));
 
 /** The ports of a face in engine order, as the record and the 7e check read them. */
 export function engineSequence(model: LayoutModel, node: string, side: Side): PortRef[] | undefined {

@@ -7,6 +7,7 @@ import { ofKind, type ReservationOf } from './reservations.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { portId } from './skeleton-graph.js';
 import { faceKey } from './turn-order.js';
+import { proposalGroups, proposalKey, proposeFarEndOrder } from './far-end-order.js';
 
 /**
  * The one reader of G5 `port-order` on a face (dense-16x9 ticket 49): the gate (`portOrder`), the far-end round (`staleFaces`, `proposeFarEndOrder`) and the
@@ -111,6 +112,20 @@ export function proposalFault(payload: FarEndDecisionEntry['payload']): string |
   return undefined;
 }
 
+/**
+ * Why the proposal of a far-end decision is not the one the round generates on the model it was judged against (dense-16x9 ticket 49, review 3, R1: one
+ * generator), or `undefined`. The round proposes with `proposeFarEndOrder` on the baseline and the decisions it holds then (those of the ledger with a lower
+ * `revision`: the decisions of the same trial share its revision); a trial that a guard refused as a whole is tried again by group (`proposalGroups`). So the
+ * recorded proposal equals that first proposal or one of its groups, in full: every face, every order, no other face. A follow-up proposal (`next`), read
+ * from a refused trial's own final positions, is not generated from the saved model, so it earns no decision.
+ */
+export function generatedProposalFault(model: LayoutModel, entry: FarEndDecisionEntry): string | undefined {
+  const held = new Map(ofKind(model.reservations ?? [], 'farEndDecision').filter(item => item.revision < entry.revision).map(item => [faceKey(item.payload.node, item.payload.side), item] as const));
+  const first = proposeFarEndOrder(model, [], held).faces, recorded = proposalKey(entry.payload.binding.proposal);
+  if (proposalKey(first) === recorded || proposalGroups(model, first).some(group => proposalKey(group) === recorded)) return undefined;
+  return 'the proposal is not the one the far-end round generates on the sheet';
+}
+
 /** A digest of a JSON value, the keys of every object sorted: two FNV-1a 32-bit hashes of the canonical text (no runtime dependency, the same in a browser). */
 export function digestOf(value: unknown): string {
   const canonical = (item: unknown): unknown => Array.isArray(item) ? item.map(canonical)
@@ -148,7 +163,7 @@ export function decisionStale(model: LayoutModel, entry: FarEndDecisionEntry, wr
   if (binding.baseline !== baselineDigest(model)) return 'the sheet is not the one the trial was judged against';
   if (JSON.stringify(engineIds(model, node, side)) !== JSON.stringify(ports.map(ref => portId(ref)))) return 'the ports do not stand in the recorded order';
   if (JSON.stringify(wrong) !== JSON.stringify(pairs)) return 'the far ends no longer stand in the recorded order';
-  return proposalFault(entry.payload);
+  return proposalFault(entry.payload) ?? generatedProposalFault(model, entry);
 }
 
 /** How the reader judges one face. */
