@@ -39,12 +39,18 @@ export interface PostconditionViolation {
 export const postconditionSink: { hook?: (violation: PostconditionViolation) => void } = {};
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
-/** The value a check threw, by the finding built from it (dense-16x9 ticket 56, review 2): the refusal carries it as its cause. */
-const caughtBy = new WeakMap<PostconditionViolation, { value: unknown }>();
 
 /** Every violation of the net draft `after` of `rule`, against the entry model `before`. A check that cannot read its input is a violation (R6). */
 export function postconditionViolations(before: LayoutModel, after: LayoutModel, rule: 'bundles' | 'bands'): PostconditionViolation[] {
-  const out: PostconditionViolation[] = [];
+  return readViolations(before, after, rule).found;
+}
+
+/**
+ * `postconditionViolations`, with the value each check threw, by the finding built from it (dense-16x9 ticket 56, review 2): the refusal
+ * carries it as its cause.
+ */
+function readViolations(before: LayoutModel, after: LayoutModel, rule: 'bundles' | 'bands'): { found: PostconditionViolation[]; caught: Map<PostconditionViolation, { value: unknown }> } {
+  const out: PostconditionViolation[] = [], caughtBy = new Map<PostconditionViolation, { value: unknown }>();
   const add = (kind: PostconditionKind, subject: string, detail: string, ledger?: string): void => { out.push({ rule, kind, subject, detail, ...(ledger === undefined ? {} : { ledger }) }); };
   const attempt = (kind: PostconditionKind, run: () => void): void => {
     try { run(); } catch (error) { add(kind, 'check', `the check could not read the draft: ${message(error)}`); caughtBy.set(out.at(-1)!, { value: error }); }
@@ -113,7 +119,7 @@ export function postconditionViolations(before: LayoutModel, after: LayoutModel,
     const was = new Set(holds(before.reservations ?? [], before).map(item => item.id));
     for (const failure of holds(after.reservations ?? [], after)) if (!was.has(failure.id)) add('stored', `${failure.kind}:${failure.id}`, failure.why, failure.kind);
   });
-  return out;
+  return { found: out, caught: caughtBy };
 }
 
 /**
@@ -136,7 +142,7 @@ export const advisory = (item: PostconditionViolation): boolean => ADVISORY_KIND
 
 /** Judge the net draft of 7e or 7f before commit. Every violation goes to the sink; one of a refusing kind refuses the transaction whole. */
 export function judgePostconditions(before: LayoutModel, after: LayoutModel, rule: 'bundles' | 'bands'): void {
-  const found = postconditionViolations(before, after, rule);
+  const { found, caught: caughtBy } = readViolations(before, after, rule);
   for (const violation of found) postconditionSink.hook?.(violation);
   const refused = found.filter(item => !advisory(item));
   // A finding built from a caught value makes the refusal a caught one: the first such value that is no placement reason, else the first.
