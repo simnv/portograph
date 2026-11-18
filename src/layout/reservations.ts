@@ -11,6 +11,7 @@ import type { PlacementInputField } from '../model/layout.js';
 import type { PairPitch } from '../model/layout.js';
 import { LAYOUT_STAGES, stageReached } from '../model/layout.js';
 import { portKey } from './sides-one.js';
+import { portId } from './skeleton-graph.js';
 import { equationEnds, equationKind } from './read/seat-equation.js';
 import { openMemberFault, openSlotHeld } from './read/open-member.js';
 import { chainBlockOf } from './read/chain.js';
@@ -57,6 +58,18 @@ export interface ReservationPayload {
    * An entry for a face replaces an earlier entry for it (the latest proposal stands).
    */
   farEndOrder: { node: string; side: Side; ports: readonly PortRef[] };
+  /**
+   * The far-end round declined the far-end order of the face `node`/`side` on a full trial (dense-16x9 ticket 49; owner ruling 2026-11-18: the whole-sheet
+   * measure wins). `ports` is the face in engine order as the round judged it, and `pairs` the free ports that stood the wrong way round there (`before`
+   * first on the face, its far ends strictly after those of `after`, by `portId`): the far-end order the decision accepted. `reason` is the clause that
+   * declined (`unified`: worse by the unified order; `other`: a guard of the routed trial, or a stage that refused it), `why` its sentence, and `tallies`
+   * the bent links, turns and crossings of the baseline and of the trial when the trial was routed and scored. G5 accepts the face while the record
+   * holds (`far-end-faults.ts`); a record that no longer matches the face is stale, and G5 judges the face again. An entry for a face replaces an earlier one.
+   */
+  farEndDecision: {
+    node: string; side: Side; ports: readonly PortRef[]; pairs: readonly (readonly [string, string])[]; reason: 'unified' | 'other'; why: string;
+    tallies?: { base: FarEndTally; trial: FarEndTally };
+  };
   /** A trunk join (or every trunk join) that placement declines. */
   trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
   /**
@@ -133,6 +146,8 @@ export interface ReservationPayload {
   bundleNeighbours: { group: string; pairs: readonly (readonly [string, string])[] };
 }
 export type ReservationKind = keyof ReservationPayload;
+/** The counts a far-end decision names (`farEndDecision`): bent links, turns and crossings over both layers. */
+export interface FarEndTally { bent: number; turns: number; crossings: number }
 /**
  * One equation of a seat set: x(member) + memberOffset = x(far) + farOffset, the offsets measured from the left body edge. `farOffset` is the
  * value at the decision and is not binding: the ruled boundary is the far port, not the parent body, so a parent body that grows on its face keeps
@@ -190,7 +205,7 @@ const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', pairFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', seatSet: 'rows', seatSetDeclined: 'rows', refusedChord: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
+  turnOrder: 'sides-two', farEndOrder: 'sides-two', farEndDecision: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', seatSet: 'rows', seatSetDeclined: 'rows', refusedChord: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton', bundleNeighbours: 'skeleton',
 };
 
@@ -227,7 +242,7 @@ export function reserve(ledger: Reservations, entries: Reservations): Reservatio
       if (old.payload.promise === undefined && entry.payload.promise !== undefined) result[at] = { ...old, payload: { ...old.payload, promise: entry.payload.promise } };
     } else if (old.kind === 'course' && entry.kind === 'course') {
       if (!same(old.payload.course, entry.payload.course)) throw new Error(`Reservation ${entry.id} conflicts with a course the ledger holds`);
-    } else if (old.kind === 'farEndOrder' && entry.kind === 'farEndOrder') {
+    } else if ((old.kind === 'farEndOrder' && entry.kind === 'farEndOrder') || (old.kind === 'farEndDecision' && entry.kind === 'farEndDecision')) {
       result[at] = entry;
     } else if (old.kind === 'turnOrder' && entry.kind === 'turnOrder') {
       const except = [...new Set([...(old.payload.except ?? []), ...(entry.payload.except ?? [])])].sort();
@@ -427,6 +442,23 @@ export function turnEntries(turn: boolean, links: readonly string[], requireChan
 export function farEndOrderOf(ledger: Reservations): { node: string; side: Side; ports: PortRef[] }[] {
   return ofKind(ledger, 'farEndOrder').map(({ payload }) => ({ node: payload.node, side: payload.side, ports: payload.ports.map(ref => ({ ...ref })) }))
     .sort((a, b) => (a.node < b.node ? -1 : a.node > b.node ? 1 : 0) || (a.side < b.side ? -1 : a.side > b.side ? 1 : 0));
+}
+/** The far-end decisions of a ledger, in ledger order. */
+export const farEndDecisionsOf = (ledger: Reservations): ReservationOf<'farEndDecision'>[] => ofKind(ledger, 'farEndDecision');
+/** One far-end decision entry (`farEndDecision`), owned by the node; one per face. */
+export function farEndDecisionEntry(payload: ReservationPayload['farEndDecision'], producer: RoundId, revision: number): ReservationOf<'farEndDecision'> {
+  return reservation('farEndDecision', { kind: 'node', id: payload.node }, payload.side, producer, revision, payload);
+}
+/**
+ * `ledger` with its far-end decisions replaced by `decisions` (the command's own, held in the kept ledger): the reading a model placed before a decision is
+ * judged with, and the ledger the publication writes (dense-16x9 ticket 49).
+ */
+export function withFarEndDecisions(ledger: Reservations, decisions: readonly ReservationOf<'farEndDecision'>[]): Reservations {
+  return [...ledger.filter(entry => entry.kind !== 'farEndDecision'), ...decisions];
+}
+/** `ledger` without the far-end decisions of `faces`: a trial that proposes a face again decides it again. */
+export function withoutFarEndDecisions(ledger: Reservations, faces: readonly { node: string; side: Side }[]): Reservations {
+  return ledger.filter(entry => entry.kind !== 'farEndDecision' || !faces.some(face => face.node === entry.payload.node && face.side === entry.payload.side));
 }
 export function farEndEntries(faces: readonly { node: string; side: Side; ports: readonly PortRef[] }[], producer: RoundId, revision: number): Reservations {
   return faces.map(face => reservation('farEndOrder', { kind: 'node', id: face.node }, face.side, producer, revision, { node: face.node, side: face.side, ports: face.ports }));
@@ -871,7 +903,7 @@ const isPort = (value: unknown): boolean => isObject(value) && isString(value['n
 const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.length > 0
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'staggerDeclined', 'seatSet', 'seatSetDeclined', 'refusedChord', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'farEndDecision', 'trunkDeclined', 'staggerDeclined', 'seatSet', 'seatSetDeclined', 'refusedChord', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
 const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'sides-two', 'rows', 'lanes', 'bands', 'publish']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
@@ -924,6 +956,15 @@ function shapeFailure(entry: unknown): string | undefined {
     case 'farEndOrder': {
       const ports = payload['ports'];
       return isString(payload['node']) && sides.includes(payload['side'] as string) && Array.isArray(ports) && ports.length > 1 && ports.every(isPort) && new Set(ports.map(item => JSON.stringify(item))).size === ports.length ? undefined : bad;
+    }
+    case 'farEndDecision': {
+      const ports = payload['ports'], pairs = payload['pairs'], tallies = payload['tallies'];
+      const tally = (value: unknown): boolean => isObject(value) && ['bent', 'turns', 'crossings'].every(key => Number.isInteger(value[key]) && (value[key] as number) >= 0);
+      return isString(payload['node']) && sides.includes(payload['side'] as string) && Array.isArray(ports) && ports.length > 1 && ports.every(isPort)
+        && new Set(ports.map(item => JSON.stringify(item))).size === ports.length
+        && Array.isArray(pairs) && pairs.length > 0 && pairs.every(pair => Array.isArray(pair) && pair.length === 2 && pair.every(isString) && pair[0] !== pair[1])
+        && (payload['reason'] === 'unified' || payload['reason'] === 'other') && isString(payload['why'])
+        && (tallies === undefined || (isObject(tallies) && tally(tallies['base']) && tally(tallies['trial']))) ? undefined : bad;
     }
     case 'rowOrder': {
       const order = payload['order'], one = [payload['cell'], payload['frame'], payload['row']].filter(isString).length === 1, open = payload['open'];
@@ -978,6 +1019,16 @@ function validateLedgerShape(ledger: Reservations): void {
  * it calls it on the models the function admits, and a string says how that reader reads the kind instead, or why the kind does not apply there.
  */
 type ReaderCheck = true | ((model: LayoutModel) => boolean) | string;
+/** Why a far-end decision does not name the face it decides (R5): the face exists and holds exactly the recorded ports, and each pair names two ports of it. */
+function farEndDecisionFailure(item: Reservation, model: LayoutModel): string | undefined {
+  if (item.kind !== 'farEndDecision') return undefined;
+  const { node, side, ports, pairs } = item.payload, face = model.nodes[node]?.ports.filter(port => port.side === side);
+  if (face === undefined || face.length === 0) return `the ${side} face of ${node} does not exist`;
+  const have = new Set(face.map(port => portId(port.ref))), named = new Set(ports.map(ref => portId(ref)));
+  if (have.size !== named.size || [...named].some(id => !have.has(id))) return `the ${side} face of ${node} does not hold the recorded ports`;
+  if (pairs.some(pair => pair.some(id => !have.has(id)))) return `a recorded pair of the ${side} face of ${node} names a port it does not hold`;
+  return undefined;
+}
 export interface KindCheck { readonly predicate?: (item: Reservation, model: LayoutModel) => string | undefined; readonly at: { readonly round: ReaderCheck; readonly final: ReaderCheck; readonly early: ReaderCheck } }
 const TRANSIENT = 'transient: it lives for one move check and is never stored (`validateLedgerShape` refuses it)';
 const ROUND_OWN = 'its own check in `holdsOne` (`reservation-checks.ts`), which reads the 7e geometry';
@@ -998,6 +1049,10 @@ export const RESERVATION_CHECKS: { readonly [K in ReservationKind]: KindCheck } 
   spanChord: { at: { round: ROUND_OWN, final: 'compared as a whole with the frozen span hints (`validateReservations`)', early: NOT_EARLY_YET } },
   turnOrder: { at: { round: ROUND_OWN, final: 'compared as a whole with the turn order of the model (`validateReservations`)', early: AFTER_FREEZE } },
   farEndOrder: { at: { round: ROUND_OWN, final: 'compared as a whole with the far-end orders of the model (`validateReservations`)', early: AFTER_FREEZE } },
+  // A decision reserves no geometry: a later trial that leaves it stale is no refusal; G5 judges the face again (`far-end-faults.ts`) and the publication names it.
+  // Every reader checks that the record names the face it decides: the face exists and holds exactly the recorded ports, and the pairs name ports of it.
+  farEndDecision: { predicate: (item, model) => farEndDecisionFailure(item, model),
+    at: { round: 'not checked by a round: a decision reserves no geometry, and a stale one excuses nothing (`readFace`)', final: true, early: AFTER_FREEZE } },
   trunkDeclined: { at: { round: ROUND_OWN, final: 'compared with the declined trunk joins of the model (`validateReservations`)', early: NOT_EARLY_YET } },
   // The keep-mode run copies the stagger rows into the resolved model (`place.ts`), so every stage of a run carries them (review 4).
   staggerDeclined: everywhere((item, model) => staggerDeclineFailure(item, model)),

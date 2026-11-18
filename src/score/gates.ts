@@ -23,8 +23,8 @@ import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../
 import { pathEnd } from '../layout/path-end.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { diagonalMayCross, linkFreeMargin } from '../layout/diagonal-text.js';
-import { faceKey, turnRecordFaults } from '../layout/turn-order.js';
-import { facePositions, farAnchorIndex, standsWrong } from '../layout/far-end-order.js';
+import { turnRecordFaults } from '../layout/turn-order.js';
+import { farAnchorIndex, farEndDecisions, readFace } from '../layout/far-end-faults.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import { runClearance } from './sheaf.js';
@@ -112,14 +112,16 @@ function separationGate(model: LayoutModel, fail: (id: GateId, code: string, ele
  * A face that the turn round recorded (`freeze.turnOrder`, docs/design/turn-order.md, Section 7) is judged by that record: the layout decided its order from the planned
  * first turns of its links and kept it only because the published result was better, so the gate does not derive the decision again (R1). It accepts the face while the record
  * holds (a model that carries the turn order, a face inside the scope, the ports on it, standing in the recorded order, by anchor) and fails it, whatever the far ends say,
- * when it does not (R5: a forged or stale record buys nothing). Every other face, whatever links it holds, is judged by its far-end ranges.
+ * when it does not (R5: a forged or stale record buys nothing). A face whose far-end order the far-end round declined on a full trial (`farEndDecision`,
+ * dense-16x9 ticket 49; owner ruling 2026-11-18: the whole-sheet measure wins) is accepted while that record holds: its ports stand in the recorded
+ * order and exactly the recorded pairs stand the wrong way round. A stale record buys nothing: the face is judged by its far-end ranges, and the
+ * publication names the record. Every other face, whatever links it holds, is judged by its far-end ranges. The one reader of all three is `readFace`.
  */
 export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], routedLinks: ReadonlySet<LayoutLink>,
   fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
   // Every port's far anchors, recorded in one pass over the routed links (`farAnchorIndex`, the reader that the far-end round shares: ticket 07). The port-order gate below
   // reads this index; scanning every link for every port made the gate quadratic in the diagram.
   const farAnchors = farAnchorIndex(model, routedLinks);
-  const turned = new Set((model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)));
   // A fault of the whole record, or of a face of a node that the model does not have, belongs to no node of `nodes`: it fails whatever subset the caller asks about.
   for (const fault of turnRecordFaults(model, 'anchor')) {
     const known = fault.node !== undefined && model.nodes[fault.node] !== undefined;
@@ -127,13 +129,12 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
     fail('G5', 'port-order', [fault.node ?? '*'], fault.side === undefined ? `The record of the turn round does not hold: ${fault.why}`
       : `The ${fault.side} face is recorded as taken by the turn round, but ${fault.why}`);
   }
+  const decisions = farEndDecisions(model);
   for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
-    const positions = turned.has(faceKey(node.id, side)) ? [] : facePositions(node, side, farAnchors);
-    for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
-      // Strictly separated far-end ranges whose ports stand the other way round.
-      if (standsWrong(positions[i]!, positions[j]!) || standsWrong(positions[j]!, positions[i]!))
-        fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
-    }
+    // The one reader of the face (`readFace`, dense-16x9 ticket 49): every pair of strictly separated far-end ranges whose ports stand the other way round,
+    // unless a record decides the face (the turn round's, or a far-end decision that holds).
+    const reading = readFace(model, node.id, side, farAnchors, decisions);
+    if (reading.fails) for (let k = 0; k < reading.wrong.length; k++) fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
     const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined)
       .sort((a, b) => (side === 'top' || side === 'bottom' ? a.anchor!.x - b.anchor!.x : a.anchor!.y - b.anchor!.y));
     if (authored.some((p, i) => i > 0 && p.authorOrder! < authored[i - 1]!.authorOrder!))

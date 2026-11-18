@@ -89,7 +89,7 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
       return keys.includes(scope.key) ? { why: `the trunk join ${scope.key} stands although it is declined` } : undefined;
     }
     // Read through `RESERVATION_CHECKS` above, or transient (never stored).
-    case 'pitchFloor': case 'pairFloor': case 'nodeFloor': case 'staggerDeclined': case 'seatSet': case 'seatSetDeclined': case 'refusedChord': case 'rowOrder': case 'groupOrder': case 'corridorSide': case 'bundleNeighbours':
+    case 'pitchFloor': case 'pairFloor': case 'nodeFloor': case 'farEndDecision': case 'staggerDeclined': case 'seatSet': case 'seatSetDeclined': case 'refusedChord': case 'rowOrder': case 'groupOrder': case 'corridorSide': case 'bundleNeighbours':
     case 'riserKeepOut': case 'trunkExtension': case 'laneSide': case 'sideAlignment': case 'spanCorridor': case 'groupExit': case 'labelRoom':
       return undefined;
     default: {

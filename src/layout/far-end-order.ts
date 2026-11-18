@@ -1,9 +1,9 @@
 import type { PortRef } from '../model/document.js';
 import type { Point, Side } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
+import type { LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
 import { EPS } from '../score/geometry.js';
-import { endpoints, port as portOf, refKey, routed as isRoutedLink } from '../score/model.js';
+import { endpoints, refKey, routed as isRoutedLink } from '../score/model.js';
 import { busOfPort } from './bus.js';
 import { farCoordinate } from './peers.js';
 import { groupShape } from './grid.js';
@@ -12,6 +12,9 @@ import { findPort } from './row-paths.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { portId } from './skeleton-graph.js';
 import { faceKey } from './turn-order.js';
+import { alongOf, facePositions, farAnchorIndex, readFace, routedLinksOf, standsWrong, type FarEndDecisionEntry } from './far-end-faults.js';
+
+export { facePositions, farAnchorIndex, faceIsStale, routedLinksOf, standsWrong, type PortPosition } from './far-end-faults.js';
 
 /**
  * Far-end order taken from final positions (dense-16x9 ticket 07, `docs/design/pipeline.md` Stage 5 and 7f).
@@ -25,61 +28,9 @@ import { faceKey } from './turn-order.js';
 /** The ports of one face in the order a placement run must give them: the whole face, free and authored ports together, in engine order. */
 export interface FarEndFace { node: string; side: Side; ports: PortRef[] }
 
-/** One free port of a face as G5 reads it: where it stands along the face, and the range of its far ends along the same axis. */
-export interface PortPosition { port: LayoutPort; own: number; min: number; max: number }
-
-const alongOf = (side: Side): 'x' | 'y' => (side === 'top' || side === 'bottom' ? 'x' : 'y');
-
-/** Every port's far anchors by port key, over the routed links, a link seen from both ends (G5's index; a link whose far port is missing contributes nothing). */
-export function farAnchorIndex(model: LayoutModel, routedLinks: ReadonlySet<LayoutLink>): Map<string, Point[]> {
-  const farAnchors = new Map<string, Point[]>();
-  for (const link of model.links) {
-    if (!routedLinks.has(link)) continue;
-    const ends = endpoints(link);
-    for (const [near, far] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
-      const target = portOf(model, far);
-      if (!target) continue;
-      const at = refKey(near), list = farAnchors.get(at);
-      if (list) list.push(target.anchor!); else farAnchors.set(at, [target.anchor!]);
-    }
-  }
-  return farAnchors;
-}
-
-/** The ports of one face that G5 judges by far-end ranges: not authored, with at least one routed far end. */
-export function facePositions(node: LayoutNode, side: Side, farAnchors: ReadonlyMap<string, readonly Point[]>): PortPosition[] {
-  const along = alongOf(side);
-  return node.ports.filter(port => port.side === side && port.authorOrder === undefined).flatMap(port => {
-    const peers = farAnchors.get(refKey(port.ref));
-    if (!peers?.length) return [];
-    let min = Infinity, max = -Infinity;
-    for (const anchor of peers) {
-      if (anchor[along] < min) min = anchor[along];
-      if (anchor[along] > max) max = anchor[along];
-    }
-    return [{ port, own: port.anchor![along], min, max }];
-  });
-}
-
-/** G5's comparison: `x` stands before `y` on the face while its far ends lie strictly after the far ends of `y`. */
-export const standsWrong = (x: { own: number; min: number }, y: { own: number; max: number }): boolean => x.own < y.own - EPS && x.min > y.max + EPS;
-
-/** Whether any two free ports of a face stand the wrong way round (G5 `port-order` on this face). */
-export function faceIsStale(positions: readonly PortPosition[]): boolean {
-  for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
-    if (standsWrong(positions[i]!, positions[j]!) || standsWrong(positions[j]!, positions[i]!)) return true;
-  }
-  return false;
-}
-
-/** The links that G5 reads as routed on a placement model: a routed link with a path. */
-export const routedLinksOf = (model: LayoutModel): Set<LayoutLink> =>
-  new Set(model.links.filter(link => isRoutedLink(link) && link.path !== undefined && link.path.segments.length > 0));
-
-/** Whether G5 fails this face on the model: not a face the turn round recorded (G5 judges that one by its record), and two of its free ports standing the wrong way round. */
-function faceFails(model: LayoutModel, node: string, side: Side, index: ReadonlyMap<string, readonly Point[]>): boolean {
-  if ((model.freeze?.turnOrder ?? []).some(face => face.node === node && face.side === side)) return false;
-  return faceIsStale(facePositions(model.nodes[node]!, side, index));
+/** Whether G5 fails this face on the model: the one reader (`readFace`, `far-end-faults.ts`) says so: two free ports stand the wrong way round, and no record decides the face. */
+function faceFails(model: LayoutModel, node: string, side: Side, index: ReadonlyMap<string, readonly Point[]>, decisions?: ReadonlyMap<string, FarEndDecisionEntry>): boolean {
+  return readFace(model, node, side, index, decisions).fails;
 }
 
 /**
@@ -105,10 +56,10 @@ export function staleThrough(model: LayoutModel, moved: ReadonlySet<string>): { 
 }
 
 /** The faces that fail G5 on this model, in node and side order. */
-export function staleFaces(model: LayoutModel, routedLinks: ReadonlySet<LayoutLink> = routedLinksOf(model)): { node: string; side: Side }[] {
+export function staleFaces(model: LayoutModel, routedLinks: ReadonlySet<LayoutLink> = routedLinksOf(model), decisions?: ReadonlyMap<string, FarEndDecisionEntry>): { node: string; side: Side }[] {
   const index = farAnchorIndex(model, routedLinks), found: { node: string; side: Side }[] = [];
   for (const id of orderedNodeIds(model.document)) for (const side of SIDE_TIE_ORDER) {
-    if (faceFails(model, id, side, index)) found.push({ node: id, side });
+    if (faceFails(model, id, side, index, decisions)) found.push({ node: id, side });
   }
   return found;
 }
@@ -204,7 +155,7 @@ interface Following { leader: { node: string; side: Side }; follower: { node: st
  * without knowing it. Faces are taken in the order of that dependency; a cycle is cut at the face first in node order. `held` is the sequence an earlier trial of this command found for a
  * face that it settled (a face stale on the baseline and settled on the trial): it stays proposed while it stands.
  */
-export function proposeFarEndOrder(model: LayoutModel, held: readonly FarEndFace[] = []): FarEndProposal {
+export function proposeFarEndOrder(model: LayoutModel, held: readonly FarEndFace[] = [], decisions?: ReadonlyMap<string, FarEndDecisionEntry>): FarEndProposal {
   const index = farAnchorIndex(model, routedLinksOf(model));
   const sideOf = (ref: PortRef): Side | undefined => findPort(model, ref)?.side;
   const owner = (node: string, side: Side): FarEndOwner | undefined => farEndOwner(model, node, side);
@@ -235,7 +186,7 @@ export function proposeFarEndOrder(model: LayoutModel, held: readonly FarEndFace
     const at = pending.findIndex(face => leads(face).every(item => done.has(faceKey(item.leader.node, item.leader.side)) || !pending.some(other => other.node === item.leader.node && other.side === item.leader.side)));
     const face = pending.splice(at < 0 ? 0 : at, 1)[0]!, name = faceKey(face.node, face.side);
     done.add(name);
-    const owned = owner(face.node, face.side), stale = faceFails(model, face.node, face.side, index), settled = heldBy.get(name);
+    const owned = owner(face.node, face.side), stale = faceFails(model, face.node, face.side, index, decisions), settled = heldBy.get(name);
     const followed = leads(face), moved = followed.filter(item => sequences.has(faceKey(item.leader.node, item.leader.side)));
     if (!stale && moved.length === 0) { if (settled !== undefined && owned === undefined) { proposal.faces.push({ ...face, ports: settled.ports }); sequences.set(name, settled.ports); } continue; }
     if (owned !== undefined) { if (stale) proposal.owned.push({ ...face, owner: owned }); continue; }
