@@ -1,0 +1,11 @@
+checks / check (Node 24)	Test	﻿2026-11-19T12:51:14.0000000Z > node scripts/test-runner.mjs
+checks / check (Node 24)	Test	2026-11-19T12:51:15.0000000Z  [32m✓[39m [30m[42m default [49m[39m test/a.test.ts (5 tests) 40000ms
+checks / check (Node 24)	Test	2026-11-19T12:51:15.1000000Z    [32m✓[39m a literal title[33m 16000[2mms[22m[39m
+checks / check (Node 24)	Test	2026-11-19T12:51:15.2000000Z    ✓ the slow one 31000ms
+checks / check (Node 24)	Test	2026-11-19T12:51:15.3000000Z    ✓ x each 6000ms
+checks / check (Node 24)	Test	2026-11-19T12:51:15.4000000Z    ✓ y each 4000ms
+checks / check (Node 24)	Test	2026-11-19T12:51:15.5000000Z    ✓ n7 cond 14000ms
+checks / check (Node 24)	Test	2026-11-19T12:51:15.6000000Z    ✓ quick 350ms
+checks / check (Node 24)	Test	2026-11-19T13:15:23.0000000Z  ^[[31m❯^[[39m  heavy  test/h.test.ts (2 tests | 1 failed) 300000ms
+checks / check (Node 24)	Test	2026-11-19T13:15:23.1000000Z ^[[31m   ^[[31m×^[[31m the heavy one^[[39m^[[33m 125680^[[2mms^[[22m^[[39m
+checks / check (Node 24)	Test	2026-11-19T13:15:23.2000000Z    ✓ not in the sources 100000ms
