@@ -1,6 +1,6 @@
 {
   "name": "portograph",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "YAML in, a laid-out diagram (SVG) out: nodes with ports, grouped into tiers, links routed per region.",
   "keywords": [
     "diagram",
