@@ -98,6 +98,7 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
   // routed link that is not a chord is compared with `orthogonalLeg` on the same published model.
   // Ticket 95: a frame chord never leaves its tier gap. `standaloneChord` refuses a link that spans a tier band it does not end in, so no chord meets
   // a lane run or a drop in a band: the runs the leg bound clips at the band edge cannot come near a chord. Measured over every synthetic input.
+  // One layout of each synthetic input took 497 s on the release CI of 0.3.0 (Node 24): the limit is 3 times that, above the 600 s of the slow project.
   it('bounds every published end leg and keeps every published frame chord out of non-endpoint tier bands across the synthetic inputs', async () => {
     const names = readdirSync(new URL('../../goldens/synthetic/', import.meta.url))
       .filter(name => name !== 'stage-inputs.yaml' && name.endsWith('.yaml'))
@@ -142,7 +143,7 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
     expect(caught).toEqual([]);
     expect(legChecked).toBeGreaterThan(50);
     expect(chordChecked).toBeGreaterThan(100);
-  });
+  }, 1500000);
 
   // Expected fail since the default flip (dense-16x9 ticket 45): a known defect of 0.3.0 with the option on (`KNOWN_LONG_LEGS`, dense-16x9 ticket 58).
   it.fails('bounds the end legs the option-on run leaves past their bound (KNOWN_LONG_LEGS)', async () => {

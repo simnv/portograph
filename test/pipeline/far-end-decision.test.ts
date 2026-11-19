@@ -21,6 +21,8 @@ import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
 
 // Dense-16x9 ticket 49 (owner ruling 2026-11-18: the whole-sheet measure wins): a far-end order that a full trial measures worse is declined once and
 // recorded (`farEndDecision`); G5, the far-end round and the publication read the face through one reader (`readFace`).
+// The two longest tests of the file took 169 s and 155 s on the release CI of 0.3.0 (Node 24): their limit is 3 times the longer one.
+const LONG_TRIAL_MS = 540000;
 const text = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const sweep = (name: string): string => readFileSync(new URL(`../fixtures/sweep/${name}.yaml`, import.meta.url), 'utf8');
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
@@ -330,7 +332,7 @@ describe('a far-end decision holds only the proposal the far-end round generates
     const model = await run(reversedNodes(text('a-corridor-moves-after-the-grid-settles')));
     expect(farEndDecisionsOf(model.reservations ?? [])).toEqual([]);
     expect(g5(model).sort()).toEqual(['port-order lab3wrp001', 'port-order lab3wrp003', 'port-order sa-edge3']);
-  }, 240000);
+  }, LONG_TRIAL_MS);
 
   it('review 4: a follow-up proposal equal to a split of the first proposal decides nothing, also on a measured 7f refusal', async () => {
     // The reviewer's probe: on the first trial with four faces, links of the faces other than `sa-edge3` read as bundle members in the copy the judge
@@ -369,7 +371,7 @@ describe('a far-end decision holds only the proposal the far-end round generates
       // Three faces since the move-before-grow default (dense-16x9 ticket 45); lab6slb002 as well with the option off.
       expect(g5(restoreFinalLayout(JSON.stringify(model))).sort()).toEqual(['port-order lab3wrp001', 'port-order lab3wrp003', 'port-order sa-edge3']);
     } finally { judged.mockRestore(); reserved.mockRestore(); }
-  }, 240000);
+  }, LONG_TRIAL_MS);
 });
 
 // Ticket 54 (parked, a known defect of 0.3.0): one link joins two faces that one far-end proposal re-orders. Each face is sorted against the far

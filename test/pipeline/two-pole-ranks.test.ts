@@ -14,6 +14,8 @@ const ONE_RULE = 'a-group-ranks-two-poles-with-a-leaf-of-the-lower-anchor';
 const TWIN = 'two-cores-reach-seven-pairs-through-hubs-on-the-last-rank';
 const fixture = (name: string): string => readFileSync(new URL(name === TWIN ? `../fixtures/staged/${name}.yaml` : `../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const ranksOf = (name: string, group: string) => deriveRanks(rankInputOf(resolveBeforeExpansion(parse(fixture(name))), group));
+// One layout of the twin took 22 s on the release CI of 0.3.0 (Node 24), near the 30 s of the default project: its tests have 3 times that and more.
+const TWIN_MS = 120000;
 const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
 describe('two-pole ranks on the synthetic fixtures', () => {
@@ -50,7 +52,7 @@ describe('two-pole ranks in the layout', () => {
     expect(model.lanes.filter(lane => lane.owner.kind === 'link' && hubLinks.has(lane.owner.id))).toEqual([]);
     // Three sub-tiers hold each core, so the hubs stand on the last one and no rank row lies between them and the tier below.
     expect(model.tierBands.filter(band => band.groups.some(id => id.startsWith('core-'))).length).toBe(3);
-  });
+  }, TWIN_MS);
 
   it('the twin: every gate passes once tickets 05 and 06 seat its hubs (one level chord and one U between the cores)', async () => {
     const model = await run(TWIN);
@@ -58,7 +60,7 @@ describe('two-pole ranks in the layout', () => {
     const failing = Object.entries(gates).filter(([, gate]) => gate.violations.length > 0).map(([id, gate]) => [id, gate.violations.map(item => item.code)]);
     // Measured before slice C of ticket 06: four parallel-clearance pairs between same-tier links (G6) and one port-order violation (G5).
     expect(failing).toEqual([]);
-  });
+  }, TWIN_MS);
 
   // Dense-16x9 ticket 04 (slice 2), the publication step of ticket 14 slice 3. On the twin it fired until ticket 22 (main 0f6aa9ec) changed the
   // stagger rows; there the chord feed-b13 to up-b1 is now refused at the freeze (`leg`). On sweep variant v6-3-2 the plan names the held chord

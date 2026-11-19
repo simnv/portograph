@@ -15,6 +15,7 @@ import { withMoveBeforeGrow } from '../layout/move-before-grow.js';
  */
 const SHEETS = ['a-tier-gap-plan-orders-every-part', 'three-continents', 'a-corridor-moves-after-the-grid-settles', 'a-chord-and-a-lane-share-a-middle-tier', 'an-overlay-leaves-a-lateral-side-past-a-sibling-body'];
 
+// Five layouts took 75 s on the release CI of 0.3.0 (Node 24): the limit is 3 times that, not below the 180 s of the heavy project (docs/gates.md).
 it('rebuilds the unmoved baseline at most once per command', async () => {
   const counts: number[] = [];
   for (const name of SHEETS) {
@@ -26,4 +27,4 @@ it('rebuilds the unmoved baseline at most once per command', async () => {
   expect(Math.max(...counts)).toBeLessThanOrEqual(1);
   // The test bites: at least one sheet reaches the rebuild.
   expect(Math.max(...counts)).toBe(1);
-}, 120000);
+}, 240000);
