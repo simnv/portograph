@@ -26,12 +26,13 @@ jobs:
   check:
     name: check (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    # The release CI of 0.3.0 took 44 min on Node 24, its slower job: the limit is 3 times that.
+    # The release CI of 0.3.0 took 44 min on Node 24: the limit is 3 times that.
     timeout-minutes: 135
     strategy:
       fail-fast: false
       matrix:
-        node: [22, 24]
+        # Node 24 only (owner, 2026-11-19). The matrix stays, so the check name stays `check (Node 24)`.
+        node: [24]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
