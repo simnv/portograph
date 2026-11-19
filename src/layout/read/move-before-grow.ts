@@ -68,7 +68,8 @@ export interface GrowthChoice { keep: 'on' | 'off'; tallies?: { on: RunTally; of
  * sheet is kept only when it draws every link the option-on run draws (`removedLinks`, the removed-link guard of the routed trials, by identity:
  * review 1, P1), it is better on the whole sheet by the unified order (`unifiedCompare`, the comparator of the far-end round and its restore
  * check, R1: fewer bent links over both layers, then fewer turns, then fewer crossings), and it has no error-gate finding that the option-on run
- * does not have (`gateFindings`, the reader of the routed-trial guards, with the multiplicity of each finding: review 1, P2). A tie keeps the on
+ * does not have (`gateFindings`, the reader of the routed-trial guards, with the multiplicity of each finding and, for G5, its face and port pair: reviews 1
+ * and 2, P2). A tie keeps the on
  * run, and so does a run that does not score.
  */
 export function judgeGrowthChoice(on: LayoutModel, off: LayoutModel): GrowthChoice {
@@ -78,7 +79,8 @@ export function judgeGrowthChoice(on: LayoutModel, off: LayoutModel): GrowthChoi
   // A run that drops a link is a different diagram, whatever it saves in bends: the check comes before the ranking.
   if (removedLinks(on, off).length > 0) return { keep: 'on', tallies };
   if (!(unifiedCompare(onTally, offTally) < 0)) return { keep: 'on', tallies };
-  const errorsOn = gateFindings(on, 'error'), errorsOff = gateFindings(off, 'error');
+  // By face (`identity: 'face'`, review 2): a reversal that moves to another face of the node is a new finding of the whole run.
+  const errorsOn = gateFindings(on, 'error', 'face'), errorsOff = gateFindings(off, 'error', 'face');
   if (errorsOn === undefined || errorsOff === undefined || added(errorsOff.findings, errorsOn.findings).length > 0) return { keep: 'on', tallies };
   return { keep: 'off', tallies };
 }

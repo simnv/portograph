@@ -43,7 +43,9 @@ describe('the growth choice after review 2 (dense-16x9 ticket 60)', () => {
     const published = (model: LayoutModel) => score(model, { force: true }).snapshot.gates.G5!.violations.filter(item => item.elements[0] === 'probe');
     // The published finding is what it was: the code, the node and the text, and no more fields.
     for (const model of [on, off]) expect(JSON.parse(JSON.stringify(published(model)))).toEqual([{ code: 'author-port-order', elements: ['probe'], message: 'Physical port order reverses unequal authored keys' }]);
-    expect(added(gateFindings(off, 'error')!.findings, gateFindings(on, 'error')!.findings)).toEqual(['G5|author-port-order|probe|bottom']);
+    // The rounds read by node (ticket 62): equal; the growth judge reads by face: a new finding.
+    expect(added(gateFindings(off, 'error')!.findings, gateFindings(on, 'error')!.findings)).toEqual([]);
+    expect(added(gateFindings(off, 'error', 'face')!.findings, gateFindings(on, 'error', 'face')!.findings)).toEqual(['G5|author-port-order|probe|bottom']);
     expect(judgeGrowthChoice(on, off).keep).toBe('on');
   }, 240000);
 

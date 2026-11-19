@@ -241,7 +241,7 @@ One judge decides (`judgeGrowthChoice`, `src/layout/read/move-before-grow.ts`): 
 sheet by the unified order (`unifiedCompare`, the comparator of the far-end round: fewer bent links over both layers, then fewer turns, then fewer
 crossings), draws every link that the option-on run draws (`removedLinks`, the removed-link guard of the routed trials, by identity: review 1,
 P1), and has no error-gate finding that the option-on run does not have, counted with its multiplicity and with the identity the gate gives past its elements (`gateFindings`: the face, and the port pair of a
-free-port reversal of G5, which the published finding does not carry; reviews 1 and 2). A tie keeps the on run. A trial decides nothing when
+free-port reversal of G5, which the published finding does not carry; reviews 1 and 2; the trial rounds keep the node, ticket 62). A tie keeps the on run. A trial decides nothing when
 the budget has no time left before it starts, once it returns or right before an off run is committed, or when it throws for any
 reason (review 1, P3): the on run publishes, with one note `MOVE_BEFORE_GROW_TRIAL_SKIPPED` (stage `placement`) that names the cause; `info` for
 a spent budget or a qualifying refusal, `warning` for anything else, such as a worker bug (review 1, P5, R6). The restore check reads the shape of
