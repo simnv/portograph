@@ -228,17 +228,21 @@ the default made better worse again: a growth that keeps its own links straight 
 
 In the default-on mode (`layout.moveBeforeGrow` not written, `DEFAULT_MEANS_ON` true) the command runs the option-on run as before. When that run
 completed and left a seat short (`growthShort`, `src/pipeline/index.ts`), and the command budget has time left, the command lays the whole input out
-once more with the option off, on what is left of the same budget. The trigger reads two existing notes by code and owners, never by text, and no
-7c record is added for it:
+once more with the option off, on what is left of the same budget. The trigger reads two existing placement notes by code, stage and owners,
+never by text, and no 7c record is added for it. A note the caller passed in (the parse diagnostics) fires nothing (review 1, P4):
 
-- a link that a `CENTRE_ALIGNMENT_INFEASIBLE` note names is still bent in the published run;
-- the run has a `SEAT_SET_DECLINED` note. The cap also acts in the placement runs of a round's trial (the course round); when that trial is
-  declined, the published run names no short seat although the cap cost the sheet its course.
+- a link that a `CENTRE_ALIGNMENT_INFEASIBLE` note names is still bent in the published run, by the scorer's bend reader (`pathBends`);
+- the run has a `SEAT_SET_DECLINED` note of the placement. The cap also acts in the placement runs of a round's trial (the course round); when
+  that trial is declined, the published run names no short seat although the cap cost the sheet its course.
 
 One judge decides (`judgeGrowthChoice`, `src/layout/read/move-before-grow.ts`): the option-off run publishes only when it is better on the whole
 sheet by the unified order (`unifiedCompare`, the comparator of the far-end round: fewer bent links over both layers, then fewer turns, then fewer
-crossings) and has no error-gate finding that the option-on run does not have. A tie keeps the on run. A failure of the trial of any kind (a
-deadline, a refusal, a bug) decides nothing: the on run publishes. A refusal of the option-on run still falls back as the amendment of ticket 56
+crossings), draws every link that the option-on run draws (`removedLinks`, the removed-link guard of the routed trials, by identity: review 1,
+P1), and has no error-gate finding that the option-on run does not have, counted with its multiplicity (`gateFindings`: review 1, P2). A tie
+keeps the on run. A trial decides nothing when the budget has no time left before it starts or once it returns, or when it throws for any
+reason (review 1, P3): the on run publishes, with one note `MOVE_BEFORE_GROW_TRIAL_SKIPPED` (stage `placement`) that names the cause; `info` for
+a spent budget or a qualifying refusal, `warning` for anything else, such as a worker bug (review 1, P5, R6). The restore check reads the shape of
+that note only: one at most, on an option-on record. A refusal of the option-on run still falls back as the amendment of ticket 56
 says, with no trial. Written `true` stays strict (one run, no trial); written `false` is off.
 
 A kept option-off run records the choice (`moveBeforeGrowRun`: `effective: off` with `choice`, the tallies of both runs, distinct from a fallback,

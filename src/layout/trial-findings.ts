@@ -25,15 +25,23 @@ export function separationWorse(trial: LayoutModel, base: LayoutModel): string[]
 }
 
 /**
- * The gate violations of the routed model, by gate, code and elements; undefined when the model does not score. `severity` keeps the gates of that
- * severity only (the side round asks for the error gates: a preference step never buys with a gate failure).
+ * The gate violations of the routed model, by gate, code and elements, with their multiplicity; undefined when the model does not score. `severity`
+ * keeps the gates of that severity only (the side round asks for the error gates: a preference step never buys with a gate failure).
+ *
+ * A gate can name the same elements more than once: G5 names only the node for each inverted pair of a face (`portOrder`), so one inversion and
+ * three read alike. The second and each later violation of one key is its own name, `<key>|#<n>` (dense-16x9 ticket 60, review 1, P2), so the set
+ * difference of `added` counts them: a trial with three inversions where its baseline has one adds two names. The first name of a key is the key.
  */
 export function gateFindings(model: LayoutModel, severity?: 'error' | 'warning'): { findings: Set<string>; counts: ScoreCounts } | undefined {
   try {
-    const findings = new Set<string>(), snapshot = score(model, { force: true }).snapshot;
+    const findings = new Set<string>(), seen = new Map<string, number>(), snapshot = score(model, { force: true }).snapshot;
     for (const [id, gate] of Object.entries(snapshot.gates)) {
       if (gate.passed || (severity !== undefined && gate.severity !== severity)) continue;
-      for (const violation of gate.violations) findings.add(`${id}|${violation.code}|${violation.elements.join(',')}`);
+      for (const violation of gate.violations) {
+        const key = `${id}|${violation.code}|${violation.elements.join(',')}`, n = (seen.get(key) ?? 0) + 1;
+        seen.set(key, n);
+        findings.add(n === 1 ? key : `${key}|#${n}`);
+      }
     }
     return { findings, counts: snapshot.counts };
   } catch { return undefined; }

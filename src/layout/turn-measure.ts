@@ -87,7 +87,7 @@ export interface TrialReading { gatesThen: NonNullable<ReturnType<typeof gateFin
 
 /**
  * What every judged re-run of a routed trial must hold, whatever it gains (the turn round and the far-end round share it, R1): no link is removed; no wall in the corridor of a
- * spanning chord; every kept course publishes at most the turns it promised; no new gate finding and no new hard constraint finding (as sets); no minimum separation broken
+ * spanning chord; every kept course publishes at most the turns it promised; no new gate finding (with its multiplicity, `gateFindings`) and no new hard constraint finding (as sets); no minimum separation broken
  * or deepened; and the canvas does not grow. The refusal reason, or the two readings the judge compares.
  */
 export function guardRoutedTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>,
@@ -96,14 +96,24 @@ export function guardRoutedTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   return 'kind' in guarded ? guarded.reason : guarded;
 }
 
+/**
+ * The links that the base draws and the trial does not, by identity (`routedBends`: a link the route removed has no path): the removed-link guard of every judged
+ * routed trial (`guardRoutedTrialKind`) and of the growth choice (`judgeGrowthChoice`, dense-16x9 ticket 60, review 1, P1). A count would let a trial swap which link
+ * it drops.
+ */
+export function removedLinks(base: LayoutModel, trial: LayoutModel): string[] {
+  const now = routedBends(trial);
+  return [...routedBends(base).keys()].filter(id => !now.has(id));
+}
+
 /** Which guard of a routed trial refused it (`guardRoutedTrialKind`). */
 /** `gate-finding`: a new finding of error severity; `gate-warning`: new findings of warning severity only (it refuses the trial too). */
 export type GuardKind = 'removed-link' | 'span-wall' | 'promise' | 'unscored' | 'gate-finding' | 'gate-warning' | 'constraint' | 'separation' | 'canvas';
 /** The guards of `guardRoutedTrial`, with the guard that refused the trial named: the far-end round records a decision for some of them only (dense-16x9 ticket 49). */
 export function guardRoutedTrialKind(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>,
   canvasRefusal: (base: LayoutModel, trial: LayoutModel) => string | undefined = ownCanvasGrowth): { kind: GuardKind; reason: string } | TrialReading {
-  const was = routedBends(routedBase), now = routedBends(routedTrial);
-  const removed = [...was.keys()].filter(id => !now.has(id));
+  const now = routedBends(routedTrial);
+  const removed = removedLinks(routedBase, routedTrial);
   if (removed.length > 0) return { kind: 'removed-link', reason: `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps` };
   const blocked = spanBlockedNew(routedBase, routedTrial);
   if (blocked.length > 0) return { kind: 'span-wall', reason: `a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})` };

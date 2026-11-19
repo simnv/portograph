@@ -1,7 +1,7 @@
 import type { LayoutModel, RunTally } from '../../model/layout.js';
 import type { NormalisedDocument } from '../../model/document.js';
 import { isRefusalCode } from '../placement-refusal.js';
-import { measuredTally, unifiedCompare, countOfTally } from '../turn-measure.js';
+import { measuredTally, unifiedCompare, countOfTally, removedLinks } from '../turn-measure.js';
 import { added, gateFindings } from '../trial-findings.js';
 import { FINAL_STAGES } from '../mutation.js';
 
@@ -65,14 +65,18 @@ export interface GrowthChoice { keep: 'on' | 'off'; tallies?: { on: RunTally; of
 
 /**
  * The one judge of the growth choice (dense-16x9 ticket 60, owner ruling 2026-11-19, "whole-sheet choice"): the option-off run of a default-on
- * sheet is kept only when it is better on the whole sheet by the unified order (`unifiedCompare`, the comparator of the far-end round and its
- * restore check, R1: fewer bent links over both layers, then fewer turns, then fewer crossings) and it has no error-gate finding that the option-on
- * run does not have (`gateFindings`, the reader of the routed-trial guards). A tie keeps the on run, and so does a run that does not score.
+ * sheet is kept only when it draws every link the option-on run draws (`removedLinks`, the removed-link guard of the routed trials, by identity:
+ * review 1, P1), it is better on the whole sheet by the unified order (`unifiedCompare`, the comparator of the far-end round and its restore
+ * check, R1: fewer bent links over both layers, then fewer turns, then fewer crossings), and it has no error-gate finding that the option-on run
+ * does not have (`gateFindings`, the reader of the routed-trial guards, with the multiplicity of each finding: review 1, P2). A tie keeps the on
+ * run, and so does a run that does not score.
  */
 export function judgeGrowthChoice(on: LayoutModel, off: LayoutModel): GrowthChoice {
   const onTally = measuredTally(on), offTally = measuredTally(off);
   if (onTally === undefined || offTally === undefined) return { keep: 'on' };
   const tallies = { on: onTally, off: offTally };
+  // A run that drops a link is a different diagram, whatever it saves in bends: the check comes before the ranking.
+  if (removedLinks(on, off).length > 0) return { keep: 'on', tallies };
   if (!(unifiedCompare(onTally, offTally) < 0)) return { keep: 'on', tallies };
   const errorsOn = gateFindings(on, 'error'), errorsOff = gateFindings(off, 'error');
   if (errorsOn === undefined || errorsOff === undefined || added(errorsOff.findings, errorsOn.findings).length > 0) return { keep: 'on', tallies };
@@ -83,6 +87,19 @@ export function judgeGrowthChoice(on: LayoutModel, off: LayoutModel): GrowthChoi
 export function choiceMessage(choice: { on: RunTally; off: RunTally }): string {
   const on = countOfTally(choice.on), off = countOfTally(choice.off);
   return `layout.moveBeforeGrow is not written and runs on by default; the option-off run is better on the whole sheet (${off.bent} bent links, ${off.turns} turns, ${off.crossings} crossings, against ${on.bent}, ${on.turns} and ${on.crossings} with it on), so the sheet is laid out with it off.`;
+}
+
+/**
+ * The note of a command that kept the option-on run of a default-on sheet because the option-off trial of the growth choice decided nothing
+ * (dense-16x9 ticket 60, review 1, P3 and P5): the trigger fired, but the budget had no time left before or after the trial, or the trial threw.
+ * Stage `placement`; severity `info` for a spent budget or a qualifying refusal (`qualifyingRefusal`), `warning` for any other cause (a worker bug,
+ * a reader exception), so a skipped trial is never read as a comparison the on run won.
+ */
+export const MOVE_BEFORE_GROW_TRIAL_SKIPPED = 'MOVE_BEFORE_GROW_TRIAL_SKIPPED';
+
+/** The text of the skipped-trial note (`MOVE_BEFORE_GROW_TRIAL_SKIPPED`): it names the cause by code and message. */
+export function trialSkippedMessage(cause: { code: string; message: string }): string {
+  return `layout.moveBeforeGrow is not written and runs on by default; that run left a seat short, but the option-off trial decided nothing (${cause.code}: ${cause.message}), so the sheet is laid out with it on.`;
 }
 
 const TALLY_KEYS = 'crossings,overlay,routed';
@@ -105,7 +122,9 @@ export function moveBeforeGrowRunFault(model: Pick<LayoutModel, 'document' | 'di
   const run = model.moveBeforeGrowRun;
   const warnings = model.diagnostics.filter(note => note.code === MOVE_BEFORE_GROW_FALLBACK);
   const choices = model.diagnostics.filter(note => note.code === MOVE_BEFORE_GROW_CHOICE);
-  if (run === undefined) return warnings.length ? 'a fallback warning without a record' : choices.length ? 'a choice note without a record' : undefined;
+  const skipped = model.diagnostics.filter(note => note.code === MOVE_BEFORE_GROW_TRIAL_SKIPPED);
+  if (run === undefined) return warnings.length ? 'a fallback warning without a record' : choices.length ? 'a choice note without a record'
+    : skipped.length ? 'a skipped-trial note without a record' : undefined;
   if (typeof run !== 'object' || run === null || Array.isArray(run)) return 'the record is not an object';
   const keys = Object.keys(run).sort().join(',');
   if (run.requested !== 'default') return 'the requested mode is not default';
@@ -115,9 +134,14 @@ export function moveBeforeGrowRunFault(model: Pick<LayoutModel, 'document' | 'di
     if (written !== true) return 'an on run whose document does not hold layout.moveBeforeGrow: true';
     if (warnings.length) return 'an on run with a fallback warning';
     if (choices.length) return 'an on run with a choice note';
+    // The skipped trial of the growth choice (review 1, P5): its shape only, since the trial did not publish.
+    if (skipped.length > 1) return 'an on run with more than one skipped-trial note';
+    if (skipped.length === 1 && (skipped[0]!.stage !== FALLBACK_STAGE || (skipped[0]!.severity !== 'info' && skipped[0]!.severity !== 'warning')))
+      return `the skipped-trial note has the stage ${skipped[0]!.stage} and the severity ${skipped[0]!.severity}, not ${FALLBACK_STAGE} and info or warning`;
     return undefined;
   }
   if (run.effective !== 'off') return 'the effective mode is neither on nor off';
+  if (skipped.length) return 'an off run with a skipped-trial note';
   if (Object.hasOwn(run, 'choice')) return choiceFault(model as LayoutModel, run, keys, written, warnings.length, choices);
   if (choices.length) return 'a fallback with a choice note';
   if (keys !== 'effective,failure,requested') return 'an off run without a failure, or with an unknown field';
