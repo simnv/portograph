@@ -85,6 +85,7 @@ No `catch {}`. No `return true` on missing data. No `continue` over an unreadabl
 
 Evidence: architecture-2 tickets 16 (fail-open gap guard); m1-example-diagram ticket 27 (skipped links); ranked-groups ticket 112 (a dropped re-run).
 Check: grep `catch {`, early `return true` and `continue` in guards. Ask what the user sees when the guard skips.
+Lint (the mechanical half): `local/caught-refusal-cause` fails a placement refusal built in a catch without the caught value as its cause, and `local/caught-finding-cause` a postcondition finding made from a caught value without the value (`scripts/eslint-local.mjs`; retro 2026-11 ticket 02).
 
 ### R7. Measure the full set with the right counters.
 
