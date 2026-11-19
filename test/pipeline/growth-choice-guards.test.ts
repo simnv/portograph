@@ -99,7 +99,7 @@ describe('the guards of the growth choice (dense-16x9 ticket 60, review 1)', () 
     }
     const g5 = (model: LayoutModel) => score(model, { force: true }).snapshot.gates.G5!.violations.filter(item => item.elements[0] === 'probe').length;
     expect([g5(on), g5(off)]).toEqual([1, 3]);
-    expect(added(gateFindings(off, 'error')!.findings, gateFindings(on, 'error')!.findings)).toEqual(['G5|port-order|probe|#2', 'G5|port-order|probe|#3']);
+    expect(added(gateFindings(off, 'error')!.findings, gateFindings(on, 'error')!.findings)).toEqual(['G5|port-order|probe|bottom probe.#1 > probe.#3', 'G5|port-order|probe|bottom probe.#2 > probe.#3']);
     expect(judgeGrowthChoice(on, off).keep).toBe('on');
   }, 240000);
 
@@ -117,7 +117,7 @@ describe('the guards of the growth choice (dense-16x9 ticket 60, review 1)', () 
     }
     const authored = (model: LayoutModel) => score(model, { force: true }).snapshot.gates.G5!.violations.filter(item => item.code === 'author-port-order' && item.elements[0] === 'probe').length;
     expect([authored(on), authored(off)]).toEqual([1, 2]);
-    expect(added(gateFindings(off, 'error')!.findings, gateFindings(on, 'error')!.findings)).toEqual(['G5|author-port-order|probe|#2']);
+    expect(added(gateFindings(off, 'error')!.findings, gateFindings(on, 'error')!.findings)).toEqual(['G5|author-port-order|probe|bottom']);
     expect(judgeGrowthChoice(on, off).keep).toBe('on');
   }, 240000);
 

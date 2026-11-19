@@ -134,10 +134,13 @@ export function moveBeforeGrowRunFault(model: Pick<LayoutModel, 'document' | 'di
     if (written !== true) return 'an on run whose document does not hold layout.moveBeforeGrow: true';
     if (warnings.length) return 'an on run with a fallback warning';
     if (choices.length) return 'an on run with a choice note';
-    // The skipped trial of the growth choice (review 1, P5): its shape only, since the trial did not publish.
+    // The skipped trial of the growth choice (review 1, P5): its shape only, since the trial did not publish and its cause cannot be measured again.
     if (skipped.length > 1) return 'an on run with more than one skipped-trial note';
     if (skipped.length === 1 && (skipped[0]!.stage !== FALLBACK_STAGE || (skipped[0]!.severity !== 'info' && skipped[0]!.severity !== 'warning')))
       return `the skipped-trial note has the stage ${skipped[0]!.stage} and the severity ${skipped[0]!.severity}, not ${FALLBACK_STAGE} and info or warning`;
+    // Only a completed run writes it (review 2, P3): a final layout, and a note with its text.
+    if (skipped.length === 1 && !FINAL_STAGES.includes(model.stage!)) return `a skipped-trial note on a ${model.stage} model, which is no final layout`;
+    if (skipped.length === 1 && typeof (skipped[0] as { message?: unknown }).message !== 'string') return 'a skipped-trial note without a message';
     return undefined;
   }
   if (run.effective !== 'off') return 'the effective mode is neither on nor off';

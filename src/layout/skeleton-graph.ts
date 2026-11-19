@@ -17,6 +17,11 @@ export const portId = (ref: PortRef): string => {
   if (typeof ordinal !== 'number' || !Number.isFinite(ordinal)) return `port:${JSON.stringify([ref.node, ref.anonymous === true, ref.name ?? null, ordinal])}`;
   return `port:[${quoted(ref.node)},${ref.anonymous === true},${ref.name == null ? 'null' : quoted(ref.name)},${ordinal}]`;
 };
+/** A port by `portId` as a note names it: `node.name#ordinal`, or `node.#ordinal` for an anonymous port (as `portName` of the rounds). */
+export const portIdName = (id: string): string => {
+  const [node, anonymous, name, ordinal] = JSON.parse(id.slice('port:'.length)) as [string, boolean, string | null, number];
+  return `${node}.${anonymous ? '' : name ?? ''}#${ordinal}`;
+};
 export function nodeGap(model: LayoutModel, a: string, b: string): number {
   return SKELETON_SPACING.nodeClearance
     + ((model.nodes[a]!.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) + (model.nodes[b]!.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2;

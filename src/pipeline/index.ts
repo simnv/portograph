@@ -53,9 +53,13 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   try {
     if (moveBeforeGrowMode(document) !== 'default' || !defaultMeansOn()) return await command(document, given);
     // The default-on mode (dense-16x9 ticket 56): the run writes the effective mode into its document, so every reader and the restore read it.
+    // The caller's notes with a code the growth trigger reads stay apart from the run (ticket 60, review 2, P2), so the trigger reads what the
+    // placement of this run wrote; they publish ahead of the run's notes (`withHeld`).
+    const held = (given.diagnostics ?? []).filter(heldFromRun), run: LayoutOptions = held.length === 0 ? given
+      : { ...given, diagnostics: (given.diagnostics ?? []).filter(note => !heldFromRun(note)) };
     let on: LayoutModel;
     try {
-      on = await command(withMoveBeforeGrow(document, true), { ...given, moveBeforeGrowRun: { requested: 'default', effective: 'on' } });
+      on = await command(withMoveBeforeGrow(document, true), { ...run, moveBeforeGrowRun: { requested: 'default', effective: 'on' } });
     } catch (error) {
       if (!fallsBack(error, given.budget ?? UNBOUNDED_BUDGET)) throw error;
       // One terminal retry of the whole input with the option off, on what is left of the command budget: a fresh ledger, the ordinary pipeline
@@ -64,7 +68,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const warning: Diagnostic = { stage: FALLBACK_STAGE, severity: 'warning', code: MOVE_BEFORE_GROW_FALLBACK, message: fallbackMessage(failure), owners: [...error.owners] };
       return await command(withMoveBeforeGrow(document, false), { ...given, diagnostics: [...given.diagnostics ?? [], warning], moveBeforeGrowRun: { requested: 'default', effective: 'off', failure } });
     }
-    return await growthChoice(document, given, on);
+    return await growthChoice(document, run, on, held);
   } finally { close(); }
 }
 
@@ -73,35 +77,33 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
  * runs only then. Read by code, stage and owners, never by message text; no 7c record is added for it. Either arm fires:
  *
  * - a link that a `CENTRE_ALIGNMENT_INFEASIBLE` note of the placement names (its owners) is still bent in the published run, by the scorer's bend
- *   reader (`pathBends`, review 1, P4: a straight path in two segments has no bend; a link the route removed counts as not straight): a step could
+ *   reader (`pathBends`, review 1, P4: a straight path in two segments has no bend; a link the route removed has no bend count and is not bent,
+ *   review 2): a step could
  *   not seat it (the cap, the slide or growth bound of its row, or a guard), and the route did not draw it straight either;
  * - the run has a `SEAT_SET_DECLINED` note of the placement (`seat-set.ts`, the one writer). The cap also acts in the placement runs of a round's
  *   trial (the course round): when that trial is declined, the published run names no short seat although the cap cost the sheet its course. A
  *   declined seat set is the note those sheets carry, and the option-off run never writes it.
  *
- * The notes the caller passed in (`given`, the parse diagnostics that `resolve` copies into the model) are not the run's: each is taken out once, by
- * its stage, code, severity, message and owners, before the arms read the notes (review 1, P4), so a caller's note with either code fires nothing.
+ * The notes are the run's own (review 2, P2): `layout` keeps the caller's notes with either code apart from the option-on run (`heldFromRun`), so
+ * a caller's note neither fires the trial (review 1, P4) nor hides the note the placement writes.
  *
  * Measured on the census as written (647 sheets, ticket 60 slice 1): 259 sheets fire, and all 33 sheets that the option-off run repairs are among
  * them. The first arm alone fires on 143 sheets and misses 5 of the 33.
  */
 /** The note of a centring step that left a feed unaligned (`centre.ts`, `placementWarning`: stage `placement`, the link in its owners). */
 const CENTRE_ALIGNMENT_INFEASIBLE = 'CENTRE_ALIGNMENT_INFEASIBLE';
-export function growthShort(model: LayoutModel, given: readonly Diagnostic[] = []): boolean {
-  const key = (note: Diagnostic): string => JSON.stringify([note.stage, note.code, note.severity, note.message, note.owners ?? []]);
-  const callers = new Map<string, number>();
-  for (const note of given) callers.set(key(note), (callers.get(key(note)) ?? 0) + 1);
-  const own = model.diagnostics.filter(note => {
-    if (note.stage !== 'placement' || (note.code !== SEAT_SET_DECLINED && note.code !== CENTRE_ALIGNMENT_INFEASIBLE)) return false;
-    const left = callers.get(key(note)) ?? 0;
-    if (left === 0) return true;
-    callers.set(key(note), left - 1);
-    return false;
-  });
+/**
+ * Whether a caller's note is kept apart from the option-on run of a default-on sheet: a note with a code the trigger reads, at any stage (the
+ * writer of `CENTRE_ALIGNMENT_INFEASIBLE` skips a note whose code and message the model has already, so a caller's copy would hide the run's own).
+ * An error stays with the run: `resolve` refuses it there, as in every other mode.
+ */
+const heldFromRun = (note: Diagnostic): boolean => (note.code === CENTRE_ALIGNMENT_INFEASIBLE || note.code === SEAT_SET_DECLINED) && note.severity !== 'error';
+export function growthShort(model: LayoutModel): boolean {
+  const own = model.diagnostics.filter(note => note.stage === 'placement');
   if (own.some(note => note.code === SEAT_SET_DECLINED)) return true;
   const named = new Set(own.filter(note => note.code === CENTRE_ALIGNMENT_INFEASIBLE)
     .flatMap(note => (note.owners ?? []).flatMap(owner => owner.kind === 'link' ? [owner.id] : [])));
-  return model.links.some(link => { if (!named.has(link.id)) return false; const bends = pathBends(link); return bends === undefined || bends > 0; });
+  return model.links.some(link => named.has(link.id) && (pathBends(link) ?? 0) > 0);
 }
 
 /**
@@ -111,45 +113,79 @@ export function growthShort(model: LayoutModel, given: readonly Diagnostic[] = [
  * carries its record (`moveBeforeGrowRun.choice`, both tallies) and one info note (`MOVE_BEFORE_GROW_CHOICE`), and publishes again through
  * `restoreLayoutModel`, so the record check of every restore (`moveBeforeGrowRunFault`) has judged it once already.
  *
- * The trial decides nothing when the budget has no time left before it starts or once it returns (review 1, P3: an expired trial is not judged),
- * or when it throws for any reason. The on run then publishes with one `MOVE_BEFORE_GROW_TRIAL_SKIPPED` note that names the cause (review 1, P5,
+ * The trial decides nothing when the budget has no time left before it starts, once it returns (review 1, P3: an expired trial is not judged)
+ * or right before an off run is committed (review 2), or when it throws for any reason. The on run then publishes with one `MOVE_BEFORE_GROW_TRIAL_SKIPPED` note that names the cause (review 1, P5,
  * R6): `info` for a spent budget or a qualifying refusal (`qualifyingRefusal`), `warning` for anything else, such as a worker bug.
  */
-async function growthChoice(document: NormalisedDocument, given: LayoutOptions, on: LayoutModel): Promise<LayoutModel> {
-  if (!growthShort(on, given.diagnostics)) return on;
-  const budget = given.budget ?? UNBOUNDED_BUDGET;
-  if (!(budget.remainingMs() > 0)) return trialSkipped(on, 'info', { code: 'deadline', message: 'the command budget has no time left for the trial' });
+async function growthChoice(document: NormalisedDocument, run: LayoutOptions, on: LayoutModel, held: readonly Diagnostic[]): Promise<LayoutModel> {
+  if (!growthShort(on)) return withHeld(on, held);
+  const budget = run.budget ?? UNBOUNDED_BUDGET;
+  const spent = (when: string): LayoutModel => trialSkipped(on, held, 'info', { code: 'deadline', message: `the command budget ${when}` });
+  if (!(budget.remainingMs() > 0)) return spent('has no time left for the trial');
   let off: LayoutModel;
   try {
     growthChoiceTest.beforeTrial?.();
-    off = await command(withMoveBeforeGrow(document, false), given);
+    off = await command(withMoveBeforeGrow(document, false), run);
   } catch (error) {
-    if (qualifyingRefusal(error)) return trialSkipped(on, 'info', { code: error.code, message: error.message }, error.owners);
+    if (qualifyingRefusal(error)) return trialSkipped(on, held, 'info', { code: error.code, message: error.message }, error.owners);
     const deadline = deadlineIn(error);
-    if (deadline !== undefined) return trialSkipped(on, 'info', { code: 'deadline', message: deadline.message });
-    return trialSkipped(on, 'warning', { code: error instanceof Error ? error.name : 'unknown', message: error instanceof Error ? error.message : String(error) });
+    if (deadline !== undefined) return trialSkipped(on, held, 'info', { code: 'deadline', message: deadline.message });
+    return trialSkipped(on, held, 'warning', describeThrown(error));
   }
-  if (!(budget.remainingMs() > 0)) return trialSkipped(on, 'info', { code: 'deadline', message: 'the command budget ran out during the trial' });
+  if (!(budget.remainingMs() > 0)) return spent('ran out during the trial');
   const verdict = judgeGrowthChoice(on, off);
-  if (verdict.keep === 'on' || verdict.tallies === undefined) return on;
-  const kept = JSON.parse(serializeLayoutModel(off)) as LayoutModel;
-  kept.moveBeforeGrowRun = { requested: 'default', effective: 'off', choice: verdict.tallies };
-  kept.diagnostics = [...kept.diagnostics, { stage: FALLBACK_STAGE, severity: 'info', code: MOVE_BEFORE_GROW_CHOICE, message: choiceMessage(verdict.tallies) }];
-  return restoreLayoutModel(JSON.stringify(kept));
+  if (verdict.keep === 'on' || verdict.tallies === undefined) return withHeld(on, held);
+  // The time is read once more on the winning path, right before the choice is committed (review 2, P2): the judge scores both runs.
+  if (!(budget.remainingMs() > 0)) return spent('ran out while the trial was judged');
+  const tallies = verdict.tallies;
+  return withHeld(off, held, kept => {
+    kept.moveBeforeGrowRun = { requested: 'default', effective: 'off', choice: tallies };
+    kept.diagnostics = [...kept.diagnostics, { stage: FALLBACK_STAGE, severity: 'info', code: MOVE_BEFORE_GROW_CHOICE, message: choiceMessage(tallies) }];
+  });
 }
 
-/** The command deadline a trial threw, also under the refusal that a catch built from it (`PlacementRefusal.cause`): a spent budget, no bug. */
+/**
+ * The command deadline a trial threw, also under any chain of wrappers that a catch built from it (`cause`), walked to its end with cycle
+ * detection (review 2, P2): a spent budget, no bug. A `cause` that cannot be read ends the walk.
+ */
 function deadlineIn(error: unknown): CommandDeadlineError | undefined {
-  for (let at = error, depth = 0; at !== undefined && at !== null && depth < 8; at = (at as { cause?: unknown }).cause, depth++) if (at instanceof CommandDeadlineError) return at;
+  const seen = new Set<unknown>();
+  for (let at = error; at !== undefined && at !== null && !seen.has(at);) {
+    if (at instanceof CommandDeadlineError) return at;
+    seen.add(at);
+    try { at = (at as { cause?: unknown }).cause; } catch { return undefined; }
+  }
   return undefined;
 }
 
-/** The on run of a growth choice whose trial decided nothing, published again with the note that names the cause (`MOVE_BEFORE_GROW_TRIAL_SKIPPED`). */
-function trialSkipped(on: LayoutModel, severity: 'info' | 'warning', cause: { code: string; message: string }, owners: readonly Owner[] = []): LayoutModel {
-  const kept = JSON.parse(serializeLayoutModel(on)) as LayoutModel;
-  kept.diagnostics = [...kept.diagnostics, { stage: FALLBACK_STAGE, severity, code: MOVE_BEFORE_GROW_TRIAL_SKIPPED, message: trialSkippedMessage(cause),
-    ...(owners.length ? { owners: [...owners] } : {}) }];
-  return restoreLayoutModel(JSON.stringify(kept));
+/** The cause of a thrown value as the skipped-trial note names it (review 2, P2, R6): never throws, also for a value with no `toString`. */
+function describeThrown(error: unknown): { code: string; message: string } {
+  const text = (read: () => unknown, fallback: string): string => { try { const value = read(); return typeof value === 'string' ? value : fallback; } catch { return fallback; } };
+  try {
+    if (error instanceof Error) return { code: text(() => error.name, 'Error'), message: text(() => error.message, 'an error whose message cannot be read') };
+  } catch { /* a value whose prototype cannot be read is described as below */ }
+  return { code: 'unknown', message: text(() => String(error), 'a thrown value that cannot be printed') };
+}
+
+/**
+ * A model of the growth choice as it publishes: the caller's notes that `layout` kept apart from the run come first, where `resolve` puts the
+ * caller's notes, and `edit` writes the record and note of a choice. With neither, the model publishes as the run published it; else it
+ * publishes again through `restoreLayoutModel`, so the record check of every restore (`moveBeforeGrowRunFault`) has judged it once already.
+ */
+function withHeld(model: LayoutModel, held: readonly Diagnostic[], edit?: (json: LayoutModel) => void): LayoutModel {
+  if (held.length === 0 && edit === undefined) return model;
+  const json = JSON.parse(serializeLayoutModel(model)) as LayoutModel;
+  edit?.(json);
+  json.diagnostics = [...JSON.parse(JSON.stringify(held)) as Diagnostic[], ...json.diagnostics];
+  return restoreLayoutModel(JSON.stringify(json));
+}
+
+/** The on run of a growth choice whose trial decided nothing, published with the note that names the cause (`MOVE_BEFORE_GROW_TRIAL_SKIPPED`). */
+function trialSkipped(on: LayoutModel, held: readonly Diagnostic[], severity: 'info' | 'warning', cause: { code: string; message: string }, owners: readonly Owner[] = []): LayoutModel {
+  return withHeld(on, held, kept => {
+    kept.diagnostics = [...kept.diagnostics, { stage: FALLBACK_STAGE, severity, code: MOVE_BEFORE_GROW_TRIAL_SKIPPED, message: trialSkippedMessage(cause),
+      ...(owners.length ? { owners: [...owners] } : {}) }];
+  });
 }
 
 /** One whole run of the command: the width and lift selection, then the publication fit (the final flat-gap choice, dense-16x9 ticket 42) once, on the run it publishes (`fitPublication`). */

@@ -25,10 +25,11 @@ import { isRoutedChord } from '../layout/frame-paths.js';
 import { diagonalMayCross, linkFreeMargin } from '../layout/diagonal-text.js';
 import { turnRecordFaults } from '../layout/turn-order.js';
 import { farAnchorIndex, farEndDecisions, readFace } from '../layout/far-end-faults.js';
+import { portIdName } from '../layout/skeleton-graph.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import { runClearance } from './sheaf.js';
-import type { GateId, GateResult, ScoreCounters } from './types.js';
+import type { GateId, GateResult, GateViolation, ScoreCounters } from './types.js';
 import { strictCrossing } from '../layout/read/crossings.js';
 
 /**
@@ -118,7 +119,7 @@ function separationGate(model: LayoutModel, fail: (id: GateId, code: string, ele
  * publication names the record. Every other face, whatever links it holds, is judged by its far-end ranges. The one reader of all three is `readFace`.
  */
 export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], routedLinks: ReadonlySet<LayoutLink>,
-  fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
+  fail: (id: GateId, code: string, elements: string[], message: string, identity?: string) => void): void {
   // Every port's far anchors, recorded in one pass over the routed links (`farAnchorIndex`, the reader that the far-end round shares: ticket 07). The port-order gate below
   // reads this index; scanning every link for every port made the gate quadratic in the diagram.
   const farAnchors = farAnchorIndex(model, routedLinks);
@@ -127,20 +128,29 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
     const known = fault.node !== undefined && model.nodes[fault.node] !== undefined;
     if (known && !nodes.some(item => item.id === fault.node)) continue;
     fail('G5', 'port-order', [fault.node ?? '*'], fault.side === undefined ? `The record of the turn round does not hold: ${fault.why}`
-      : `The ${fault.side} face is recorded as taken by the turn round, but ${fault.why}`);
+      : `The ${fault.side} face is recorded as taken by the turn round, but ${fault.why}`, `turn record ${fault.side ?? '*'}`);
   }
   const decisions = farEndDecisions(model);
   for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
     // The one reader of the face (`readFace`, dense-16x9 ticket 49): every pair of strictly separated far-end ranges whose ports stand the other way round,
     // unless a record decides the face (the turn round's, or a far-end decision that holds).
     const reading = readFace(model, node.id, side, farAnchors, decisions);
-    if (reading.fails) for (let k = 0; k < reading.wrong.length; k++) fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
+    if (reading.fails) for (const [first, second] of reading.wrong) fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored', `${side} ${portIdName(first)} > ${portIdName(second)}`);
     const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined)
       .sort((a, b) => (side === 'top' || side === 'bottom' ? a.anchor!.x - b.anchor!.x : a.anchor!.y - b.anchor!.y));
     if (authored.some((p, i) => i > 0 && p.authorOrder! < authored[i - 1]!.authorOrder!))
-      fail('G5', 'author-port-order', [node.id], 'Physical port order reverses unequal authored keys');
+      fail('G5', 'author-port-order', [node.id], 'Physical port order reverses unequal authored keys', side);
   }
 }
+
+/**
+ * What a violation is, past the elements it publishes (dense-16x9 ticket 60, review 2, P2): G5 names only the node, so a reversal on the top face and one
+ * on the bottom face publish alike. The gate gives each its face, and the port pair of a free-port reversal, here; a trial judge reads it
+ * (`gateFindings`) to tell two such findings apart. It is kept off the violation so the published finding, the score snapshot and the gate files
+ * do not change. Undefined for a violation of a gate that gives no more than its elements.
+ */
+const identities = new WeakMap<GateViolation, string>();
+export const violationIdentity = (violation: GateViolation): string | undefined => identities.get(violation);
 
 /**
  * G6 `parallel-clearance` / `bundle-member-gap` over the routed segments: every pair that stands closer than its clearance and is
@@ -187,7 +197,11 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   const nodes = Object.values(model.nodes), groups = Object.values(model.groups);
   const gate = (warning = false): GateResult => ({ passed: true, severity: warning ? 'warning' : 'error', violations: [] });
   const result: Record<GateId, GateResult> = { G1: gate(), G2: gate(), G3: gate(nodes.length > 300), G4: gate(), G5: gate(), G6: gate(), G7: gate(), G8: gate(), G9: gate() };
-  const fail = (id: GateId, code: string, elements: string[], message: string): void => { result[id].passed = false; result[id].violations.push({ code, elements, message }); };
+  const fail = (id: GateId, code: string, elements: string[], message: string, identity?: string): void => {
+    const violation: GateViolation = { code, elements, message };
+    if (identity !== undefined) identities.set(violation, identity);
+    result[id].passed = false; result[id].violations.push(violation);
+  };
   const nodeStroke = (n: LayoutNode): number => n.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node;
   // `routed` holds one entry per segment, so "does this link have a routed segment?" was a scan of
   // every segment; the set answers it once.
