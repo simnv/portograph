@@ -35,7 +35,7 @@ export function separationWorse(trial: LayoutModel, base: LayoutModel): string[]
  *
  * `identity: 'face'` adds the identity the gate gives past its elements (`violationIdentity`: the face, and the two ports of a free-port reversal in
  * either order; review 2, P2), so a reversal on the top face and one on the bottom face of one node are two names. Two identities exist on purpose
- * (owner ruling 2026-11-19, ticket 62): the growth choice (`judgeGrowthChoice`) compares two whole runs and reads by face; the trial rounds (far-end,
+ * (ruling in review 2 of ticket 60; ticket 62): the growth choice (`judgeGrowthChoice`) compares two whole runs and reads by face; the trial rounds (far-end,
  * course, side, span, turn, lift) keep the node, because with the face the course round refuses a course whose new reversal the far-end round
  * repairs later (sweep v6-3-1 and v7-3-1 with the option on: G5 0 to 4, crossings 0 to 8). Ticket 62 looks at the rounds' order of judgement.
  */

@@ -73,7 +73,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
 }
 
 /**
- * Whether the option-on run of a default-on sheet left a seat short (dense-16x9 ticket 60, owner ruling 2026-11-19, trigger (b)): the growth choice
+ * Whether the option-on run of a default-on sheet left a seat short (dense-16x9 ticket 60, owner ruling 2026-11-19, whole-sheet choice with a narrowed trigger; the trigger is option (b) of slice 1, by the ruling on slice 1): the growth choice
  * runs only then. Read by code, stage and owners, never by message text; no 7c record is added for it. Either arm fires:
  *
  * - a link that a `CENTRE_ALIGNMENT_INFEASIBLE` note of the placement names (its owners) is still bent in the published run, by the scorer's bend
