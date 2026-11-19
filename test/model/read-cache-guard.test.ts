@@ -79,6 +79,7 @@ const EXPECTED_WEAKMAPS: Readonly<Record<string, { count: number; reason: string
   'src/layout/decide.ts': { count: 2, reason: 'spent slide-growth budget state + call-local copies Verdict map' },
   'src/layout/approach.ts': { count: 1, reason: 'approachReach virtual port stem-reach metadata handoff' },
   'src/parse/validation.ts': { count: 1, reason: 'known AST source-location provenance map' },
+  'src/score/gates.ts': { count: 1, reason: 'violationIdentity: the face and port pair of a G5 violation, kept off the published violation (dense-16x9 ticket 60, review 2)' },
   'src/layout/row-paths.ts': { count: 2, reason: 'portPlaces self-verifying port index hint (validated on every hit)' },
   'src/layout/reservations.ts': { count: 1, reason: 'fanPlaces self-verifying fan-pair place hint (validated on every hit)' },
 };
