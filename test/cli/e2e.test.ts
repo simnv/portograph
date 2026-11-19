@@ -97,7 +97,7 @@ describe('real CLI', () => {
     expect(forced.code, forced.stderr).toBe(0);
     expect(Object.keys(JSON.parse(forced.stdout).nodes)).toHaveLength(1001);
     expect(forced.stderr).toContain('LARGE_DIAGRAM');
-  }, 40000);
+  });
 
   it('writes one coherent golden artifact set and renders final JSON regardless of extension', async () => {
     const model = JSON.parse(readFileSync(jsonPath, 'utf8'));
@@ -216,7 +216,7 @@ links:
     expect(match).not.toBeNull();
     expect(() => process.kill(Number(match![1]), 0)).toThrow();
     expect(readdirSync(temp).filter(name => /^deadline\.(svg|layout\.json|score\.json)$/.test(name))).toEqual([]);
-  }, 30000);
+  });
 
   it('counts the command deadline from the command start without the test hook, and refuses an unknown hook value', async () => {
     const output = join(temp, 'early.svg');
@@ -246,7 +246,7 @@ links:
     expect((await command(['render', '--timings', golden, '-o', timed])).code).toBe(0);
     expect(readFileSync(timed.replace('.svg', '.layout.json'), 'utf8')).toContain('durationMs');
     expect(readFileSync(timed.replace('.svg', '.score.json'), 'utf8')).toContain('"runtime"');
-  }, 60000);
+  });
 
   it('names file, line and column for a schema error and for a syntax error, without a cascade', async () => {
     const schema = join(temp, 'schema.yaml');
@@ -260,7 +260,7 @@ links:
     expect(broken.code).toBe(2);
     expect(broken.stderr).toMatch(new RegExp(`INVALID_YAML at ${syntax}:\\d+:\\d+:`));
     expect(broken.stderr.match(/portograph: error:/g)).toHaveLength(1);
-  }, 30000);
+  });
 
   it('reads the document from stdin with -, names it <stdin> in diagnostics, and writes to stdout with -o -', async () => {
     const text = readFileSync(golden, 'utf8');
@@ -284,7 +284,7 @@ links:
     });
     expect(bad.code).toBe(2);
     expect(bad.stderr).toContain('UNKNOWN_KEY at <stdin>:7:5 ($.nodes.a.colour)');
-  }, 60000);
+  });
 
   it('writes diagnostics and status lines as one JSON object per line with --diagnostics json', async () => {
     const schema = join(temp, 'json.yaml');
@@ -300,7 +300,7 @@ links:
     const usage = await command(['layout', schema, '--diagnostics', 'json', '--nope']);
     expect(usage.code).toBe(2);
     expect(JSON.parse(usage.stderr.trim())).toMatchObject({ kind: 'status', severity: 'error', code: 'USAGE' });
-  }, 60000);
+  });
 
   it('warns on stderr when Verdana is not installed, for render and layout, and not otherwise', async () => {
     const empty = join(temp, 'no-fonts');
@@ -314,7 +314,7 @@ links:
     }
     const asJson = await command(['layout', golden, '--output', join(temp, 'font-json.out'), '--diagnostics=json'], { PORTOGRAPH_FONT_DIRS: empty });
     expect(JSON.parse(asJson.stderr.trim().split('\n')[0]!)).toMatchObject({ kind: 'status', severity: 'warning', code: 'FONT_MISSING' });
-  }, 60000);
+  });
 
   it('builds dist/index.js and dist/index.cjs with the export keys of src/index.ts', async () => {
     const wanted = Object.keys(await import('../../src/index.js')).sort();

@@ -47,7 +47,7 @@ describe('the x constraint catalogue on published layouts', () => {
       const expected: Record<string, number> = { 'separation-root-frames': bg, 'separation-root-frame-group': bg + COLUMN_SLACK, 'separation-root-groups': bg, 'separation-flank': bg,
         'separation-frame-frames': FRAME_TO_FRAME_GAP, 'separation-cell-child-frame': CELL_TO_CHILD_FRAME_GAP };
       for (const item of catalogue) if (item.kind in expected) expect(item.bound, item.id).toBe(expected[item.kind]);
-    }, 120000);
+    });
   }
 });
 

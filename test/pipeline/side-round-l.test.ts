@@ -60,18 +60,18 @@ describe('the side round offers the L shape for an overlay link', () => {
     const box = label.bounds!, centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
     if (longest.from.x === longest.to.x) expect(centre.y).toBeCloseTo((longest.from.y + longest.to.y) / 2, 6);
     else expect(centre.x).toBeCloseTo((longest.from.x + longest.to.x) / 2, 6);
-  }, 60000);
+  });
 
   it('on the natural sides the same link goes round the cache with two turns or more', async () => {
     const model = await baseNoRerun();
     expect(overlay(model).path!.segments.length).toBeGreaterThan(2);
     expect(codes(model)).toContain('SIDE_ROUND_SKIPPED');
-  }, 60000);
+  });
 
   it('two runs give byte-identical layout JSON', async () => {
     const strip = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' ? undefined : value);
     expect(strip(await baseRun())).toBe(strip(await run()));
-  }, 60000);
+  });
 
   it('with both corners clear, the lateral port is at the lower end (tie-break 4)', async () => {
     // Natural sides, then the cache moves to the middle of the square the two ends span and the pad chain leaves it: both L shapes are clear.
@@ -91,7 +91,7 @@ describe('the side round offers the L shape for an overlay link', () => {
     expect(JSON.parse(key)[0]).toBe('outlet');
     expect(side).toBe('left');
     expect([...offer.promised.values()]).toEqual([expect.objectContaining({ bends: 1, shape: 'L' })]);
-  }, 60000);
+  });
 });
 
 describe('an L is offered only when both runs are clear', () => {
@@ -102,7 +102,7 @@ describe('an L is offered only when both runs are clear', () => {
     const y = outlet.bounds!.y + outlet.bounds!.height / 2 - 12;
     moveNode(model, 'cache', lb.ports[0]!.anchor!.x + 40 - cache.bounds!.x, y - cache.bounds!.height / 2 - cache.bounds!.y);
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
-  }, 60000);
+  });
 
   it('sanity: publishes no overlay run through a node body on a golden that once did (review H1)', async () => {
     // The derivation falls back to paths that ignore bodies when every way round is blocked; such a path has two segments and is no L.
@@ -111,7 +111,7 @@ describe('an L is offered only when both runs are clear', () => {
     const through = model.links.filter(link => link.layer === 'overlay' && link.path !== undefined).flatMap(link => link.path!.segments
       .filter(({ from, to }) => Object.values(model.nodes).some(node => node.bounds !== undefined && crosses(from, to, node.bounds))).map(() => link.id));
     expect(through).toEqual([]);
-  }, 120000);
+  });
 });
 
 describe('the label room of an overlay L', () => {
@@ -137,7 +137,7 @@ describe('the label room of an overlay L', () => {
     expect(codes(model)).not.toContain('LINK_LABEL_ROOM_UNRESERVED');
     // A fixed point: the room is reserved, a second pass asks for nothing more.
     expect(reserveLinkLabelRoom(model)).toBe(false);
-  }, 60000);
+  });
 
   it('reserves the room when the peer that holds the vertical run is wide and stands over the middle of the run (review H2)', async () => {
     const { model } = await shortDrop();
@@ -154,7 +154,7 @@ describe('the label room of an overlay L', () => {
     expect(lbRight).toBeLessThan(widened);
     expect(reserveLinkLabelRoom(model)).toBe(false);
     expect(codes(model)).not.toContain('LINK_LABEL_ROOM_UNRESERVED');
-  }, 60000);
+  });
 
   it('reports the room as unreserved when the peer leaves no gap before the lateral face (review H2)', async () => {
     const { model } = await shortDrop();
@@ -162,7 +162,7 @@ describe('the label room of an overlay L', () => {
     lb.bounds!.width = outlet.bounds!.x - lb.bounds!.x + 5;
     expect(reserveLinkLabelRoom(model)).toBe(false);
     expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.message)).toEqual([expect.stringMatching(/no gap/)]);
-  }, 60000);
+  });
 
   it('with no gap, a run long enough whose windows hold no label is still reported (ticket 20)', async () => {
     const { model } = await shortDrop();
@@ -180,7 +180,7 @@ describe('the label room of an overlay L', () => {
     reserveLinkLabelRoom(model);
     expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.message))
       .toEqual([expect.stringMatching(/crosses a drawn box along its side run, with no gap/)]);
-  }, 60000);
+  });
 
   it('pushes a lane beyond the split out with the room (label room wins over an adjacent lane, ticket 23)', async () => {
     const { model, split } = await shortDrop();
@@ -194,7 +194,7 @@ describe('the label room of an overlay L', () => {
     expect(lane.x).toBeCloseTo(split + 10 + moved, 6);
     expect(lane.bounds.x).toBeCloseTo(split - 7 + moved, 6);
     expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
-  }, 60000);
+  });
 
   // The shortened published L reflected in x: the lateral face of the outlet now looks east and the balancer stands to the east of it.
   async function mirrored(): Promise<LayoutModel> {
@@ -226,7 +226,7 @@ describe('the label room of an overlay L', () => {
     expect(lb.bounds!.x).toBeGreaterThan(next);
     expect(codes(model)).not.toContain('LINK_LABEL_ROOM_UNRESERVED');
     expect(reserveLinkLabelRoom(model)).toBe(false);
-  }, 60000);
+  });
 
   it('reserves a vertical run of an L to the lateral anchor, no more (review L1)', async () => {
     const model = copy(await baseRun());
@@ -254,12 +254,12 @@ describe('the label room of an overlay L', () => {
     const shortfalls: LinkLabelShortfall[] = [];
     expect(reserveLinkLabelRoom(model, shortfalls)).toBe(false);
     expect(shortfalls).toEqual([]);
-  }, 60000);
+  });
 
   it('keeps the old answer for an overlay link that has no hinted end', async () => {
     const { model } = await shortDrop();
     for (const node of Object.values(model.nodes)) for (const port of node.ports) delete port.sideHint;
     expect(reserveLinkLabelRoom(model)).toBe(false);
     expect(codes(model)).toContain('LINK_LABEL_ROOM_UNRESERVED');
-  }, 60000);
+  });
 });

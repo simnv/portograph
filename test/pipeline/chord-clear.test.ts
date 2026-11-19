@@ -43,7 +43,7 @@ describe('a linked node on a middle tier stands off a straight overlay chord (ti
       expect(link.path!.segments, link.id).toHaveLength(1);
       if (link.attachments!.from.node === 'src') expect(crosses(path.segments[0]!.from, path.segments[0]!.to, body)).toBe(false);
     }
-  }, 60000);
+  });
 });
 
 describe('the step over a chord, where the mover holds routed links or shares a group (ticket 77)', () => {
@@ -68,7 +68,7 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     expect(group.bounds!.x).not.toBe(stood);
     // The nearest way out: no farther than the way back to where layout had it, and the two parents stay on its either side.
     expect(Math.abs(group.bounds!.x - stood)).toBeLessThanOrEqual(Math.abs(x0 - stood) + 1e-6);
-  }, 60000);
+  });
 
   it('a node with slack in its group moves alone, inside the box the group has', async () => {
     const model = await baseRun(fixture('a-node-steps-off-a-straight-chord-inside-its-group'));
@@ -94,7 +94,7 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     expect(copyOf.nodes['mb']!.bounds!.x).not.toBe(before.mb);
     expect(copyOf.nodes['ma']!.bounds!.x).toBe(before.ma);
     expect(copyOf.groups['middle']!.bounds).toEqual(before.box);
-  }, 60000);
+  });
   it('a move whose settled copy cannot be judged is refused', async () => {
     const model = copy(await baseRun(fixture('a-group-with-routed-links-steps-off-a-straight-chord')));
     const link = overlay(model), group = model.groups['middle']!, node = model.nodes['mid']!;
@@ -106,7 +106,7 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     expect(stepOverChords(model, () => { throw new Error('unsettled'); })).toBe(false);
     expect(JSON.stringify(group.bounds)).toBe(stood);
     expect(overlayPath(model, link).segments.length).toBeGreaterThan(1);
-  }, 60000);
+  });
   // Retired by ticket DR-04 (link order is never input): the subject needs this sheet's layout under its written link order. The canonical
   // order inverts 1082 of the 3570 link pairs (normalised Kendall distance 0.303), no group declaration tried brings it near the written
   // order, and under it `row-11` stands 247.5 px from the measured 1748.7 (the bound is 30). Kept as a skip with this reason; no assertion
@@ -121,7 +121,7 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE' && d.message.startsWith('The cantons'))).toEqual([]);
     // The centring warning on main stands; the step adds none.
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
-  }, 120000);
+  });
 });
 
 /**
@@ -158,7 +158,7 @@ describe('a frame of two cells steps off a straight overlay chord inside its col
     for (const id of nodes) expect(model.nodes[id]!.bounds!.x - nodeAt[id]!).toBeCloseTo(dx, 6);
     expect(box(model).width).toBeCloseTo(frame.width, 6);
     expect(Math.abs(box(model).x - frame.x)).toBeLessThanOrEqual(20 + 1e-6);
-  }, 60000);
+  });
 
   it('a node of a cell moves alone inside the cell box, and the frame stays as it is', async () => {
     const model = copy(await baseRun(fixture(NAME)));
@@ -183,14 +183,14 @@ describe('a frame of two cells steps off a straight overlay chord inside its col
     expect(zone.bounds).toEqual(before.zone);
     expect(box(model)).toEqual(before.frame);
     expect(model.nodes['sw']!.bounds!.x).toBe(before.sw);
-  }, 60000);
+  });
 
   it('a frame with no slack to clear the chord stays where it is', async () => {
     const model = copy(await baseRun(fixture(NAME)));
     const stood = JSON.stringify(cells.map(id => model.groups[id]!.bounds));
     expect(stepOverChords(model, undefined)).toBe(false);
     expect(JSON.stringify(cells.map(id => model.groups[id]!.bounds))).toBe(stood);
-  }, 60000);
+  });
 });
 
 /** Ticket 80, review: the paths the first tests did not reach, and the growth of a canton by a slide (coordinator decision). */
@@ -219,7 +219,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
     expect(history.has('row:loc-zone#1') || history.has('node:sw2')).toBe(true);
     expect(crosses(chord.from, chord.to, model.nodes['sw2']!.bounds!)).toBe(false);
     expect(zone.bounds).toEqual(cell);
-  }, 60000);
+  });
 
   it('a cell slides alone inside its frame where every frame box stays', async () => {
     const model = copy(await baseRun(fixture(NAME)));
@@ -232,7 +232,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
     expect(Math.abs(core.bounds!.x - at)).toBeGreaterThan(1);
     expect(deriveFrames(model)!.map(frame => frame.box)).toEqual(frames);
     expect(crosses(chord.from, chord.to, model.nodes['gw']!.bounds!)).toBe(false);
-  }, 60000);
+  });
 
   it('a cell of a frame that is not in a canton never moves its frame edge', async () => {
     const model = copy(await baseRun(fixture(NAME)));
@@ -240,7 +240,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
     const frame = { ...box(model) };
     stepOverChords(model, undefined, new Set(['frame:loc']));
     expect(box(model)).toEqual(frame);
-  }, 60000);
+  });
 
   it('a slide of a canton member may pass the wall, and is refused when the growth is spent', async () => {
     const yaml = fixture('a-canton-member-frame-slides-off-a-straight-chord');
@@ -266,7 +266,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
     const stood = spentUp.groups['loc#0']!.bounds!.x;
     stepOverChords(spentUp, undefined);
     expect(spentUp.groups['loc#0']!.bounds!.x).toBe(stood);
-  }, 60000);
+  });
 
   it('a slide the column rules would undo is refused in a real layout (three-canton-groups-close-up-to-a-band-gap)', async () => {
     // DR-04: the copy that declares canton `b` first (the cantons stand b, a, c, as ELK placed them before canton order followed the
@@ -282,7 +282,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
     const drift = Math.max(0, ...Object.values(copy.groups).map(group => Math.abs(group.bounds!.x - before.get(group.id)!.x)));
     expect(drift).toBeLessThan(0.5);
     expect(model.canvas!.width).toBeLessThan(2005);
-  }, 120000);
+  });
 });
 
 describe('the mover takes the position that clears the most chords (ticket 110)', () => {
@@ -303,7 +303,7 @@ describe('the mover takes the position that clears the most chords (ticket 110)'
     expect(straight()).toBeLessThan(2);
     expect(stepOverChords(model, () => undefined)).toBe(true);
     expect(straight()).toBe(2);
-  }, 60000);
+  });
 });
 
 /**
@@ -336,7 +336,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     for (const link of overlays(model)) expect(link.path!.segments, link.id).toHaveLength(1);
     for (const link of model.links.filter(item => item.layer === 'routed')) expect(link.path!.segments, link.id).toHaveLength(1);
     expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(true);
-  }, 60000);
+  });
 
   it('the row of the lower rank moves as one, inside 40 px, and the overlay crossings are not above main', async () => {
     const model = await baseRun(fixture(NAME));
@@ -348,7 +348,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     expect(a - b).toBeCloseTo(-0.835, 2);
     expect(x(model, 'low-b') - (x(model, 'low-a') + model.nodes['low-a']!.bounds!.width)).toBeCloseTo(21.5, 1);
     expect(crossingsOf(model)).toBe(0);
-  }, 60000);
+  });
 
   it('rank 0 and its parent keep their x (no rank 0 moves by this rule)', async () => {
     const model = await baseRun(fixture(NAME));
@@ -356,7 +356,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     expect(x(model, 'gw')).toBeCloseTo(87.0, 0);
     expect(x(model, 'up-a')).toBeCloseTo(72.8, 0);
     expect(x(model, 'up-b')).toBeCloseTo(154.7, 0);
-  }, 60000);
+  });
 
   it('one node of a lower rank moves into the room the step gives it, and the step says so', async () => {
     const model = copy(await baseRun(fixture(NAME)));
@@ -375,7 +375,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
       expect(x(model, id) + model.nodes[id]!.bounds!.width).toBeLessThanOrEqual(box.x + box.width + 1e-6);
     }
     expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(true);
-  }, 60000);
+  });
 
   it('a move that needs more growth than the budget holds is refused', async () => {
     const model = copy(await baseRun(fixture(NAME)));
@@ -390,7 +390,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     const history = new Set<string>();
     expect(stepOverChords(model, undefined, history), [...history].join()).toBe(false);
     expect(JSON.stringify(model.groups['zone#2']!.bounds)).toBe(row);
-  }, 60000);
+  });
 
   it('a candidate that adds a crossing on the settled copy is no longer refused for it (the crossings are the third key)', async () => {
     const model = copy(await baseRun(fixture(NAME)));
@@ -410,7 +410,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     // that leaves fewer bent links stays although its settled copy crosses the two chords.
     expect(stepOverChords(taken, crossed)).toBe(true);
     expect(moved(taken)).toBe(true);
-  }, 60000);
+  });
 
   it('a move that straightens three links and bends one (+3 / -1, no crossing added) is taken', async () => {
     const model = copy(await baseRun(fixture(NAME)));
@@ -437,7 +437,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     expect(stepOverChords(model, bend)).toBe(true);
     expect(Math.abs(x(model, 'low-a') - at)).toBeGreaterThan(1);
     expect(stepOverChords(control, () => undefined)).toBe(true);
-  }, 60000);
+  });
 
   it('a node of a lower rank does not stand on the bodies of a child frame beside it (same tier)', async () => {
     const yaml = `portograph: 2
@@ -479,7 +479,7 @@ links:
     stepOverChords(model, undefined, new Set(['rank:site#1', 'row:site#1']));
     const mine = ['sw', 'sx'].map(id => model.nodes[id]!.bounds!), theirs = ['up-a', 'up-b'].map(id => model.nodes[id]!.bounds!);
     for (const a of mine) for (const b of theirs) expect(a.x + a.width <= b.x || b.x + b.width <= a.x, `${a.x} ${b.x}`).toBe(true);
-  }, 60000);
+  });
 
   it('the settled copies of a cell are counted over the calls of the step, not in each call', async () => {
     const model = copy(await baseRun(fixture(NAME)));
@@ -489,7 +489,7 @@ links:
     const row = JSON.stringify(model.groups['zone#2']!.bounds);
     expect(stepOverChords(model, () => undefined, history)).toBe(false);
     expect(JSON.stringify(model.groups['zone#2']!.bounds)).toBe(row);
-  }, 60000);
+  });
 
   it('the guard fixture (a fan over the row): the lower rank moves, for fewer bent links, though it adds a crossing', async () => {
     const yaml = `portograph: 2
@@ -530,7 +530,7 @@ links:
       // Verdana metrics (snack-theme ticket 157): -28.4 px and 2 more straight overlay links with Arial.
       'The lower rank zone#3 moved -32 px off the overlay chords of the ranks above: 3 more straight overlay links, overlay crossings 0 to 1.']);
     expect(overlays(model).filter(link => link.path!.segments.length > 1)).toHaveLength(1);
-  }, 60000);
+  });
 
   // Retired by ticket DR-04 (link order is never input): under the canonical order, which inverts 512 of the 1711 link pairs of this sheet
   // (normalised Kendall distance 0.299) and which no group declaration tried brings near the written order, the lower rank no longer
@@ -538,7 +538,7 @@ links:
   it.skip('four-locations-each-with-a-zone: nothing moves (its lower rank stands outside a canton)', async () => {
     const model = await baseRun(fixture('four-locations-each-with-a-zone'));
     expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(false);
-  }, 60000);
+  });
 });
 
 describe('overlayCrossings (ticket 146)', () => {

@@ -39,5 +39,5 @@ describe('the 7f placement attempt', () => {
     for (const event of events) expect(event.revision).toMatch(/^[0-9a-f]{8}$/);
     expect(withoutRuntime(traced)).toEqual(withoutRuntime(plain));
     expect(JSON.stringify({ ...traced, reservations: undefined })).not.toContain('"revision"');
-  }, 60000);
+  });
 });

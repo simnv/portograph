@@ -44,5 +44,5 @@ describe('three continents (canton-groups ticket 58, fixture 10)', () => {
     const shifts = tops.map(id => model.nodes[id]!.bounds!.x - stripped.nodes[id]!.bounds!.x);
     expect(tops.length).toBe(10);
     for (const shift of shifts) expect(Math.abs(shift - shifts[0]!), 'the top row moves as a whole').toBeLessThanOrEqual(0.5);
-  }, 120000);
+  });
 });

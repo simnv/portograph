@@ -81,7 +81,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     const block = (cantonBoxes(off)[0]!.x + right(cantonBoxes(off)[2]!)) / 2, mpls = off.groups['mpls']!.bounds!;
     expect(Math.abs(mpls.x + mpls.width / 2 - block)).toBeLessThan(COLUMN_SLACK);
     expectIdempotent(model);
-  }, 120000);
+  });
 
   it('three continents stand a band gap apart, the equality of the earlier lower bound', async () => {
     // DR-04: the copy with `top-3` declared first stands the top row as before DR-04; the original takes the canton order c, b, a
@@ -93,21 +93,21 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     for (const [i, gap] of gaps(model).entries()) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
     expect(model.canvas!.width).toBeLessThan(1451.6 - 20);
     expectIdempotent(model);
-  }, 120000);
+  });
 
   // Review of ticket 65: the fit keeps the pins and the units that reach their feed, and the second pass moves nothing.
   it('cantons held by an overlay link keep their pin and the gates, and a second pass moves nothing', async () => {
     const model = await run('overlay-links-reorder-two-canton-groups');
     expect(score(model).snapshot.gates.G6.passed).toBe(true);
     expectIdempotent(model);
-  }, 120000);
+  });
 
   it('a foreign unit beside a canton keeps the room the rows rule reserved, and a second pass moves nothing', async () => {
     const model = await run('a-foreign-unit-between-two-canton-groups');
     expect(score(model).snapshot.gates.G6.passed).toBe(true);
     expectIdempotent(model);
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons'))).toEqual([]);
-  }, 120000);
+  });
 
   // The refused close-up moves the nodes and puts them back: labels in node order and the geometry exact, or publication throws.
   it('a refused close-up leaves the node labels and the geometry whole', async () => {
@@ -127,7 +127,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     const order = model.labels.filter(label => label.owner.kind === 'node' && label.role === 'node').map(label => (label.owner as { id: string }).id);
     expect(order).toEqual(Object.keys(model.nodes).filter(id => order.includes(id)));
     expectIdempotent(model);
-  }, 120000);
+  });
 
   // Snack-theme ticket 159: with card nodes (`layout.nodeContent: card`), the orthogonal input threw `Centring invariant violated: link-1` at publication. A centring replay of
   // top-1 was declined in 7f because it bent a straight overlay chord, so port t1-1#1 was excused; the overlay port trades of `nestOverlayPorts`
@@ -139,7 +139,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(centreViolations(model)).toEqual([]);
-  }, 120000);
+  });
 
   // Snack-theme ticket 157: 7c places the overlay windows once after its passes (ticket 143). On the plain input the window moved cl-a3, and with it
   // the end of the overlay chord link-61 that had stopped the growth of loc-a2-gw toward its feed; the passes had stood, so publication threw
@@ -149,7 +149,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toEqual([]);
     expect(centreViolations(model)).toEqual([]);
-  }, 120000);
+  });
 
   // Review 2: the close-up sites never pull a run that stands packed (one canton, or cantons already a band gap apart).
   it('a second pass returns false and the close-up says nothing on packed runs', async () => {
@@ -165,7 +165,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
       const model = await run(name);
       expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons')), name).toEqual([]);
     }
-  }, 120000);
+  });
 
   it('a held lane between two cantons keeps the run where it stands and the warning names the canton', async () => {
     const model = await run('a-held-lane-between-two-cantons-refuses-the-close-up');
@@ -179,7 +179,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expect(held[0]!.message).toContain('Canton west');
     expect(held[0]!.message).toContain('stands between two cantons');
     expectIdempotent(model);
-  }, 120000);
+  });
   // A straight link outranks the band-gap close-up (user, 2026-10-04). Both halves are asserted: the gap stays open, and closing it would really bend the link.
   it('a canton gap stays open when closing it would bend a straight overlay link', async () => {
     const model = await run('a-canton-gap-stays-open-when-closing-it-would-bend-a-straight-link');
@@ -197,5 +197,5 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
       rebuildNodeGeometry(closed, group.nodes, 'current');
     }
     expect(overlayPath(closed, closed.links.find(item => item.layer === 'overlay')!).segments.length).toBeGreaterThan(1);
-  }, 120000);
+  });
 });

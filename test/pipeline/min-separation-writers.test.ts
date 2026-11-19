@@ -41,7 +41,7 @@ it('a bar that spans left into the gap of the group before it gets its room from
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(model.feedSplits!.map(split => [split.tier, split.authority, split.pair])).toEqual([[0, 1, ['before', 'bar']]]);
   expect(gateFailures(score(model).snapshot)).toEqual([]);
-}, 120000);
+});
 
 // a-corridor-moves-after-the-grid-settles took 126 s on the release CI of 0.3.0 (Node 24): the limit is 3 times that, not below the 180 s of the
 // heavy project (docs/gates.md).
@@ -64,4 +64,4 @@ it('a grid widening that grows a box left is not refused while the frames keep t
   expect(separationsBrokenBy(model, [{ group, bounds, dx: 0 }])).toEqual([]);
   expect(separationsBrokenBy(model, [{ group, bounds, dx: -10 }])).toEqual(['separation-root-frames:frame:top-a|frame:top-b']);
   expect(group.bounds).toEqual(box);
-}, 120000);
+});

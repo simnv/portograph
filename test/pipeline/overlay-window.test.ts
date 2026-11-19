@@ -62,7 +62,7 @@ describe('overlay window rule (ticket 143)', () => {
     expect(note.severity).toBe('info');
     expect(note.owners).toEqual([{ kind: 'group', id: lower.id }]);
     expect(note.message).toMatch(/the mean of its partners: \d+ fewer overlay crossings?, \d+ (more|fewer) overlay chords? (is|are) straight\./);
-  }, 60000);
+  });
 
   it('the same rule holds for a free group with no canton', async () => {
     const model = await baseRun(PLAIN);
@@ -71,7 +71,7 @@ describe('overlay window rule (ticket 143)', () => {
     expect(Math.abs(centreX(lower.bounds!) - 239.5)).toBeGreaterThan(20);
     // Verdana metrics (snack-theme ticket 157): 354.1 with Arial.
     expect(centreX(lower.bounds!)).toBeCloseTo(353.5, 0);
-  }, 60000);
+  });
 
   // Guards.
   it('the canvas is no wider, the member stays inside its canton, and every gate passes', async () => {
@@ -85,7 +85,7 @@ describe('overlay window rule (ticket 143)', () => {
     }
     expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
     expect((await baseRun(PLAIN)).canvas!.width).toBeCloseTo(480.5, 1);
-  }, 60000);
+  });
 
   // The pass is repeatable: a second run reads the geometry the first one left and moves nothing.
   it('a second run of the pass moves nothing', async () => {
@@ -98,7 +98,7 @@ describe('overlay window rule (ticket 143)', () => {
       placeOverlayFree(model);
       expect(bounds(model), name).toBe(first);
     }
-  }, 60000);
+  });
 
   // Ticket 143, coordinator measure: a window that straightens the chords it counts and bends one it does not count must be refused.
   // On `three-continents` the first build moved `cl-a4` (one chord gained) and `loc-a1-sw` to `cl-a3-1` bent at 4 turns: 8 bent links and 34 turns
@@ -110,7 +110,7 @@ describe('overlay window rule (ticket 143)', () => {
     expect(turns.filter(count => count > 0).length).toBeLessThanOrEqual(8);
     expect(turns.reduce((sum, count) => sum + count, 0)).toBeLessThanOrEqual(34);
     expect(crossingsOf(model)).toBeLessThanOrEqual(66);
-  }, 120000);
+  });
 
   // Unit: the blocked shifts of one chord and one body, to the epsilon.
   describe('chordWindows', () => {
@@ -180,7 +180,7 @@ describe('overlay window rule (ticket 143)', () => {
       expect(bounds(model), name).toBe(first);
       expect(model.diagnostics.some(item => item.code === OVERLAY_WINDOW_TAKEN && item.message === note.message), name).toBe(true);
     }
-  }, 60000);
+  });
 
   // Unit: the choice of the candidate, on forged scores (the most straight chords first, then the fewest crossings).
   describe('pickTarget', () => {
@@ -237,12 +237,12 @@ describe('overlay window rule (ticket 143)', () => {
       expect(pass!.shared).toBeGreaterThan(pass!.west);
       expect(pass!.shared).toBeLessThan(pass!.east);
       expect(pass!.crossings).toBeLessThanOrEqual(34);
-    }, 60000);
+    });
     it('the whole layout has no more crossings than ticket 143 left, and every gate passes', async () => {
       const model = await baseRun(CROSS);
       expect(crossingsOf(model)).toBeLessThanOrEqual(34);
       expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
-    }, 60000);
+    });
     it('a second run of the pass moves nothing, and a run without windows holds the group', async () => {
       const model = structuredClone(await baseRun(CROSS)) as LayoutModel;
       expect(model.diagnostics.some(item => item.code === OVERLAY_WINDOW_TAKEN)).toBe(true);
@@ -252,6 +252,6 @@ describe('overlay window rule (ticket 143)', () => {
       expect(bounds(model)).toBe(first);
       placeOverlayFree(model, undefined, false);
       expect(bounds(model)).toBe(first);
-    }, 60000);
+    });
   });
 });

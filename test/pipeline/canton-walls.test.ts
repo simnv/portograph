@@ -69,7 +69,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(warning.message).toContain('canton west');
     expect(warning.message).toContain('the canton column holds it');
     expect(score(model).snapshot.gates.G9.passed).toBe(true);
-  }, 60000);
+  });
 
   // Ticket 54 measured `w-lab` of fixture 2 47 px off the canton axis after `centre`. It stays inside its wall.
   it('a member that centring moved off the axis stays inside its column window (ticket 54, fixture 2)', async () => {
@@ -82,7 +82,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     }
     const lab = frameOf(model, 'w-lab'), west = frameOf(model, 'west');
     expect(Math.abs(centreX(lab.box) - centreX(west.box))).toBeGreaterThan(20);
-  }, 60000);
+  });
 
   // Table fixture 6: a member widened after the pack.
   it('a member widened after the pack widens its canton, and the sibling canton moves as a whole', async () => {
@@ -113,7 +113,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
       expect(inside(inner(canton.box), frameOf(model, member).box), `${member} inside ${canton.id}`).toBe(true);
     }
     expect(score(model).snapshot.gates.G9.passed).toBe(true);
-  }, 60000);
+  });
 
   // Section 2b rule 3: a one-node client group is a one-cell member; ticket 05's barycentre survives, inside the column.
   it('a one-cell member keeps its barycentre, clamped to the canton', async () => {
@@ -136,7 +136,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(west.box.width).toBeCloseTo(boxOf(packed, 'west').width, 3);
     // The pack put it on the axis: the barycentre moved it.
     expect(Math.abs(centreX(boxOf(packed, 'clients')) - centreX(boxOf(packed, 'west')))).toBeLessThan(1);
-  }, 60000);
+  });
 
   it('a clamped barycentre stops at the wall: the partner is beyond the column', async () => {
     // Move the two partners of the client to the right end of the hall, so the mean is right of the canton axis; the wall holds it.
@@ -146,7 +146,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(inside(inner(west.box), clients.box)).toBe(true);
     expect(centreX(clients.box)).toBeGreaterThan(centreX(west.box) + 100);
     expect(score(model).snapshot.gates.G9.passed).toBe(true);
-  }, 60000);
+  });
 
   // Table fixture 5: held-lane parity with tickets 04, 14 and 23.
   it('a held lane inside the column grows the canton box, and the foreign lane stands outside it at one x', async () => {
@@ -169,7 +169,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(right(foreign[0]!.bounds)).toBeLessThanOrEqual(west.box.x + 1e-6);
     for (const member of ['gate', 'mid', 'deep']) expect(inside(inner(west.box), frameOf(model, member).box), member).toBe(true);
     expect(score(model).snapshot.gates.G9.passed).toBe(true);
-  }, 60000);
+  });
 
   // Review B1: `sweepMembers` walls the lanes held in the tier as `sweep` does, so a free member never stands on a lane.
   it('a free member stands beside a held lane inside its canton, and the layout does not throw', async () => {
@@ -188,7 +188,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const failing = Object.entries(gates).filter(([, gate]) => !gate.passed).map(([name]) => name);
     expect(failing).toEqual([]);
     expect(gates['G9']?.passed).toBe(true);
-  }, 60000);
+  });
 
   // Table fixture 8: canton, member, leaf child beside its parent's cells.
   it('a leaf zone stands inside its member inside its canton, and no route of the member is left to the router', async () => {
@@ -211,7 +211,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const internal = model.links.find(link => link.attachments?.from.node === 'gw' && link.attachments?.to.node === 'sw')!;
     expect(internal.path?.segments.length).toBeGreaterThan(0);
     expect(score(model).snapshot.gates.G9.passed).toBe(true);
-  }, 60000);
+  });
 
   // Ticket 54 measured 40 and 44 px for three beside members.
   it('three members of one tier: 40 px at rows time and after 7f (ticket 61)', async () => {
@@ -231,7 +231,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(second).toBeCloseTo(40, 3);
     // The inner pass never moves members that share a sub-tier: a second pass on the finished layout moves nothing.
     expect(holdMemberWalls(structuredClone(model))).toBe(false);
-  }, 60000);
+  });
 
   // Fixture 9: idempotence. A second layout is the same model, and every rule that moves a column finds nothing to do on the finished layout.
   it.each([
@@ -265,7 +265,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(Math.max(0, ...moved)).toBe(0);
     placeOverlayFree(clone);
     expect(JSON.stringify(Object.values(clone.groups).map(group => [group.id, group.bounds]))).toBe(before);
-  }, 60000);
+  });
 
   // Ticket 67: the mixed run of a foreign unit between two cantons converges by a third each round of 7f (1.551, 0.517, 0.172 px), and the rounds end
   // under the creep of half a pixel. What is left is that creep, not a pull that goes the wrong way: a second pull moves the run as one block by less
@@ -276,7 +276,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     holdColumnAxes(clone, 0);
     const moved = Object.values(clone.groups).map((group, i) => Math.abs(group.bounds!.x - before[i]!));
     expect(Math.max(...moved)).toBeLessThan(0.1);
-  }, 60000);
+  });
   // Ticket 70, review: a declined member is stood at the nearest in-wall x to its feeds, clamped at the straight overlay chord as the main move is.
   // The fixture declines the provider at its canton wall. The clamp is inert on it (measured: the target already lies on the near side of the chord), so this holds the
   // outcome, not the clamp alone; no fixture of the corpus makes a declined body grown with a chord in the way (ticket 70 review).
@@ -287,7 +287,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(Math.abs(chord - centreX(lab))).toBeLessThan(1e-6);
     expect(chord <= provider.x || chord >= right(provider), 'the chord does not run through the provider').toBe(true);
     expect(inside(inner(boxOf(model, 'west')), frameOf(model, 'providers').box)).toBe(true);
-  }, 60000);
+  });
 
   // Ticket 136: every published layout stands at the fixed point of the three column rules, hinted or not. The pack is the rule that a widening of a
   // box after the last pack (the linked-group grid) used to leave behind.
@@ -304,7 +304,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_NON_CONVERGENCE')).toEqual([]);
     // Verdana metrics (snack-theme ticket 157): 1996 px wide, 1905 with Arial.
     expect(hinted.canvas!.width).toBeCloseTo(1996, -1);
-  }, 60000);
+  });
   it('three-canton-groups-close-up-to-a-band-gap with a side hint on m1: the finished layout is the fixed point of the pack (ticket 136)', async () => {
     // The hint frees link-2 (m1 -> loc-a1-gw) to the left face of m1 (the port the side round offers); the wider node changes the grid of a linked pair after 7f packed the row.
     // DR-04: the copy that declares canton `b` first, as in the test above.
@@ -332,7 +332,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const yields = hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_YIELDS_TO_PACK');
     expect(yields.length).toBeGreaterThan(0);
     expect(yields.every(item => item.severity === 'info' && item.owners!.length >= 2)).toBe(true);
-  }, 60000);
+  });
   it.each([
     'two-canton-groups-are-disjoint-columns', 'three-canton-groups-close-up-to-a-band-gap', 'a-canton-group-frames-two-tiers', 'a-canton-holds-three-members-on-one-tier',
     'a-canton-holds-two-members-on-one-tier', 'a-child-frame-stands-inside-its-parent', 'a-frame-shares-the-grid-with-its-linked-group', 'a-leaf-child-and-its-beside-cells-stay-one-row',
@@ -340,7 +340,7 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     'a-one-rank-member-beside-a-two-rank-member', 'a-foreign-unit-between-two-canton-groups', 'a-canton-with-a-tier-below', 'a-group-with-no-links-stands-beside-a-canton',
   ])('%s: with no hint the finished layout is the fixed point of the pack, the member walls and the column axes (ticket 136)', async name => {
     expect(settled(await baseRun(name))).toEqual([false, false, false]);
-  }, 60000);
+  });
 });
 
 /** Every link from a bottom port to a top port, with how far its two ends stand apart in x. */
@@ -366,7 +366,7 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     // The layout is the fixed point of the publication check and of the member walls.
     expect(centreViolations(model)).toEqual([]);
     expect(holdMemberWalls(structuredClone(model) as LayoutModel)).toBe(false);
-  }, 60000);
+  });
 
   it('a-drop-from-a-wide-parent-stands-vertical: the bundle seats, the ports beside the bundle and the wall-move replay stay as on main', async () => {
     const model = await baseRun('a-drop-from-a-wide-parent-stands-vertical');
@@ -378,7 +378,7 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     expect([x('sw', 'p3') < x('sw', 'p5'), x('sw', 'p4') < x('sw', 'p6')]).toEqual([true, true]);
     // No parent-port move is taken at a frame-column wall, so the wall-move replay has nothing to give back (as on main).
     expect(model.parentWallMoves).toBeUndefined();
-  }, 60000);
+  });
 
   it('without the record the canton wall holds the member again: absent reserves nothing, and a later replay that finds it absent says so', async () => {
     const model = structuredClone(await baseRun('a-drop-from-a-wide-parent-stands-vertical')) as LayoutModel;
@@ -393,7 +393,7 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     centreDraft(bare, createCentreBudget());
     expect(bare.alignedExtents).toBeUndefined();
     expect(bare.diagnostics.filter(item => item.code === 'ALIGNED_EXTENTS_UNDECIDED').length).toBe(1);
-  }, 60000);
+  });
 
   it('a sheet with a canton and no member above its anchor tier records an empty decision, and a sheet with no canton records none', async () => {
     const model = await baseRun('a-narrow-tier-is-centred-in-its-canton-column');
@@ -402,7 +402,7 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     expect(cantonCells.every(group => group.tier! >= model.anchorTier!)).toBe(true);
     expect(model.alignedExtents).toEqual({});
     expect((await baseRun('parent-two-children')).alignedExtents).toBeUndefined();
-  }, 60000);
+  });
 
   it('a member above the anchor tier whose feeds stand outside its canton reserves nothing (a-canton-member-frame-slides-off-a-straight-chord)', async () => {
     const model = await baseRun('a-canton-member-frame-slides-off-a-straight-chord');
@@ -412,7 +412,7 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     expect(feeds.length).toBeGreaterThan(0);
     expect(feeds.every(feed => model.groups[model.document.nodes[feed.parent.ref.node]!.group]!.frame === undefined)).toBe(true);
     expect(model.alignedExtents).toEqual({});
-  }, 60000);
+  });
 
   it('a member above the anchor tier with a transit feed reserves nothing (a-transit-inside-a-canton)', async () => {
     const model = await baseRun('a-transit-inside-a-canton');
@@ -421,7 +421,7 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     const feeds = centringFeeds(model, tier, model.anchorTier!).filter(feed => model.document.nodes[feed.child.ref.node]!.group === 'gate#0');
     expect(feeds.some(feed => feed.transit)).toBe(true);
     expect(model.alignedExtents).toEqual({});
-  }, 60000);
+  });
 
   it('a member on its aligned extent that an overlay chord crosses keeps its x in the whole-group chord step (memberRoom, review re-check)', async () => {
     // The fixture moved one tier down, between two free groups whose overlay link crosses the member's tier.
@@ -446,7 +446,7 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     stepOverChords(model, undefined, new Set(['top', 'bottom']));
     expect(model.groups['core#0']!.bounds!.x).toBeCloseTo(at, 6);
     expect(drops(model).filter(item => item.link !== 'link-9' && Math.abs(item.dx) > 0.5)).toEqual([]);
-  }, 60000);
+  });
 
   it('a-declined-grown-member-stops-at-an-overlay-chord: a feed outside the canton reserves no room, and the declined step names its group and links', async () => {
     const model = await baseRun('a-declined-grown-member-stops-at-an-overlay-chord');
@@ -456,5 +456,5 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     // DR-04: the canonical link order puts the sync link clock -> lab first, so the four provider links are link-2 to link-5.
     expect(declined[0]!.owners).toEqual([{ kind: 'group', id: 'providers#0' }, ...['link-2', 'link-3', 'link-4', 'link-5'].map(id => ({ kind: 'link', id }))]);
     expect(declined[0]!.message).toMatch(/^providers#0 declines its alignment: .*, so link-2, link-3, link-4, link-5 keep a jog; routing completes them\.$/);
-  }, 60000);
+  });
 });

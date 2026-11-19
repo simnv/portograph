@@ -153,7 +153,7 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
       const leg = endLegs(model, name).find(item => item.key === key)!;
       expect(leg.published, key).toBeLessThanOrEqual(leg.bound + 1e-6);
     }
-  }, 120000);
+  });
   // Under the default, the growth choice (dense-16x9 ticket 60) keeps the option-off run of these sheets, and their end legs stand in their bound.
   it('bounds the end legs of the KNOWN_LONG_LEGS sheets under the default, by the growth choice', async () => {
     for (const key of KNOWN_LONG_LEGS) {
@@ -162,5 +162,5 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
       const leg = endLegs(model, name).find(item => item.key === key)!;
       expect(leg.published, key).toBeLessThanOrEqual(leg.bound + 1e-6);
     }
-  }, 120000);
+  });
 });
