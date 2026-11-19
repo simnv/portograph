@@ -983,12 +983,27 @@ export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossi
  * each a distance from the far end's x. `pass`: the pass of its centring budget that last changed it (0 for a replay; each region replay
  * starts a budget of its own); read by nothing for a decision.
  */
-/** The record of a default-mode run of `layout.moveBeforeGrow` (`LayoutModel.moveBeforeGrowRun`, dense-16x9 ticket 56). */
+/**
+ * The tally of a published run by the unified order's own measure (`measuredTally`, `layout/turn-measure.ts`): the bent links and turns of the
+ * routed and of the overlay layer, and the crossings (pairs).
+ */
+export interface RunTally { routed: { bent: number; turns: number }; overlay: { bent: number; turns: number }; crossings: number }
+/**
+ * The record of a default-mode run of `layout.moveBeforeGrow` (`LayoutModel.moveBeforeGrowRun`, dense-16x9 tickets 56 and 60). `effective: on`: the
+ * option-on run published. `effective: off` with `failure`: the option-on run failed for a placement reason and the option-off run published (the
+ * fallback, ticket 56). `effective: off` with `choice`: both runs completed and the option-off run published because it is better on the whole
+ * sheet (the growth choice, ticket 60). A record has one of the two fields, never both.
+ */
 export interface MoveBeforeGrowRun {
   requested: 'default';
   effective: 'on' | 'off';
-  /** The failure of the option-on run (`effective: off` only): the `PlacementRefusal` code and its message. */
+  /** The failure of the option-on run (a fallback only): the `PlacementRefusal` code and its message. */
   failure?: { code: string; message: string };
+  /**
+   * The tallies the growth choice compared (a choice only): `off`, the kept run, which restore measures again on the published model and requires
+   * equal; `on`, the run not kept, which is evidence only (restore cannot measure a run that did not publish, it only checks the order of the two).
+   */
+  choice?: { on: RunTally; off: RunTally };
 }
 export interface AlignmentTarget {
   port: string;

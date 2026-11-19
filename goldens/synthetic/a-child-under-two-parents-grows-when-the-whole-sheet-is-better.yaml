@@ -1,0 +1,22 @@
+# Expected: move before grow is the first choice and the growth the second (dense-16x9 ticket 60, ADR-0027 amendment). `child` has a port
+# under `pa` and two under `pb`, which stand far apart in the row above, and `side` stands beside it in its row. With `layout.moveBeforeGrow`
+# on, the seat of `child` is bounded by `side` where stage 5 left it, so it stands its feed from `pa` only and the two links from `pb` jog
+# (`CENTRE_ALIGNMENT_INFEASIBLE`). The sheet does not write the option, so under the default the command lays it out once more with the option
+# off, where `child` grows to span its three feeds and every link is straight, and keeps that run: it is better on the whole sheet by the
+# unified order and has no error-gate finding the option-on run does not have.
+# Test-only input owned by dense-16x9 ticket 60; test/pipeline/growth-choice.test.ts reads the layout.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  low: { tier: 1, label: Low }
+nodes:
+  pa: { group: top, label: PA, ports: [{ name: p, side: bottom }] }
+  pb: { group: top, label: PB, ports: [{ name: q1, side: bottom }, { name: q2, side: bottom }] }
+  child: { group: low, label: Child, ports: [{ name: a, side: top }, { name: b1, side: top }, { name: b2, side: top }] }
+  side: { group: low, label: Side }
+  pc: { group: top, label: PC }
+links:
+  - [pa.p, child.a]
+  - [pb.q1, child.b1]
+  - [pb.q2, child.b2]
+  - [pc, side]

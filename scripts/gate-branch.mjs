@@ -21,7 +21,7 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
-import { COLUMNS, COLUMNS_BEFORE_FALLBACK, ROOT } from './gate-lib.mjs';
+import { COLUMNS, COLUMNS_BEFORE_CHOICE, COLUMNS_BEFORE_FALLBACK, ROOT } from './gate-lib.mjs';
 import { changedSheets, newRemovals, worseRows } from './gate-rows.mjs';
 
 /** At most this many changed sheets get the R3 report; each takes three layouts. */
@@ -59,7 +59,7 @@ function failingTests(output) {
 }
 
 // A base written before the fallback column is reused (dense-16x9 ticket 56): `gate:compare` reads its missing column as 0.
-const hasHeader = (path) => existsSync(path) && [COLUMNS.join('\t'), COLUMNS_BEFORE_FALLBACK.join('\t')].includes(readFileSync(path, 'utf8').split('\n')[0]);
+const hasHeader = (path) => existsSync(path) && [COLUMNS.join('\t'), COLUMNS_BEFORE_CHOICE.join('\t'), COLUMNS_BEFORE_FALLBACK.join('\t')].includes(readFileSync(path, 'utf8').split('\n')[0]);
 
 /** Measure `cwd` into `tsv` and `sweep` (or only `only`), through a partial name so a failed run leaves no reusable file. */
 function measure(cwd, tsv, sweep, only) {

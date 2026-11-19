@@ -21,7 +21,10 @@ import { decideLifts } from './lift-round.js';
 import { floatComponents } from '../layout/lift.js';
 import { resolve } from '../resolve/index.js';
 import type { Diagnostic, StaggerRow } from '../model/layout.js';
-import { defaultMeansOn, FALLBACK_STAGE, fallbackMessage, MOVE_BEFORE_GROW_FALLBACK, moveBeforeGrowMode } from '../layout/read/move-before-grow.js';
+import { choiceMessage, defaultMeansOn, FALLBACK_STAGE, fallbackMessage, growthChoiceTest, judgeGrowthChoice, MOVE_BEFORE_GROW_CHOICE, MOVE_BEFORE_GROW_FALLBACK, moveBeforeGrowMode } from '../layout/read/move-before-grow.js';
+import { restoreLayoutModel } from '../layout/mutation.js';
+import { SEAT_SET_DECLINED } from '../layout/seat-set.js';
+import { serializeLayoutModel } from '../model/model.js';
 import { qualifyingRefusal, type PlacementRefusal } from '../layout/placement-refusal.js';
 import { UNBOUNDED_BUDGET, type Budget } from './budget.js';
 
@@ -49,8 +52,9 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
   try {
     if (moveBeforeGrowMode(document) !== 'default' || !defaultMeansOn()) return await command(document, given);
     // The default-on mode (dense-16x9 ticket 56): the run writes the effective mode into its document, so every reader and the restore read it.
+    let on: LayoutModel;
     try {
-      return await command(withMoveBeforeGrow(document, true), { ...given, moveBeforeGrowRun: { requested: 'default', effective: 'on' } });
+      on = await command(withMoveBeforeGrow(document, true), { ...given, moveBeforeGrowRun: { requested: 'default', effective: 'on' } });
     } catch (error) {
       if (!fallsBack(error, given.budget ?? UNBOUNDED_BUDGET)) throw error;
       // One terminal retry of the whole input with the option off, on what is left of the command budget: a fresh ledger, the ordinary pipeline
@@ -59,7 +63,53 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       const warning: Diagnostic = { stage: FALLBACK_STAGE, severity: 'warning', code: MOVE_BEFORE_GROW_FALLBACK, message: fallbackMessage(failure), owners: [...error.owners] };
       return await command(withMoveBeforeGrow(document, false), { ...given, diagnostics: [...given.diagnostics ?? [], warning], moveBeforeGrowRun: { requested: 'default', effective: 'off', failure } });
     }
+    return await growthChoice(document, given, on);
   } finally { close(); }
+}
+
+/**
+ * Whether the option-on run of a default-on sheet left a seat short (dense-16x9 ticket 60, owner ruling 2026-11-19, trigger (b)): the growth choice
+ * runs only then. Read by code and owners, never by message text; no 7c record is added for it. Either arm fires:
+ *
+ * - a link that a `CENTRE_ALIGNMENT_INFEASIBLE` note of the placement names (its owners) is still bent in the published run: a step could not seat
+ *   it (the cap, the slide or growth bound of its row, or a guard), and the route did not draw it straight either;
+ * - the run has a `SEAT_SET_DECLINED` note. The cap also acts in the placement runs of a round's trial (the course round): when that trial is
+ *   declined, the published run names no short seat although the cap cost the sheet its course. A declined seat set is the note those sheets
+ *   carry, and the option-off run never writes it.
+ *
+ * Measured on the census as written (647 sheets, ticket 60 slice 1): 259 sheets fire, and all 33 sheets that the option-off run repairs are among
+ * them. The first arm alone fires on 143 sheets and misses 5 of the 33.
+ */
+/** The note of a centring step that left a feed unaligned (`centre.ts`, `placementWarning`: stage `placement`, the link in its owners). */
+const CENTRE_ALIGNMENT_INFEASIBLE = 'CENTRE_ALIGNMENT_INFEASIBLE';
+export function growthShort(model: LayoutModel): boolean {
+  if (model.diagnostics.some(note => note.code === SEAT_SET_DECLINED)) return true;
+  const named = new Set(model.diagnostics.filter(note => note.stage === 'placement' && note.code === CENTRE_ALIGNMENT_INFEASIBLE)
+    .flatMap(note => (note.owners ?? []).flatMap(owner => owner.kind === 'link' ? [owner.id] : [])));
+  return model.links.some(link => named.has(link.id) && (link.path?.segments.length ?? 0) > 1);
+}
+
+/**
+ * The growth choice of a default-on sheet (dense-16x9 ticket 60, ADR-0027 amendment): move before grow is the first choice and the growth the
+ * second. When the option-on run left a seat short (`growthShort`) and the command budget has time left, the whole input runs once more with the
+ * option off, on what is left of the same budget, and the run that `judgeGrowthChoice` keeps publishes. A tie keeps the on run. The trial decides
+ * nothing when it fails for any reason (a deadline, a refusal, a bug): the on run publishes as it is. A kept off run carries its record
+ * (`moveBeforeGrowRun.choice`, both tallies) and one info note (`MOVE_BEFORE_GROW_CHOICE`), and publishes again through `restoreLayoutModel`, so the
+ * record check of every restore (`moveBeforeGrowRunFault`) has judged it once already.
+ */
+async function growthChoice(document: NormalisedDocument, given: LayoutOptions, on: LayoutModel): Promise<LayoutModel> {
+  if (!growthShort(on) || !((given.budget ?? UNBOUNDED_BUDGET).remainingMs() > 0)) return on;
+  let off: LayoutModel;
+  try {
+    growthChoiceTest.beforeTrial?.();
+    off = await command(withMoveBeforeGrow(document, false), given);
+  } catch { return on; }
+  const verdict = judgeGrowthChoice(on, off);
+  if (verdict.keep === 'on' || verdict.tallies === undefined) return on;
+  const kept = JSON.parse(serializeLayoutModel(off)) as LayoutModel;
+  kept.moveBeforeGrowRun = { requested: 'default', effective: 'off', choice: verdict.tallies };
+  kept.diagnostics = [...kept.diagnostics, { stage: FALLBACK_STAGE, severity: 'info', code: MOVE_BEFORE_GROW_CHOICE, message: choiceMessage(verdict.tallies) }];
+  return restoreLayoutModel(JSON.stringify(kept));
 }
 
 /** One whole run of the command: the width and lift selection, then the publication fit (the final flat-gap choice, dense-16x9 ticket 42) once, on the run it publishes (`fitPublication`). */

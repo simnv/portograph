@@ -38,3 +38,8 @@ it('fails a sweep row that falls back to the option-off run on an unlisted sheet
   expect(newRemovals('v1\tremoved=-\n', 'v1\tremoved=-\n')).toEqual([]);
   expect(newRemovals('v1\tremoved=-\n', 'v1\tremoved=l1\n')).toEqual(['v1:l1']);
 });
+
+it('does not fail a sweep row that the growth choice kept off (dense-16x9 ticket 60)', () => {
+  expect(newRemovals('v1\tremoved=-\n', 'v1\tremoved=-\tchoice=off\n')).toEqual([]);
+  expect(newRemovals('v1\tremoved=-\n', 'v1\tremoved=l1\tchoice=off\n')).toEqual(['v1:l1']);
+});

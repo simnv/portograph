@@ -18,7 +18,9 @@
  * Worse means: more bends; more removed links; a gate id with a violation that the base did not
  * have; more crossings; a larger canvas area; more label border crossings; more overlay run pairs on one track; a fallback to the option-off run
  * of `layout.moveBeforeGrow` on a sheet `FALLBACK_SHEETS` does not list (dense-16x9 ticket 56, `unlistedFallback`), whatever the base: a
- * changed row, a row that recovers from a base error, and a head-only row alike. A base with no `fallback` column reads as 0.
+ * changed row, a row that recovers from a base error, and a head-only row alike. A base with no `fallback` column reads as 0. The `choice`
+ * column (the growth choice of dense-16x9 ticket 60) is printed when it changes and judged by nothing: a choice is no fallback, and the sheet is
+ * judged on its geometry columns as any other.
  */
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
@@ -59,6 +61,7 @@ function parseTsv(path) {
     if (fields.length !== columns.length) throw new ParseError(`${path}:${index + 2}: ${fields.length} fields, header has ${columns.length}`);
     const cells = Object.fromEntries(columns.map((column, position) => [column, fields[position]]));
     if ('fallback' in cells && !/^[01]$/.test(cells.fallback)) throw new ParseError(`${path}:${index + 2}: fallback is not 0 or 1: ${cells.fallback}`);
+    if ('choice' in cells && !/^[01]$/.test(cells.choice)) throw new ParseError(`${path}:${index + 2}: choice is not 0 or 1: ${cells.choice}`);
     for (const column of ['bends', 'removed', 'X', 'Xf', 'labelBorder', 'track']) {
       if (column in cells && !/^\d+$/.test(cells[column])) throw new ParseError(`${path}:${index + 2}: ${column} is not a count: ${cells[column]}`);
     }

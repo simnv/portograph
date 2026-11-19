@@ -17,12 +17,17 @@ import { heldLock } from './test-runner-lib.mjs';
 const require = createRequire(import.meta.url);
 
 /** The columns of a corpus TSV, in order; `corpus.mjs` writes them and `gate-compare.mjs` reads them. */
-export const COLUMNS = ['file', 'Q', 'X', 'Xf', 'W', 'gates', 'warn', 'routed', 'fb', 'edge', 'ob', 'bends', 'side', 'removed', 'labelBorder', 'track', 'fallback', 'hash'];
+export const COLUMNS = ['file', 'Q', 'X', 'Xf', 'W', 'gates', 'warn', 'routed', 'fb', 'edge', 'ob', 'bends', 'side', 'removed', 'labelBorder', 'track', 'fallback', 'choice', 'hash'];
 /**
  * The columns of a corpus TSV written before `fallback` (dense-16x9 ticket 56). `gate:branch` reuses such a base: the fallback of a default-on
  * sheet is new in the head, so a missing base column reads as 0.
  */
-export const COLUMNS_BEFORE_FALLBACK = COLUMNS.filter((column) => column !== 'fallback');
+export const COLUMNS_BEFORE_FALLBACK = COLUMNS.filter((column) => column !== 'fallback' && column !== 'choice');
+/**
+ * The columns of a corpus TSV written before `choice` (dense-16x9 ticket 60). `gate:branch` reuses such a base too: `gate:compare` compares only
+ * the columns both files have, and a choice is no worse row by itself.
+ */
+export const COLUMNS_BEFORE_CHOICE = COLUMNS.filter((column) => column !== 'choice');
 /**
  * The sheets that may fall back to the option-off run of `layout.moveBeforeGrow` (dense-16x9 ticket 56), each with its reason: a corpus sheet by
  * its path, a sweep sheet by its name. A sheet that falls back and is not listed fails the gate on every path (`unlistedFallback`), so a new class

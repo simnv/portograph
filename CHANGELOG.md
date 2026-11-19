@@ -16,6 +16,7 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 ### Added
 
 - `layout.moveBeforeGrow` has three modes. `true` is strict, `false` is off, and a sheet that writes nothing takes the default, which stays off for now. Once the default is on, a sheet that writes nothing and whose option-on run fails for a placement reason is laid out again with the option off; that layout carries the warning `MOVE_BEFORE_GROW_FALLBACK`, which names the first failure, and the record `moveBeforeGrowRun` (requested and effective mode). The corpus gate has a `fallback` column.
+- The default-on mode of `layout.moveBeforeGrow` chooses the growth on the whole sheet (ADR-0027 amendment, dense-16x9 ticket 60). When the option-on run completed and left a seat short, the command lays the sheet out once more with the option off and keeps that run only when it is better by the unified order (fewer bent links, then turns, then crossings) and adds no error-gate finding; a tie or a failed trial keeps the option-on run. A kept option-off run carries the record `moveBeforeGrowRun.choice` (both tallies) and the info note `MOVE_BEFORE_GROW_CHOICE`. The corpus gate has a `choice` column, and the sweep writes `choice=off`; neither is judged as worse.
 
 ## [0.2.2] - 2026-11-13
 

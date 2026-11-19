@@ -180,3 +180,43 @@ it('judges an unlisted fallback on an unchanged row (dense-16x9 ticket 56, revie
   expect(legacy).toMatch(/fallback\s+-\s+1\s+WORSE/);
   expect(legacy).toContain('worse: fallback 1');
 });
+
+const WITH_CHOICE = [...HEADER.slice(0, -1), 'fallback', 'choice', 'hash'];
+function choiceRow(choice: string, overrides: Record<string, string> = {}): string {
+  const cells: Record<string, string> = {
+    file: 'goldens/a.yaml', Q: '0.5', X: '0', Xf: '0', W: '100x100', gates: '-', warn: '-', routed: '1/1', fb: '0', edge: '0', ob: '0/0',
+    bends: '0', side: '0', removed: '0', labelBorder: '0', fallback: '0', choice, hash: 'aaaaaaaaaaaa', ...overrides,
+  };
+  return WITH_CHOICE.map(column => cells[column]).join('\t');
+}
+function compareChoice(base: string, head: string, baseHeader = WITH_CHOICE): { status: number | null; out: string; err: string } {
+  dir = mkdtempSync(join(tmpdir(), 'pg-compare-'));
+  writeFileSync(join(dir, 'base.tsv'), `${baseHeader.join('\t')}\n${base}\n`);
+  writeFileSync(join(dir, 'head.tsv'), `${WITH_CHOICE.join('\t')}\n${head}\n`);
+  const result = spawnSync('node', [compareScript, join(dir, 'base.tsv'), join(dir, 'head.tsv')], { encoding: 'utf8' });
+  return { status: result.status, out: String(result.stdout), err: String(result.stderr) };
+}
+
+it('prints a growth choice and judges it worse by nothing (dense-16x9 ticket 60)', () => {
+  const { status, out } = compareChoice(choiceRow('0', { bends: '4' }), choiceRow('1', { hash: 'bbbbbbbbbbbb' }));
+  expect(status).toBe(0);
+  expect(out).toMatch(/choice\s+0\s+1\s*$/m);
+  expect(out).toContain('worse: none');
+  // A choice that keeps the same geometry is a change of the choice cell alone, and no worse row.
+  expect(compareChoice(choiceRow('1'), choiceRow('1')).out).toContain('no change');
+});
+
+it('reads a base written before the choice column (dense-16x9 ticket 60)', () => {
+  const base = [...HEADER.slice(0, -1), 'fallback', 'hash'];
+  const row = base.map(column => ({ file: 'goldens/a.yaml', Q: '0.5', X: '0', Xf: '0', W: '100x100', gates: '-', warn: '-', routed: '1/1', fb: '0', edge: '0', ob: '0/0',
+    bends: '0', side: '0', removed: '0', labelBorder: '0', fallback: '0', hash: 'aaaaaaaaaaaa' } as Record<string, string>)[column]).join('\t');
+  const { status, out } = compareChoice(row, choiceRow('1'), base);
+  expect(status).toBe(0);
+  expect(out).toContain('no change');
+});
+
+it('refuses a choice cell that is not 0 or 1 (dense-16x9 ticket 60)', () => {
+  const { status, err } = compareChoice(choiceRow('0'), choiceRow('off'));
+  expect(status).toBe(2);
+  expect(err).toContain('choice is not 0 or 1');
+});

@@ -5,7 +5,8 @@
  * Usage: npm run sweep -- <out.txt> [--only name,name]      (builds dist/ first; see docs/gates.md)
  *
  * Line format: `<name>\tremoved=<link ids, comma-separated, or ->`, then `\tfallback=<refusal code>` when the sheet fell back to the
- * option-off run of `layout.moveBeforeGrow` (dense-16x9 ticket 56; the count is on standard output); a sheet that fails to lay out
+ * option-off run of `layout.moveBeforeGrow` (dense-16x9 ticket 56; the count is on standard output), or `\tchoice=off` when the growth choice
+ * kept the option-off run (ticket 60: no fallback, and no gate reads it); a sheet that fails to lay out
  * gets `<name>\tERROR <message>`. The removed ids are the model's `removedLinks`, the list the
  * score counts (`counters.removedLinks`).
  */
@@ -41,6 +42,7 @@ async function main(argv) {
   let removed = 0;
   let errors = 0;
   let fallbacks = 0;
+  let choices = 0;
   try {
     for (const [index, file] of files.entries()) {
       const name = basename(file, '.yaml');
@@ -51,7 +53,8 @@ async function main(argv) {
         const ids = model.removedLinks ?? [];
         if (ids.length > 0) removed++;
         line = `${name}\tremoved=${ids.join(',') || '-'}`;
-        if (model.moveBeforeGrowRun?.effective === 'off') { fallbacks++; line += `\tfallback=${model.moveBeforeGrowRun.failure.code}`; }
+        if (model.moveBeforeGrowRun?.failure !== undefined) { fallbacks++; line += `\tfallback=${model.moveBeforeGrowRun.failure.code}`; }
+        else if (model.moveBeforeGrowRun?.choice !== undefined) { choices++; line += '\tchoice=off'; }
       } catch (error) {
         errors++;
         line = `${name}\t${failure(error)}`;
@@ -62,7 +65,7 @@ async function main(argv) {
     pipeline.close();
   }
   process.stderr.write(`sweep: ${files.length} sheets in ${elapsed(start)} -> ${out}\n`);
-  process.stdout.write(`${removed} removed of ${files.length}${errors > 0 ? ` (${errors} errors)` : ''}${fallbacks > 0 ? `, ${fallbacks} fell back to the option-off run` : ''}\n`);
+  process.stdout.write(`${removed} removed of ${files.length}${errors > 0 ? ` (${errors} errors)` : ''}${fallbacks > 0 ? `, ${fallbacks} fell back to the option-off run` : ''}${choices > 0 ? `, ${choices} kept it by the growth choice` : ''}\n`);
 }
 
 withGateLock(() => main(process.argv.slice(2))).then(

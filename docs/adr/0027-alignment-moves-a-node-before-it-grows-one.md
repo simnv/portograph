@@ -217,3 +217,37 @@ resolve error fails in both modes and does not run twice; a deadline (the comman
 The record and the document's effective value are checked at every publication and at the restore (R5), so a restored layout runs the checks
 of the mode it ran. A run that draws in the default-on mode records `effective: on`. This is the release guarantee of ticket 45 for a sheet
 that draws with the option off; the joint placement of a pooled row unit (ticket 53) can retire it when it passes the cases of ticket 46.
+
+## Amendment: the default mode chooses the growth on the whole sheet (dense-16x9 ticket 60, owner ruling 2026-11-19)
+
+Ruling: "whole-sheet choice, narrow the trigger". Move before grow means that the move is tried first and the growth is the second choice; it
+does not forbid the growth. A node that cannot move grows when the growth keeps its links straight and the move alone leaves them bent. The
+census of the flip (ticket 60 analysis) found two placement causes in stage 7c: the cap of 5 times on a body that cannot move, and a seat bounded
+by its row as stage 5 left it. A local rule (a higher cap, or a slide bounded as a growth) repairs part of the bent links and makes the sheets
+the default made better worse again: a growth that keeps its own links straight can cost the sheet more. So the choice is made on the whole sheet.
+
+In the default-on mode (`layout.moveBeforeGrow` not written, `DEFAULT_MEANS_ON` true) the command runs the option-on run as before. When that run
+completed and left a seat short (`growthShort`, `src/pipeline/index.ts`), and the command budget has time left, the command lays the whole input out
+once more with the option off, on what is left of the same budget. The trigger reads two existing notes by code and owners, never by text, and no
+7c record is added for it:
+
+- a link that a `CENTRE_ALIGNMENT_INFEASIBLE` note names is still bent in the published run;
+- the run has a `SEAT_SET_DECLINED` note. The cap also acts in the placement runs of a round's trial (the course round); when that trial is
+  declined, the published run names no short seat although the cap cost the sheet its course.
+
+One judge decides (`judgeGrowthChoice`, `src/layout/read/move-before-grow.ts`): the option-off run publishes only when it is better on the whole
+sheet by the unified order (`unifiedCompare`, the comparator of the far-end round: fewer bent links over both layers, then fewer turns, then fewer
+crossings) and has no error-gate finding that the option-on run does not have. A tie keeps the on run. A failure of the trial of any kind (a
+deadline, a refusal, a bug) decides nothing: the on run publishes. A refusal of the option-on run still falls back as the amendment of ticket 56
+says, with no trial. Written `true` stays strict (one run, no trial); written `false` is off.
+
+A kept option-off run records the choice (`moveBeforeGrowRun`: `effective: off` with `choice`, the tallies of both runs, distinct from a fallback,
+which has `failure`) and one info note `MOVE_BEFORE_GROW_CHOICE` that names both tallies. The record excuses no gate. The restore check
+(`moveBeforeGrowRunFault`) accepts exactly that shape: the document holds the option off, the layout is final, the recorded `off` tally is the
+tally the judge's measure reads on the published model, it is better than the recorded `on` tally by the judge's comparator, and one note names
+them. The `on` tally is evidence only: its run did not publish.
+
+Measured on the census as written (647 sheets, slice 1): the trigger fires on 259 sheets, and all 33 sheets that the option-off run repairs are
+among them; the narrower first arm alone fires on 143 sheets and misses 5 of the 33. The outside sheet does not fire. The cost is one more run
+on the sheets that fire.
+
