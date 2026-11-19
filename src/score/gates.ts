@@ -135,7 +135,8 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
     // The one reader of the face (`readFace`, dense-16x9 ticket 49): every pair of strictly separated far-end ranges whose ports stand the other way round,
     // unless a record decides the face (the turn round's, or a far-end decision that holds).
     const reading = readFace(model, node.id, side, farAnchors, decisions);
-    if (reading.fails) for (const [first, second] of reading.wrong) fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored', `${side} ${portIdName(first)} > ${portIdName(second)}`);
+    // The identity of a reversal is its face and its two ports in either order (review 2): a trial whose far ends follow its move turns the same reversal round.
+    if (reading.fails) for (const pair of reading.wrong) fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored', `${side} ${[...pair].sort().map(portIdName).join(', ')}`);
     const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined)
       .sort((a, b) => (side === 'top' || side === 'bottom' ? a.anchor!.x - b.anchor!.x : a.anchor!.y - b.anchor!.y));
     if (authored.some((p, i) => i > 0 && p.authorOrder! < authored[i - 1]!.authorOrder!))
@@ -145,7 +146,7 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
 
 /**
  * What a violation is, past the elements it publishes (dense-16x9 ticket 60, review 2, P2): G5 names only the node, so a reversal on the top face and one
- * on the bottom face publish alike. The gate gives each its face, and the port pair of a free-port reversal, here; a trial judge reads it
+ * on the bottom face publish alike. The gate gives each its face, and the two ports of a free-port reversal (in either order), here; a trial judge reads it
  * (`gateFindings`) to tell two such findings apart. It is kept off the violation so the published finding, the score snapshot and the gate files
  * do not change. Undefined for a violation of a gate that gives no more than its elements.
  */
