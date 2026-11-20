@@ -7,7 +7,7 @@
  * `npm run sweep` build `dist/` before they run, so the measurement is never of a stale build.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, relative, sep } from 'node:path';
 import process from 'node:process';
@@ -159,4 +159,70 @@ export function layoutHash(api, model) {
 export async function withGateLock(work) {
   if (heldLock() === undefined) throw new Error('run this through its npm script (npm run corpus, sweep, r3 or gate:branch); it takes the host-wide lock');
   return work();
+}
+
+/** A corpus TSV that cannot be read: `gate:compare` and `gate:pairs` print it and exit 2. */
+export class CorpusTsvError extends Error {}
+
+/**
+ * `{ columns, rows: Map<file, { cells } | { error }> }` from one corpus TSV, or a `CorpusTsvError`. The one reader of the gate scripts: a file in
+ * an older column format (`COLUMNS_BEFORE_FALLBACK`, `COLUMNS_BEFORE_CHOICE`) reads with the columns it has.
+ */
+export function readCorpusTsv(path) {
+  let text;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (error) {
+    throw new CorpusTsvError(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const lines = text.split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  const columns = (lines[0] ?? '').split('\t');
+  if (columns[0] !== 'file' || columns.some((column) => !COLUMNS.includes(column))) {
+    throw new CorpusTsvError(`${path}:1: not a corpus header (expected ${COLUMNS.join(', ')})`);
+  }
+  const rows = new Map();
+  for (const [index, line] of lines.slice(1).entries()) {
+    const fields = line.split('\t');
+    const file = fields[0];
+    if (file === undefined || file === '') throw new CorpusTsvError(`${path}:${index + 2}: no file`);
+    if (rows.has(file)) throw new CorpusTsvError(`${path}:${index + 2}: ${file} appears twice`);
+    if (/^(ERROR|TIMEOUT)/.test(fields[1] ?? '')) {
+      rows.set(file, { error: fields.slice(1).join(' ') });
+      continue;
+    }
+    if (fields.length !== columns.length) throw new CorpusTsvError(`${path}:${index + 2}: ${fields.length} fields, header has ${columns.length}`);
+    const cells = Object.fromEntries(columns.map((column, position) => [column, fields[position]]));
+    if ('fallback' in cells && !/^[01]$/.test(cells.fallback)) throw new CorpusTsvError(`${path}:${index + 2}: fallback is not 0 or 1: ${cells.fallback}`);
+    if ('choice' in cells && !/^[01]$/.test(cells.choice)) throw new CorpusTsvError(`${path}:${index + 2}: choice is not 0 or 1: ${cells.choice}`);
+    for (const column of ['bends', 'removed', 'X', 'Xf', 'labelBorder', 'track']) {
+      if (column in cells && !/^\d+$/.test(cells[column])) throw new CorpusTsvError(`${path}:${index + 2}: ${column} is not a count: ${cells[column]}`);
+    }
+    if ('W' in cells && cells.W !== '-' && !/^\d+x\d+$/.test(cells.W)) throw new CorpusTsvError(`${path}:${index + 2}: W is not <width>x<height> or -: ${cells.W}`);
+    rows.set(file, { cells });
+  }
+  return { columns, rows };
+}
+
+/** The gate ids of a `gates` cell, and the area of a `W` cell (`<width>x<height>`). */
+export const gateSet = (text) => new Set(text === '-' ? [] : text.split(','));
+export const area = (text) => text.split('x').reduce((product, side) => product * Number(side), 1);
+
+
+/**
+ * The worse flags of one sheet whose base and head both lay out, in judgement order (bends, removed, gates, crossings, canvas, labelBorder,
+ * track, fallback); a missing column is never judged. The one judgement of `gate:compare` and `gate:pairs`.
+ */
+export function worseFlags(base, head, file) {
+  const worse = [];
+  const both = (column) => column in base && column in head;
+  if (both('bends') && Number(head.bends) > Number(base.bends)) worse.push('bends');
+  if (both('removed') && Number(head.removed) > Number(base.removed)) worse.push('removed');
+  if (both('gates') && [...gateSet(head.gates)].some((id) => !gateSet(base.gates).has(id))) worse.push('gates');
+  if (both('X') && Number(head.X) > Number(base.X)) worse.push('crossings');
+  if (both('W') && head.W !== '-' && base.W !== '-' && area(head.W) > area(base.W)) worse.push('canvas');
+  if (both('labelBorder') && Number(head.labelBorder) > Number(base.labelBorder)) worse.push('labelBorder');
+  if (both('track') && Number(head.track) > Number(base.track)) worse.push('track');
+  if (unlistedFallback(file, head.fallback)) worse.push('fallback');
+  return worse;
 }

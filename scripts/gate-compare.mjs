@@ -22,54 +22,14 @@
  * column (the growth choice of dense-16x9 ticket 60) is printed when it changes and judged by nothing: a choice is no fallback, and the sheet is
  * judged on its geometry columns as any other.
  */
-import { readFileSync } from 'node:fs';
 import process from 'node:process';
-import { COLUMNS, unlistedFallback } from './gate-lib.mjs';
+import { COLUMNS, CorpusTsvError, readCorpusTsv, unlistedFallback, worseFlags } from './gate-lib.mjs';
 
 const JUDGED = ['bends', 'removed', 'gates', 'crossings', 'canvas', 'labelBorder', 'track', 'fallback'];
 /** The flag of a sheet that only the head has, judged on its own. */
 const NEW_FAIL = 'new-fail';
 /** The columns in print order: the judged ones first, in judgement order, then the rest as the TSV has them. */
 const PRINT_ORDER = ['bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track', 'fallback', ...COLUMNS.filter((column) => !['file', 'bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track', 'fallback'].includes(column))];
-
-class ParseError extends Error {}
-
-/** `{ columns, rows: Map<file, { cells } | { error }> }` from one TSV, or a ParseError. */
-function parseTsv(path) {
-  let text;
-  try {
-    text = readFileSync(path, 'utf8');
-  } catch (error) {
-    throw new ParseError(`${path}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  const lines = text.split('\n');
-  if (lines.at(-1) === '') lines.pop();
-  const columns = (lines[0] ?? '').split('\t');
-  if (columns[0] !== 'file' || columns.some((column) => !COLUMNS.includes(column))) {
-    throw new ParseError(`${path}:1: not a corpus header (expected ${COLUMNS.join(', ')})`);
-  }
-  const rows = new Map();
-  for (const [index, line] of lines.slice(1).entries()) {
-    const fields = line.split('\t');
-    const file = fields[0];
-    if (file === undefined || file === '') throw new ParseError(`${path}:${index + 2}: no file`);
-    if (rows.has(file)) throw new ParseError(`${path}:${index + 2}: ${file} appears twice`);
-    if (/^(ERROR|TIMEOUT)/.test(fields[1] ?? '')) {
-      rows.set(file, { error: fields.slice(1).join(' ') });
-      continue;
-    }
-    if (fields.length !== columns.length) throw new ParseError(`${path}:${index + 2}: ${fields.length} fields, header has ${columns.length}`);
-    const cells = Object.fromEntries(columns.map((column, position) => [column, fields[position]]));
-    if ('fallback' in cells && !/^[01]$/.test(cells.fallback)) throw new ParseError(`${path}:${index + 2}: fallback is not 0 or 1: ${cells.fallback}`);
-    if ('choice' in cells && !/^[01]$/.test(cells.choice)) throw new ParseError(`${path}:${index + 2}: choice is not 0 or 1: ${cells.choice}`);
-    for (const column of ['bends', 'removed', 'X', 'Xf', 'labelBorder', 'track']) {
-      if (column in cells && !/^\d+$/.test(cells[column])) throw new ParseError(`${path}:${index + 2}: ${column} is not a count: ${cells[column]}`);
-    }
-    if ('W' in cells && cells.W !== '-' && !/^\d+x\d+$/.test(cells.W)) throw new ParseError(`${path}:${index + 2}: W is not <width>x<height> or -: ${cells.W}`);
-    rows.set(file, { cells });
-  }
-  return { columns, rows };
-}
 
 /** What fails on a head-only sheet, as `[column, value]` cells; empty when it is clean. */
 function newFailures(row, file) {
@@ -79,24 +39,6 @@ function newFailures(row, file) {
   if ('gates' in row.cells && row.cells.gates !== '-') failures.push(['gates', row.cells.gates]);
   if ('removed' in row.cells && Number(row.cells.removed) > 0) failures.push(['removed', row.cells.removed]);
   return failures;
-}
-
-const gateSet = (text) => new Set(text === '-' ? [] : text.split(','));
-const area = (text) => text.split('x').reduce((product, side) => product * Number(side), 1);
-
-/** The flags of one sheet, in judgement order; a missing column is never judged. */
-function flags(base, head, file) {
-  const worse = [];
-  const both = (column) => column in base && column in head;
-  if (both('bends') && Number(head.bends) > Number(base.bends)) worse.push('bends');
-  if (both('removed') && Number(head.removed) > Number(base.removed)) worse.push('removed');
-  if (both('gates') && [...gateSet(head.gates)].some((id) => !gateSet(base.gates).has(id))) worse.push('gates');
-  if (both('X') && Number(head.X) > Number(base.X)) worse.push('crossings');
-  if (both('W') && head.W !== '-' && base.W !== '-' && area(head.W) > area(base.W)) worse.push('canvas');
-  if (both('labelBorder') && Number(head.labelBorder) > Number(base.labelBorder)) worse.push('labelBorder');
-  if (both('track') && Number(head.track) > Number(base.track)) worse.push('track');
-  if (unlistedFallback(file, head.fallback)) worse.push('fallback');
-  return worse;
 }
 
 function compare(base, head) {
@@ -127,7 +69,7 @@ function compare(base, head) {
       cells = columns.filter((column) => b.cells[column] !== h.cells[column]).map((column) => [column, b.cells[column], h.cells[column]]);
       // The head's fallback is judged before an unchanged row is skipped (review 2 of ticket 56): an unlisted fallback shows as a cell even when the
       // base has it too, or has no column (read as 0).
-      sheetFlags = flags(b.cells, h.cells, file);
+      sheetFlags = worseFlags(b.cells, h.cells, file);
       if (sheetFlags.includes('fallback') && !cells.some(([column]) => column === 'fallback')) cells.push(['fallback', b.cells.fallback ?? '-', h.cells.fallback]);
       if (cells.length === 0) continue;
     }
@@ -155,11 +97,11 @@ function format({ lines, changed, counts, total, geometry }) {
 
 function main(argv) {
   const [basePath, headPath, ...rest] = argv;
-  if (basePath === undefined || headPath === undefined || rest.length > 0) throw new ParseError('usage: npm run gate:compare -- <base.tsv> <head.tsv>');
-  const base = parseTsv(basePath), head = parseTsv(headPath);
+  if (basePath === undefined || headPath === undefined || rest.length > 0) throw new CorpusTsvError('usage: npm run gate:compare -- <base.tsv> <head.tsv>');
+  const base = readCorpusTsv(basePath), head = readCorpusTsv(headPath);
   // Without `Xf`, `X` counts the faint crossings too: a pair that mixes the two meanings would judge a fan's own crossings (ticket 40).
   for (const [path, file] of [[basePath, base], [headPath, head]]) {
-    if (!file.columns.includes('Xf')) throw new ParseError(`${path}: no Xf column; X there counts faint crossings too, so it cannot be compared (measure it again)`);
+    if (!file.columns.includes('Xf')) throw new CorpusTsvError(`${path}: no Xf column; X there counts faint crossings too, so it cannot be compared (measure it again)`);
   }
   process.stdout.write(format(compare(base, head)));
 }
@@ -167,7 +109,7 @@ function main(argv) {
 try {
   main(process.argv.slice(2));
 } catch (error) {
-  if (!(error instanceof ParseError)) throw error;
+  if (!(error instanceof CorpusTsvError)) throw error;
   process.stderr.write(`gate:compare: ${error.message}\n`);
   process.exitCode = 2;
 }

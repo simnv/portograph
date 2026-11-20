@@ -33,6 +33,7 @@ Stuck lock: a message says that the processes of the previous job will not die. 
 | `npm run corpus -- <out.tsv>` | Lays out and scores every `goldens/**/*.yaml` (`goldens/synthetic/stage-inputs.yaml` is test data and is skipped). One TSV line per sheet. |
 | `npm run sweep -- <out.txt> [--only a,b]` | Lays out every `test/fixtures/sweep/*.yaml`. One line per sheet with the removed links. Prints `N removed of M`. |
 | `npm run gate:compare -- <base.tsv> <head.tsv>` | Reads two corpus files. Prints the changed cells side by side and flags every sheet that is worse. |
+| `npm run gate:pairs -- <base.tsv> <head.tsv> --base-bin <bin> --head-bin <bin>` | Renders the sheets that the two files judge most worse and most better, before and after, into one `index.html`. |
 | `npm run r3 -- <sheet.yaml>...` | The R3 check (see `CODING_STANDARDS.md`): lays each sheet out as written, with `links` reversed and with `nodes` reversed. Prints `SAME` or the first differing JSON path. An order that falls back to the option-off run of `layout.moveBeforeGrow` prints `FALLBACK <code>` unless `FALLBACK_SHEETS` lists the sheet (dense-16x9 tickets 45 and 56). |
 
 The corpus file has a header line and these columns: `file Q X Xf W gates warn routed fb edge ob bends side removed labelBorder track fallback choice hash`. Every number is the scorer's. `Q` is the score; it is printed and never judged. `gates` lists the error gates with a violation, or `-`. `bends` counts the real bends of every kept link. `removed` counts the links that stage 8 removed. `fallback` is 1 when a sheet that writes no `layout.moveBeforeGrow` ran with the default on and published the option-off run (dense-16x9 ticket 56), else 0; the corpus script also prints the count. A base written before the column is reused, and its missing column reads as 0. `choice` is 1 when such a sheet completed both runs and the growth choice kept the option-off run (dense-16x9 ticket 60), else 0; a choice is no fallback, `gate:compare` prints a changed `choice` cell and judges it by nothing, and the sheet is judged on its geometry columns as any other. A base written before `choice` is reused too: the compare reads only the columns both files have. `hash` is 12 hex digits of the sha256 of the layout JSON; any geometry change moves it.
@@ -40,6 +41,20 @@ The corpus file has a header line and these columns: `file Q X Xf W gates warn r
 A sheet that fails to lay out gets `<file>\tERROR <message>`.
 
 `gate:compare` marks `WORSE` a cell that judges a sheet worse, in this order: `error`, `bends`, `removed`, `gates`, `crossings`, `canvas`, `labelBorder`, `track`, `fallback`. A `fallback` is worse whatever the base when `FALLBACK_SHEETS` (`scripts/gate-lib.mjs`, empty today) does not list the sheet (`unlistedFallback`, on a changed row and on a row that recovers from a base error); a sweep row with `fallback=<code>` on an unlisted sheet fails `gate:branch` like a new removed link; a sweep row with `choice=off` (the growth choice) fails nothing. A sheet that only the head has is judged on its own: an `ERROR` or `TIMEOUT` row, a `gates` cell that is not `-`, `removed` above 0, or an unlisted `fallback` marks it `NEW-FAIL`.
+
+## Show a change in pictures: `gate:pairs`
+
+A change of a default goes to the owner with before and after pictures, not with counts alone: a count can hide a defect that one picture shows.
+
+```sh
+npm run gate:pairs -- <base.tsv> <head.tsv> [--top 6] [--out <dir>] [--base-bin <bin>] [--head-bin <bin>] [--width 1600]
+```
+
+It reads the two corpus files with the reader of `gate:compare` (old and new column formats) and ranks the sheets with its judgement: a sheet is worse when `gate:compare` flags it, better when it flags the base against the head. Each list is ordered by error, then the steps of `bends`, `removed`, new `gates`, `crossings`, then the relative growth of the canvas area, then the file name. It takes the top `--top` (default 6) of each list. A sheet in one file only, or that fails in both, is left out.
+
+A bin is `bin/portograph.mjs` of a checkout with a built `dist/` (`npm run build` there). The base bin renders `<name>.before.svg` and the head bin `<name>.after.svg`, each from the sheet file of its own checkout; `scripts/png.mjs` makes the PNGs. `--base-bin` and `--head-bin` default to `PORTOGRAPH_PAIRS_BASE_BIN` and `PORTOGRAPH_PAIRS_HEAD_BIN`. With one bin, only that side renders; run again with the other bin and the same `--out` to add the other side. `index.html` shows the pairs side by side with one caption each from the TSV cells (bends, crossings, canvas, gates). `--out` defaults to `$XDG_CACHE_HOME/portograph/gate-pairs/<base>--<head>` (`~/.cache` when XDG_CACHE_HOME is not set).
+
+The rows are sheet paths relative to the checkout, so a TSV that names a sweep input (`test/fixtures/sweep/<name>.yaml`) works too; the text output of `npm run sweep` is not read. The command takes the test lock, like `corpus`.
 
 ## Before a merge request: `gate:branch`
 

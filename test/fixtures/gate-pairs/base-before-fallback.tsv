@@ -1,0 +1,18 @@
+file	Q	X	Xf	W	gates	warn	routed	fb	edge	ob	bends	side	removed	labelBorder	track	hash
+goldens/synthetic/a-error.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	0	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/b-bends3.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	2	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/b2-tie.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	2	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/c-bends1-canvas.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	1	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/d-removed.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	0	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/e-gates.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	0	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/f-crossings.yaml	0.5	1	0	100x100	-	-	1/1	0	0	0/0	0	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/g-canvas-small.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	0	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/h-canvas-big.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	0	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/i-mixed.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	4	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/j-better-bends.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	5	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/k-better-canvas.yaml	0.5	0	0	200x100	-	-	1/1	0	0	0/0	0	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/l-recovered.yaml	ERROR solver failed
+goldens/synthetic/m-same.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	0	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/n-only-base.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	0	0	0	0	0	aaaaaaaaaaaa
+goldens/synthetic/p-both-fail.yaml	ERROR one
+test/fixtures/sweep/v1-1-1.yaml	0.5	0	0	100x100	-	-	1/1	0	0	0/0	3	0	0	0	0	aaaaaaaaaaaa
