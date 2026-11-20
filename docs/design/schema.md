@@ -101,7 +101,9 @@ A flank (`align` with `of`) stands beside a tier group; it is not nesting.
   in `canton:`. It holds tier groups and no nodes.
   - The canton itself takes `label` and `class` only (`CANTON_KEYS`), and it is not a member of a
     canton (`CANTON_NESTED`).
-  - A member is a tier group of shape `ranked` or `row` (`CANTON_MEMBER_SHAPE`). A child group
+  - A member is a tier group of shape `ranked` or `row` (`CANTON_MEMBER_SHAPE`): a member is a
+    frame of rank cells, and stage 1 gives a `bar` or `grid` group no cells, so it cannot be one
+    (docs/design/canton-groups.md). A child group
     takes the canton of its parent, and a flank has none (`CANTON_MEMBER_KIND`). No flank stands
     beside a member (`CANTON_MEMBER_FLANK`).
   - A member, or one of its child groups, holds a node (`CANTON_MEMBER_EMPTY`), and a canton has
@@ -115,6 +117,52 @@ groups:
   edge:    { tier: 1, canton: site }       # a member
   core:    { tier: 2, canton: site }       # a member on the next tier
   core-a:  { parent: core, label: Pair A } # a child group of a member
+```
+
+**Shapes.** `shape:` says how a group stands its nodes.
+
+- **`ranked`** (the default; ADR-0019). The group puts its nodes on rows by the routed links inside
+  it. An **anchor** is a node with a routed link to the tier above (else to the tier below); a node's
+  row is its depth from the anchors over the routed links inside the group, so a link goes one row
+  down or joins two nodes of one row. A group with no anchor, or with one row, is a `row`.
+
+  ```yaml
+  groups:
+    wan:  { tier: 0 }
+    site: { tier: 1 }               # rows: core / acc1 acc2 / srv1 srv2
+  links: [[isp, core], [core, acc1], [core, acc2], [acc1, srv1], [acc2, srv2]]
+  ```
+
+- **`row`**: every node on one row (or two lines, below).
+- **`bar`**: the nodes stack in declaration order.
+- **`grid`**: the nodes stand in columns and rows. The engine chooses the column count: of the
+  counts the column bound allows, the one whose packed box comes nearest to the aspect aim
+  (`layout.aspect`, default `"16:9"`), ties to fewer columns. The column bound: every node with a
+  routed link up stands in the first row and every node with a routed link down in the last, so the
+  grid has at least as many columns as the larger of those two counts; and two nodes of the group
+  joined by a link whose two ports the author fixed to `side: top` never share a column. A grid that holds both ends of a bundle it cannot
+  stand vertically is a `row`.
+
+  ```yaml
+  groups:
+    edge: { tier: 0 }
+    rack: { tier: 1, shape: grid }  # eight nodes: 4 columns x 2 rows; s1 and s2 (linked up) in row 1
+  ```
+
+**Two-line row** (`layout.autoArrange`, default `true`; architecture-2 tickets 51 and 52, ADR-0024,
+ADR-0025). Stage 5 may stand a row of a group that has no authored `shape` on two lines, with every
+second node one line away from its feed. It tries this only when the sheet is wider than the
+aspect aim (`layout.aspect`), and it keeps the two lines only when every link that was straight
+stays straight, no link gains a planned bend, and the sheet comes nearer the aim (or, as near,
+has less area); the record is
+`groupArrangements`. `layout.maxWidth` sets a width budget for the published canvas: above it,
+stage 5 tries more rows on two lines (`ROW_STAGGER_REFUSED`, `WIDTH_BUDGET_UNMET`).
+`autoArrange: false` keeps every row on one line. The keys are in the `layout` row of **Top level**.
+
+```yaml
+groups:
+  hub:    { tier: 0 }
+  leaves: { tier: 1 }               # twelve leaves, each linked to h: two lines of six, all drops straight
 ```
 
 **Tier inference** (model-time). For each non-flank group without `tier:`: rank = the profile's
@@ -188,6 +236,27 @@ Options:
 | `weight` | number | line-weight multiplier |
 | `id` | identifier | the link's own id; unique among links (`DUPLICATE_LINK_ID`). Without it the id is derived from the two ends (docs/drawio-binding-contract.md) |
 | `meta` | map | metadata for the draw.io export; see **Meta** below |
+
+**`route`, what it does.** Without `route`, the class decides the layer, and the engine chooses the
+path: a straight segment where placement reserves one (a vertical drop, a diagonal chord, a row
+path), else an orthogonal path, and two or more parallel links between two nodes form a bundle.
+
+- `route: straight` keeps that choice: the link takes a straight segment where the engine reserves
+  one, and it is never a bundle member. It does not force a straight line: where the engine draws
+  the link orthogonal, it draws the same orthogonal path (the link only reads `technique:
+  straight`).
+- `route: orthogonal`: never a bundle member, and never a diagonal chord: a link the engine would
+  draw as one diagonal segment is drawn with two bends. A vertical or level straight path stays.
+- `route: overlay`: the link moves to the overlay layer (like a `flow` or `sync` class) and is no
+  bundle member. It is drawn as a straight chord between its two nodes where no body stands on it,
+  else bent around the bodies (see `layout.overlayOverBodies`).
+
+```yaml
+links:
+  - [a, m]                          # default: one diagonal segment
+  - [a, m, { route: orthogonal }]   # the same link: two bends
+  - [b, z, { route: straight }]     # drawn as without route; never bundled
+```
 
 **Aggregation eligibility** (automatic `group-link`): both endpoint groups have ≥ 2 nodes; the
 links form the complete bipartite set between the two groups' nodes; all share one class and
