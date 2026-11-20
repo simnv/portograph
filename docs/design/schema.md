@@ -79,11 +79,43 @@ pipeline. Labels are free text; ids are not.
 | `tier` | int ≥ 0 | 0 = top. Omitted → inferred (below). Mutually exclusive with `align` |
 | `align` | `left` \| `right` | makes the group a **flank** |
 | `of` | group id | required with `align`; **must name a tier group** (not a flank, not itself). At most one flank per side per tier group; a second is an error |
+| `parent` | group id | makes the group a **child group** of that group; see **Nested groups** below. Excludes `tier`, `shape`, `align` and `of` |
+| `canton` | group id | makes the group a **member** of that **canton**; see **Nested groups** below. Excludes `parent` and `align` |
 | `label` | string | default: id |
 | `shape` | `ranked` \| `row` \| `bar` \| `grid` | default `ranked` (ADR-0019); `ring` and `free` are named in the parser and refused with `UNSUPPORTED_SHAPE` (audit m-21, D17, 2026-11-07). `bar` nodes stack in declaration order |
 | `class` | string | |
 | `collapsed` | bool | M1: warning, ignored |
 | `layout` | map | accepted and stored as ELK scalar options; no stage passes it to ELK for the group's own algorithm today (audit M-6, D17, 2026-11-07). Whether it warns, fails or becomes a real pass-through is open (PQ-6, ticket T-06) |
+
+**Nested groups.** Groups nest in two ways, and the deepest structure is canton, member, child.
+A flank (`align` with `of`) stands beside a tier group; it is not nesting.
+
+- **Child group** (`parent: <group id>`). The child is a frame inside its parent, over whole ranks
+  of the parent.
+  - It nests one level: a parent cannot have a parent (`NESTED_CHILD`).
+  - The child takes the tier of its parent, so it takes no `tier` (`CHILD_TIER`), no `shape`
+    (`CHILD_SHAPE`) and no `align` or `of` (`CHILD_FLANK`).
+  - The parent is a `ranked` tier group (`PARENT_SHAPE`), not a flank (`PARENT_FLANK`) and not a
+    canton (`CANTON_KEYS`).
+- **Canton** (`canton: <group id>` on each member). A canton is a group that another group names
+  in `canton:`. It holds tier groups and no nodes.
+  - The canton itself takes `label` and `class` only (`CANTON_KEYS`), and it is not a member of a
+    canton (`CANTON_NESTED`).
+  - A member is a tier group of shape `ranked` or `row` (`CANTON_MEMBER_SHAPE`). A child group
+    takes the canton of its parent, and a flank has none (`CANTON_MEMBER_KIND`). No flank stands
+    beside a member (`CANTON_MEMBER_FLANK`).
+  - A member, or one of its child groups, holds a node (`CANTON_MEMBER_EMPTY`), and a canton has
+    a member (`CANTON_EMPTY`).
+  - The members stand on consecutive tiers (`CANTON_TIER_GAP`).
+  - A link end cannot name a canton.
+
+```yaml
+groups:
+  site:    { label: Site }                 # a canton: its members name it
+  edge:    { tier: 1, canton: site }       # a member
+  core:    { tier: 2, canton: site }       # a member on the next tier
+  core-a:  { parent: core, label: Pair A } # a child group of a member
+```
 
 **Tier inference** (model-time). For each non-flank group without `tier:`: rank = the profile's
 class table applied to the group's nodes — `top` if any node class is in the profile's top set
