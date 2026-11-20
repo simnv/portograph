@@ -13,7 +13,7 @@ updates:
       # Every version is ignored, patch releases too: a 0.x patch can move layouts as well.
       - dependency-name: elkjs
       - dependency-name: libavoid-js
-      # @types/node follows engines.node (>=22): only its 22.x line.
+      # @types/node follows engines.node (>=26): only its 26.x line.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
       # TypeScript 7 (the Go port) is a separate migration.

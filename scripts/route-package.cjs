@@ -1,6 +1,6 @@
 'use strict';
 // Pack, install and exercise the stage-8 router from an unrelated working directory, on this Node
-// and on the supported floor (Node 22.0). Run with: node scripts/route-package.cjs
+// and on the supported floor (Node 26.0). Run with: node scripts/route-package.cjs
 const { execFileSync } = require('node:child_process');
 const { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
@@ -10,12 +10,12 @@ const root = path.resolve('.');
 const temp = mkdtempSync(path.join(tmpdir(), 'portograph-route-package-'));
 let floor;
 try {
-  floor = execFileSync('npx', ['--yes', '--package=node@22.0.0', 'node', '-p', 'process.execPath'],
+  floor = execFileSync('npx', ['--yes', '--package=node@26.0.0', 'node', '-p', 'process.execPath'],
     { encoding: 'utf8', timeout: 300000 }).trim();
 } catch (error) {
-  throw new Error(`Node 22.0 floor runtime is unavailable: ${error.message}`, { cause: error });
+  throw new Error(`Node 26.0 floor runtime is unavailable: ${error.message}`, { cause: error });
 }
-if (!existsSync(floor)) throw new Error(`Node 22.0 floor runtime is unavailable at ${floor}`);
+if (!existsSync(floor)) throw new Error(`Node 26.0 floor runtime is unavailable at ${floor}`);
 
 // The router sample must send at least one link to libavoid: placement claims a straight or reserved route itself, and a
 // diagram with no ownership batch starts no worker, so the worker and WASM checks below would observe nothing. In this

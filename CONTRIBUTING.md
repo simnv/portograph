@@ -5,7 +5,7 @@ contain.
 
 ## Build
 
-You need Node.js 22 or newer.
+You need Node.js 26 or newer.
 
 ```sh
 npm ci

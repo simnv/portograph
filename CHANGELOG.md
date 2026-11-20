@@ -13,6 +13,10 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: Node.js 26 or newer is required (was 22).** `engines.node` is `>=26`. CI and the release run on Node 26. On an older Node, npm warns at install, and portograph is not tested there.
+
 ## [0.3.0] - 2026-11-19
 
 ### Changed

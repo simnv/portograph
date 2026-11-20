@@ -26,13 +26,13 @@ jobs:
   check:
     name: check (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    # The release CI of 0.3.0 took 44 min on Node 24: the limit is 3 times that.
+    # The release CI of 0.3.0 took 44 min (on Node 24; no Node 26 run is measured yet): the limit is 3 times that.
     timeout-minutes: 135
     strategy:
       fail-fast: false
       matrix:
-        # Node 24 only (owner, 2026-11-19). The matrix stays, so the check name stays `check (Node 24)`.
-        node: [24]
+        # Node 26 only (owner, 2026-11-20; Node 24 only since 2026-11-19). The matrix stays, so the check name is `check (Node 26)`.
+        node: [26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -58,7 +58,7 @@ jobs:
           PORTOGRAPH_TEST_WORKERS: "2"
           # The host health check guards a shared workstation; a CI VM runs only this job, so the load limit is lifted.
           PORTOGRAPH_MAX_LOAD: "100"
-          # The runner stops the suite at 45 min by default; the suite took 44 min on Node 24 (0.3.0). 120 min, inside the job limit.
+          # The runner stops the suite at 45 min by default; the suite took 44 min on Node 24 (0.3.0; no Node 26 run is measured yet). 120 min, inside the job limit.
           PORTOGRAPH_TEST_TIMEOUT_MS: "7200000"
         run: npm test
 

@@ -54,7 +54,7 @@ links:
 
 ## Install
 
-portograph needs Node.js 22 or newer.
+portograph needs Node.js 26 or newer.
 
 ```sh
 npm i -g portograph

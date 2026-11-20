@@ -8,7 +8,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-// The table is read as data, as the other lint scripts read their sources: Node needs no TypeScript loader for it (engines: >=22).
+// The table is read as data, as the other lint scripts read their sources: Node needs no TypeScript loader for it (engines: >=26).
 const entry = /\{ id: '(\w+)', file: '([^']+)', fn: '(\w+)', guard: \{ kind: '(pre-7a|guarded|forced|scratch)'/g;
 const source = readFileSync(join(root, 'src', 'layout', 'box-writers.ts'), 'utf8');
 const BOX_WRITERS = [...source.matchAll(entry)].map(([, id, file, fn]) => ({ id, file, fn }));
