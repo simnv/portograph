@@ -182,11 +182,17 @@ function writeArtifacts(command, result, io, library) {
       return EXIT.inputError;
     }
   }
+  let code = EXIT.ok;
   if (result.passed === false) {
     status('error', 'GATE_FAILED', 'an enforced gate or assertion failed; see the score report');
-    return command.allowGateFailures ? EXIT.ok : EXIT.gateFailure;
+    if (!command.allowGateFailures) code = EXIT.gateFailure;
   }
-  return EXIT.ok;
+  // `--fail-on-removed` is no gate: a removed link is judged by this flag alone, also with `--allow-gate-failures`.
+  if (command.failOnRemoved && result.removedLinks > 0) {
+    status('error', 'LINKS_REMOVED', `${result.removedLinks} link(s) removed by the router and not drawn; each ROUTE_GAP_REJECTED or ROUTE_CHECKPOINT_SKIPPED warning names one`);
+    code = EXIT.gateFailure;
+  }
+  return code;
 }
 
 /**

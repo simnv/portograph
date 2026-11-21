@@ -13,6 +13,10 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 
 ## [Unreleased]
 
+### Added
+
+- **`--fail-on-removed`** (`layout`, `render`, `score`): the command exits with 1 when the router removed a link, and still writes all its files. The warning of each removed link (`ROUTE_GAP_REJECTED`, `ROUTE_CHECKPOINT_SKIPPED`) now names the two ends of the link and its place in `links`. Without the flag, a removal still gives exit code 0.
+
 ### Changed
 
 - **Breaking: Node.js 26 or newer is required (was 22).** `engines.node` is `>=26`. CI and the release run on Node 26. On an older Node, npm warns at install, and portograph is not tested there.

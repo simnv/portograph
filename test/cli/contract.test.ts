@@ -17,7 +17,7 @@ describe('CLI contract', () => {
 
   it('help documents every option, the file position rule and all four exit codes', () => {
     const help = helpText();
-    for (const option of ['--output', '--force', '--allow-gate-failures', '--layers', '--format',
+    for (const option of ['--output', '--force', '--allow-gate-failures', '--fail-on-removed', '--layers', '--format',
       '--theme', '--labels', '--icons', '-h, --help', '-V, --version']) {
       expect(help).toContain(option);
     }
@@ -74,6 +74,9 @@ describe('parseCommand', () => {
     expect(() => parseCommand('layout', ['--layers', 'routed', 'a.yaml'])).toThrow(/layout does not accept --layers/);
     expect(() => parseCommand('migrate', ['--allow-gate-failures', 'a.yaml'])).toThrow(/migrate does not accept --allow-gate-failures/);
     expect(parseCommand('score', ['--allow-gate-failures', 'a.json']).allowGateFailures).toBe(true);
+    expect(parseCommand('layout', ['--fail-on-removed', 'a.yaml']).failOnRemoved).toBe(true);
+    expect(parseCommand('layout', ['a.yaml']).failOnRemoved).toBeUndefined();
+    expect(() => parseCommand('migrate', ['--fail-on-removed', 'a.yaml'])).toThrow(/migrate does not accept --fail-on-removed/);
     expect(parseCommand('render', ['--layers', 'overlay', 'a.yaml']).layers).toEqual(['overlay']);
   });
 

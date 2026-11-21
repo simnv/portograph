@@ -107,6 +107,7 @@ after the file.
 | `--icons cisco19\|profile` | `render` | Sets the draw.io glyphs: the Cisco shapes of draw.io (default), or an image embedded in the file. |
 | `--timings` | `layout`, `render`, `score` | Keeps the stage timings in the JSON. Without it, two runs on one input write the same bytes. |
 | `--allow-gate-failures` | `render`, `score` | Reports a failed gate, but exits with 0. |
+| `--fail-on-removed` | `layout`, `render`, `score` | Exits with 1 when the router removed a link. The command still writes all its files. See below. |
 | `--force` | all | Lays out a document with more than 1,000 nodes. |
 | `-h`, `--help` | | Shows the help. |
 | `-V`, `--version` | | Shows the version. |
@@ -131,9 +132,23 @@ Exit codes:
 | Code | Meaning |
 |---|---|
 | 0 | The command succeeded. |
-| 1 | A hard gate failed. The command still writes all its files. |
+| 1 | A hard gate failed (not with `--allow-gate-failures`), or `--fail-on-removed` found a removed link. The command still writes all its files. |
 | 2 | An input error: usage, a file it cannot read, invalid YAML or JSON, or the node limit. |
 | 3 | A processing failure: the 120-second command deadline, a missing worker file, or an internal error. |
+
+A removed link: when the router gives an answer that the layout cannot use, stage 8 removes that link. The
+drawing then lacks the link, and the exit code stays 0. Each removed link gives one warning
+(`ROUTE_GAP_REJECTED` or `ROUTE_CHECKPOINT_SKIPPED`) on stderr that names the link, its two ends and its
+place in `links`:
+
+```text
+portograph: warning: ROUTE_GAP_REJECTED at link link-10: link-10 was removed (r1.100G#3 to leaf-a.100G#1, document link 9): its route was rejected (...).
+```
+
+The score counts them in `removedLinks`, and the layout model lists them in `removedLinks`. With
+`--fail-on-removed`, the command also prints a `LINKS_REMOVED` error and exits with 1, even with
+`--allow-gate-failures`. A library caller reads the same fact from `score(model).snapshot.counters.removedLinks`
+or `model.removedLinks`, with no flag.
 
 Set `PORTOGRAPH_PROGRESS=1` to see the stage timings on stderr.
 

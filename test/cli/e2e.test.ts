@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { generateScaleYaml } from '../../scripts/scale-input.mjs';
+import { layout, parse, serializeLayoutModel } from '../../src/index.js';
+import { createAttempt } from '../layout/phase-two-fixture.js';
+import { forgingRouter, retrace } from '../route/forge-route.js';
 
 const run = promisify(execFile);
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -160,6 +163,55 @@ links:
     expect(normal.code).toBe(1);
     expect(allowed.code).toBe(0);
     expect(JSON.parse(allowed.stdout)).toEqual(JSON.parse(normal.stdout));
+  });
+
+  it('names each removed link in one warning, and fails with --fail-on-removed only when asked, with the artifacts written', async () => {
+    // `link-10` of this fixture is left to the router; the forged answer retraces, the stitch refuses it and stage 8 removes the link.
+    const text = readFileSync(join(root, 'goldens/synthetic/three-lateral-legs-stay-with-the-router.yaml'), 'utf8');
+    const removed = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: forgingRouter('link-10', retrace) });
+    expect(removed.removedLinks).toEqual(['link-10']);
+    const warnings = removed.diagnostics.filter(item => item.code === 'ROUTE_GAP_REJECTED' || item.code === 'ROUTE_CHECKPOINT_SKIPPED');
+    expect(warnings).toHaveLength(1);
+    const link = removed.links.find(item => item.id === 'link-10')!;
+    const end = (ref: { node?: string; name?: string; ordinal?: number }): string => `${ref.node}.${ref.name}#${ref.ordinal}`;
+    expect(warnings[0]!.severity).toBe('warning');
+    expect(warnings[0]!.message).toContain(`link-10 was removed (${end(link.attachments!.from)} to ${end(link.attachments!.to)}, document link ${link.sourceIndex}): `);
+
+    const removedJson = join(temp, 'removed.layout.json');
+    writeFileSync(removedJson, serializeLayoutModel(removed));
+    // A sheet with no removal, for the other half of the flag.
+    const drawnJson = join(temp, 'drawn.layout.json');
+    writeFileSync(drawnJson, serializeLayoutModel(await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: forgingRouter('none', points => points) })));
+
+    // This fixture fails a gate with or without the removal, so every run allows gate failures: the exit code then shows the flag alone.
+    const allow = '--allow-gate-failures';
+    for (const verb of ['score', 'render'] as const) {
+      const out = join(temp, `removed-${verb}.svg`);
+      const to = verb === 'render' ? ['-o', out] : [];
+      const plain = await command([verb, removedJson, ...to, allow]);
+      expect(plain.code, plain.stderr).toBe(0);
+      expect(plain.stderr).toContain('ROUTE_GAP_REJECTED');
+      expect(plain.stderr).not.toContain('link(s) removed');
+      const strict = await command([verb, removedJson, ...to, allow, '--fail-on-removed']);
+      expect(strict.code, strict.stderr).toBe(1);
+      expect(strict.stderr).toContain('portograph: 1 link(s) removed by the router');
+      expect(strict.stderr).toContain('link-10 was removed (');
+      if (verb === 'score') expect(JSON.parse(strict.stdout)).toEqual(JSON.parse(plain.stdout));
+      // A sheet with no removal still exits 0 with the flag.
+      const clean = await command([verb, drawnJson, ...(verb === 'render' ? ['-o', join(temp, 'drawn.svg')] : []), allow, '--fail-on-removed']);
+      expect(clean.code, clean.stderr).toBe(0);
+      expect(clean.stderr).not.toContain('link(s) removed');
+    }
+    expect(readFileSync(join(temp, 'removed-render.svg'), 'utf8')).toContain('<svg');
+    expect(JSON.parse(readFileSync(join(temp, 'removed-render.score.json'), 'utf8')).snapshot.counters.removedLinks).toBe(1);
+    // The draw.io file prints the same warning, and the flag works there too.
+    const drawio = await command(['render', removedJson, '--format', 'drawio', '-o', join(temp, 'removed.drawio'), allow, '--fail-on-removed']);
+    expect(drawio.code, drawio.stderr).toBe(1);
+    expect(drawio.stderr).toContain('link-10 was removed (');
+    expect(readFileSync(join(temp, 'removed.drawio'), 'utf8')).toContain('<mxfile');
+    const json = await command(['score', removedJson, allow, '--fail-on-removed', '--diagnostics', 'json']);
+    expect(json.code).toBe(1);
+    expect(json.stderr).toContain('"code":"LINKS_REMOVED"');
   });
 
   it('rejects usage and input errors without writing stdout', async () => {

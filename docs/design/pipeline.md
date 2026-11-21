@@ -2905,6 +2905,11 @@ All gates in `quality.md` on final geometry including labels. Any failed gate fa
 (non-zero exit) unless `--allow-gate-failures`; `score` always reports. The gate-enforcement
 table by size is in `quality.md` and is authoritative.
 
+A link that stage 8 removed is no gate failure and does not change the exit code. Each one has one warning (`ROUTE_GAP_REJECTED` or
+`ROUTE_CHECKPOINT_SKIPPED`) that names the link, its two ends (the concrete ports) and its `links` index. `--fail-on-removed` makes
+`layout`, `render` and `score` exit with 1 when `removedLinks` is above 0, after the files are written. A gate failure or an overlay
+fallback for a removal would change a default; it is not decided.
+
 **G9, frame containment.** Every frame contains its cells and its child
 frames. Frames of one tier do not overlap. No foreign node body lies inside a frame. G1 and G8
 read cells.

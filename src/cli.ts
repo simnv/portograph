@@ -60,6 +60,8 @@ export interface Command {
   diagnostics?: DiagnosticFormat;
   force: boolean;
   allowGateFailures: boolean;
+  /** Exit non-zero when stage 8 removed a link (`removedLinks` above 0); the artifacts are still written. Absent means a removal does not change the exit code. */
+  failOnRemoved?: true;
   /** Keep the wall-clock stage timings in the layout and score JSON. Absent means they are left out, so two runs write the same bytes. */
   timings: boolean;
   /** `render` only. Absent means both families draw and `document.overlays` applies. */
@@ -86,6 +88,7 @@ const OPTIONS: Record<string, OptionSpec> = {
   '--diagnostics': { value: true, summary: 'Diagnostics and status lines on stderr: text (default) or json, one object per line' },
   '--force': { value: false, summary: 'Lay out and score more than 1,000 nodes' },
   '--allow-gate-failures': { verbs: ['render', 'score'], value: false, summary: 'Report a failed gate but exit 0' },
+  '--fail-on-removed': { verbs: ['layout', 'render', 'score'], value: false, summary: 'Exit with 1 when the router removed a link (the artifacts are still written)' },
   '--timings': { verbs: ['layout', 'render', 'score'], value: false, summary: 'Keep the wall-clock stage timings in the layout and score JSON (default: left out, so two runs write the same bytes)' },
   '--layers': { verbs: ['render'], value: true, summary: 'Draw only these link families: routed, overlay (comma separated)' },
   '--format': { verbs: ['render'], value: true, summary: 'Primary artifact format: svg (default) or drawio' },
@@ -130,7 +133,7 @@ export function helpText(): string {
     '',
     'Exit codes:',
     `  ${EXIT.ok}  ok`,
-    `  ${EXIT.gateFailure}  a hard gate failed (unless --allow-gate-failures)`,
+    `  ${EXIT.gateFailure}  a hard gate failed (unless --allow-gate-failures), or --fail-on-removed found a removed link`,
     `  ${EXIT.inputError}  input error: usage, unreadable file, invalid YAML or JSON, node limit`,
     `  ${EXIT.processingFailure}  processing failure: command deadline, missing worker asset, internal error`,
     '',
@@ -242,6 +245,7 @@ export function parseCommand(verb: Verb, args: readonly string[]): Command {
     ...(diagnostics === undefined || diagnostics === 'text' ? {} : { diagnostics: diagnostics as DiagnosticFormat }),
     force: seen.has('--force'),
     allowGateFailures: seen.has('--allow-gate-failures'),
+    ...(seen.has('--fail-on-removed') ? { failOnRemoved: true as const } : {}),
     timings: seen.has('--timings'),
     ...(layers === undefined ? {} : { layers: parseLayers(layers) }),
     ...(format === undefined ? {} : { format: parseFormat(format) }),

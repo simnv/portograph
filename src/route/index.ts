@@ -102,10 +102,18 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
   return { routes, ...(stitched ? { stitched } : {}) };
 }
 
-function rejectionMessage(link: string, item: RouteRejection): string {
+/** One end of a link as an author writes it: `node.port#ordinal`, `node.#ordinal` for an anonymous port, `group <id>` for a group end. */
+function endText(end: LayoutLink['from']): string {
+  if (end.node === undefined) return `group ${end.group}`;
+  return `${end.node}.${end.anonymous === true ? '' : end.name}#${end.ordinal}`;
+}
+
+/** The warning of one removed link: its id, its two ends (the concrete ports when a group link was expanded) and the document link it came from, then the reason. */
+function rejectionMessage(link: LayoutLink, item: RouteRejection): string {
+  const named = `${link.id} was removed (${endText(link.attachments?.from ?? link.from)} to ${endText(link.attachments?.to ?? link.to)}, document link ${link.sourceIndex})`;
   return item.code === 'ROUTE_CHECKPOINT_SKIPPED'
-    ? `${link} was removed: the router skipped the required checkpoint (${item.checkpoint!.x}, ${item.checkpoint!.y}) of ${item.connector}, reserved by ${item.producer}.`
-    : `${link} was removed: its route was rejected (${item.reason}).`;
+    ? `${named}: the router skipped the required checkpoint (${item.checkpoint!.x}, ${item.checkpoint!.y}) of ${item.connector}, reserved by ${item.producer}.`
+    : `${named}: its route was rejected (${item.reason}).`;
 }
 
 /**
@@ -131,7 +139,7 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
       link.removed = true;
       link.rejectedRoute = item.answer;
       draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: item.code,
-        message: rejectionMessage(link.id, item), owners: [{ ...link.owner }] });
+        message: rejectionMessage(link, item), owners: [{ ...link.owner }] });
     }
     // A gap that stopped fitting after 7f sized it (the corridor move, a later stage) is planned by nobody: its parts are the router's,
     // and the diagnostic says so, unless 7f already named the gap (`TIER_GAP_PART_UNFIT` from the round cap).

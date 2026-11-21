@@ -63,6 +63,8 @@ async function run(request, emit) {
     return { snapshot: report.snapshot, runtime: { stages: [] } };
   };
   void allowGateFailures; // the parent applies it to the exit code; the report never changes.
+  // The stored list of stage 8 (`removedLinks`), which publication and restore check against the links; the parent reads the count for `--fail-on-removed`.
+  const removedOf = (model) => (model.removedLinks ?? []).length;
   const source = readInput(input, request.inputText);
   if (source.ok !== true) return source;
   if (verb === 'migrate') {
@@ -97,9 +99,9 @@ async function run(request, emit) {
     if (verb === 'render') return { ok: true, result: {
       primary: primaryArtifact(model),
       sidecars: { layout: `${serializeLayoutModel(published(model))}\n`, score: `${JSON.stringify(publishedReport(report), null, 2)}\n` },
-      passed: report.snapshot.passed,
+      passed: report.snapshot.passed, removedLinks: removedOf(model),
     } };
-    return { ok: true, result: { primary: `${JSON.stringify(publishedReport(report), null, 2)}\n`, passed: report.snapshot.passed } };
+    return { ok: true, result: { primary: `${JSON.stringify(publishedReport(report), null, 2)}\n`, passed: report.snapshot.passed, removedLinks: removedOf(model) } };
   }
 
   // One ELK worker serves every attempt of this command. It boots on its own thread while the parser runs; a worker that fails to start
@@ -155,13 +157,13 @@ async function run(request, emit) {
   for (const diagnostic of model.diagnostics) say(diagnostic);
 
   const layoutJson = `${serializeLayoutModel(published(model))}\n`;
-  if (verb === 'layout') return { ok: true, result: { primary: layoutJson } };
+  if (verb === 'layout') return { ok: true, result: { primary: layoutJson, removedLinks: removedOf(model) } };
 
   const report = score(model, { force });
   return { ok: true, result: {
     primary: primaryArtifact(model),
     sidecars: { layout: layoutJson, score: `${JSON.stringify(publishedReport(report), null, 2)}\n` },
-    passed: report.snapshot.passed,
+    passed: report.snapshot.passed, removedLinks: removedOf(model),
   } };
 }
 
