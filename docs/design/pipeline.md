@@ -2508,18 +2508,19 @@ away), and refuse by name (decision-review ticket 14):
 3. a removed link stage 8 does not route;
 4. an answer for a gap the plan does not hold, or one gap twice, or out of plan order;
 5. an answer below the floor every router answer reaches (`routerAnswerFloor`): fewer than two
-   finite points, or an answer that meets both ends of its gap, honours its checkpoints and is not
-   orthogonal;
+   finite points;
 6. an answer the judgement cannot read (a fatal stitch error, such as a gap with no answer);
 7. an answer that stitches into a usable path.
 
 The floor asks only what was measured on every removal stage 8 wrote in the full test suite (137,
-2026-11-09). It does not ask that an answer meet its ends, or be orthogonal when it misses one, or
-keep two distinct points: 86 answers missed an end, 29 of them with a diagonal, and 28 answers were
-two equal points. Nor does it ask an answer that skips a checkpoint to be orthogonal: libavoid,
-when it drops a checkpoint it cannot reach, answers with the two port anchors and a diagonal between
-them (`straightRun`), and that answer meets both ends of a pin's gap. No zero-length check is needed:
-`simplify` drops equal consecutive points. The router does not run
+2026-11-09). It does not ask that an answer meet its ends, or keep two distinct points, or be
+orthogonal: 86 answers missed an end, 29 of them with a diagonal, and 28 answers were two equal
+points. libavoid, when it drops a checkpoint it cannot reach, answers with the two port anchors and
+a diagonal between them (`straightRun`), and that answer meets both ends of a pin's gap. When it
+cannot reach an end after it passed every checkpoint (the end stands in a closed pocket), it draws
+the leg into that end as one diagonal: the answer meets both ends, honours every checkpoint, and is
+not orthogonal (field-2026-11 ticket 02; the 2026-11-09 sample held no such answer). So no shape
+rule is a floor; the judgement alone reads the shape. The router does not run
 again, so this is the proof level: the stored answer is unusable and has a router answer's shape, as
 a routed path is proven from its stored segments. It does not prove that the router had to give that
 answer. A well-formed scribble that the judgement rejects still passes: an answer with one end moved

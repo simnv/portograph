@@ -5,8 +5,9 @@ import { restoreFinalLayout } from '../../src/internal.js';
 import type { Point } from '../../src/model/geometry.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { planRoute } from '../../src/route/plan.js';
-import { skippedCheckpoint, tryStitch } from '../../src/route/paths.js';
+import { firstSkippedCheckpoint, skippedCheckpoint, tryStitch } from '../../src/route/paths.js';
 import { preRoute } from '../../src/route/validate.js';
+import type { RouteBatch, RouteConnector } from '../../src/route/types.js';
 import type { CreateRouteAttempt, RouteWorker } from '../../src/route/worker.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { avoidAssets, spawnAvoidWorker } from './fixture.js';
@@ -23,21 +24,25 @@ const restore = (model: LayoutModel): LayoutModel => restoreFinalLayout(JSON.str
 const LINK = 'link-10';
 
 /**
- * A real worker; every answer it sends is recorded as sent, and the answers for `LINK` are rewritten by `rewrite`. One layout routes
- * more than once (trial rounds on other placements), so a connector collects every answer it was given.
+ * A real worker; every answer it sends is recorded as sent, and the answers for `LINK` are rewritten by `rewrite`, which also reads
+ * the connector the host asked for. One layout routes more than once (trial rounds on other placements), so a connector collects
+ * every answer it was given.
  */
-function router(seen: Map<string, Point[][]>, rewrite: (points: Point[]) => Point[] = points => points): CreateRouteAttempt {
+function router(seen: Map<string, Point[][]>, rewrite: (points: Point[], asked: RouteConnector) => Point[] = points => points): CreateRouteAttempt {
   return () => {
-    const worker = spawnAvoidWorker(avoidAssets.workerUrl);
+    const worker = spawnAvoidWorker(avoidAssets.workerUrl), requests = new Map<string, RouteConnector>();
     const wrapped: RouteWorker = {
-      postMessage: message => worker.postMessage(message),
+      postMessage: message => {
+        for (const connector of (message as { batch?: RouteBatch }).batch?.connectors ?? []) requests.set(connector.id, connector);
+        worker.postMessage(message);
+      },
       terminate: () => worker.terminate(),
       addEventListener: (type, listener) => {
         if (type !== 'message') return worker.addEventListener(type, listener);
         worker.addEventListener(type, event => {
           const data = event.data as { routes?: { connector: string; points: Point[] }[] } | undefined;
           for (const item of data?.routes ?? []) seen.set(item.connector, [...seen.get(item.connector) ?? [], clone(item.points)]);
-          const routes = data?.routes?.map(item => item.connector.startsWith(`${LINK}#`) ? { ...item, points: rewrite(item.points) } : item);
+          const routes = data?.routes?.map(item => item.connector.startsWith(`${LINK}#`) ? { ...item, points: rewrite(item.points, requests.get(item.connector)!) } : item);
           listener(routes ? { ...event, data: { ...data, routes } } : event);
         });
       },
@@ -52,6 +57,23 @@ const retrace = (points: Point[]): Point[] => {
   const [start, tip, ...rest] = points;
   return [start!, tip!, { x: tip!.x, y: tip!.y + 40 }, { x: tip!.x + 30, y: tip!.y + 40 }, { x: tip!.x + 30, y: tip!.y + 20 },
     { x: tip!.x, y: tip!.y + 20 }, { x: tip!.x, y: tip!.y }, ...rest];
+};
+
+/** Whether one leg of the polyline is neither horizontal nor vertical. */
+const slanted = (list: readonly Point[]): boolean => list.some((point, index) => index > 0 && point.x !== list[index - 1]!.x && point.y !== list[index - 1]!.y);
+
+/**
+ * The answer libavoid gives when it cannot reach a point after it passed every checkpoint before it (field-2026-11 ticket 02;
+ * `/tmp/field-2026-11/02/probe/probe.mjs`): both ends met, every checkpoint honoured, and the leg into the point it could not reach is
+ * one diagonal, as in `[(0,0) (50,0) (50,300) (200,210)]`. On this sheet the last checkpoint is the target's stem tip, straight over
+ * the anchor, so the diagonal stands one corner earlier: the first inner corner whose removal leaves a diagonal and every checkpoint.
+ */
+const diagonalLeg = (points: Point[], asked: RouteConnector): Point[] => {
+  for (let at = 1; at + 1 < points.length; at++) {
+    const list = points.filter((_, index) => index !== at);
+    if (slanted(list) && firstSkippedCheckpoint(list, asked.checkpoints) < 0) return list;
+  }
+  return points;
 };
 
 /** `model` with `LINK` removed as a forger writes it: no path, the flag, the list and the warning; `answer` is the stored record. */
@@ -116,25 +138,48 @@ describe('restore refuses a forged link removal (decision-review ticket 14)', ()
     expect(() => restore(forged(model, foreign))).toThrow(`Removed link ${LINK} stores a router answer that is not one for its planned gaps`);
   }, 120000);
 
-  it('refuses the forgeries the floor can tell from a router answer, by name', async () => {
+  it('refuses an answer below the floor by name, and restores a diagonal that meets both ends and honours its checkpoints', async () => {
     const model = await drawn(), gap = gapOf(model), [good] = usable(model, seen), points = good!.points;
     const item = planRoute(preRoute(model)).links.find(candidate => candidate.link === LINK)!;
     const floor = `Removed link ${LINK} stores an answer for ${gap.connector} that no router gives`;
-    const orthogonal = `${floor}: it meets both ends of its gap, honours its checkpoints and is not orthogonal`;
     const answer = (list: Point[]) => [{ connector: gap.connector, points: list }];
     expect(() => restore(forged(model, answer([])))).toThrow(`${floor}: fewer than two finite points`);
     expect(() => restore(forged(model, answer([gap.from])))).toThrow(`${floor}: fewer than two finite points`);
-    // An inner corner moved 1 px across, and an inner corner dropped. The first such change that still honours the checkpoints
-    // (`skippedCheckpoint`) meets both ends, so the answer must be orthogonal.
+    // An inner corner moved 1 px across, and an inner corner dropped, each still honouring the checkpoints (`skippedCheckpoint`):
+    // libavoid gives this shape when it cannot reach a point (field-2026-11 ticket 02), so it is no forgery the floor can tell. The
+    // judgement rejects it, and restore keeps the removal: part of the stated limit.
     const honours = (list: Point[]): boolean => skippedCheckpoint(item, new Map([[gap.connector, list]])) === undefined;
     const inner = points.slice(1, -1).map((_, index) => index + 1);
     const moved = inner.map(at => points.map((point, index) => index === at ? { x: point.x + 1, y: point.y + 1 } : { ...point })).find(honours);
-    const dropped = inner.map(at => points.filter((_, index) => index !== at)).find(list => honours(list) && list.some((point, index) => index > 0
-      && point.x !== list[index - 1]!.x && point.y !== list[index - 1]!.y));
+    const dropped = inner.map(at => points.filter((_, index) => index !== at)).find(list => honours(list) && slanted(list));
     expect(moved).toBeDefined();
     expect(dropped).toBeDefined();
-    expect(() => restore(forged(model, answer(moved!)))).toThrow(orthogonal);
-    expect(() => restore(forged(model, answer(dropped!)))).toThrow(orthogonal);
+    expect(restore(forged(model, answer(moved!))).removedLinks).toEqual([LINK]);
+    expect(restore(forged(model, answer(dropped!))).removedLinks).toEqual([LINK]);
+  }, 120000);
+
+  it('removes a link whose router answer reaches every checkpoint with a diagonal leg, and restore accepts it (field-2026-11 ticket 02)', async () => {
+    // Before the ticket the floor said no router gives this answer, so the layout stage 8 published failed its own validation:
+    // `Removed link link-10 stores an answer for link-10#0 that no router gives: it meets both ends of its gap ...`.
+    const genuine = new Map<string, Point[][]>();
+    const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: router(genuine, diagonalLeg) });
+    expect(model.removedLinks).toEqual([LINK]);
+    const warning = model.diagnostics.find(item => item.code === 'ROUTE_GAP_REJECTED' && item.owners?.some(owner => owner.kind === 'link' && owner.id === LINK));
+    expect(warning?.severity).toBe('warning');
+    expect(warning?.message).toContain(`Routed gap on ${LINK} is not orthogonal`);
+    // The stored answer is the class: both ends of the gap met, every checkpoint honoured, a diagonal leg.
+    const gap = gapOf(model), item = planRoute(preRoute(model)).links.find(candidate => candidate.link === LINK)!;
+    const [stored] = model.links.find(link => link.id === LINK)!.rejectedRoute!;
+    expect(stored!.connector).toBe(gap.connector);
+    expect(stored!.points[0]).toEqual(gap.from);
+    expect(stored!.points.at(-1)).toEqual(gap.to);
+    expect(skippedCheckpoint(item, new Map([[gap.connector, stored!.points]]))).toBeUndefined();
+    expect(slanted(stored!.points)).toBe(true);
+    expect(restore(model).removedLinks).toEqual([LINK]);
+    // Control: the same removal with the usable answer the router gave is still refused.
+    const swapped = clone(model);
+    swapped.links.find(link => link.id === LINK)!.rejectedRoute = usable(model, genuine);
+    expect(() => restore(swapped)).toThrow(`Removed link ${LINK} has a usable stored route; its removal is not reproduced`);
   }, 120000);
 
   it('restores the answer libavoid gives when it drops a checkpoint: the two ends of the gap and a diagonal', async () => {
