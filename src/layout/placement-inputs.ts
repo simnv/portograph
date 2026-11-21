@@ -24,12 +24,12 @@ export function flatBlockGapsFault(model: LayoutModel): string | undefined {
   }
   const records = model.blockReservations;
   if (records === undefined) return undefined;
+  const unheld = unheldFlatBlocks(model, true);
+  if (unheld.length) return `the flat block gap of ${unheld[0]} names no flat block`;
   const asked = new Map<number, number>();
   for (const item of record) {
     const entry = records.find(candidate => candidate.family === item.family);
-    // A block a later probe declined keeps its entry and has no record: `reserveBlockGaps` reads no entry without a block.
-    if (entry === undefined && model.declinedSolidBlocks?.some(declined => declined.family === item.family)) continue;
-    if (entry === undefined || entry.mode !== 'flat' || entry.floor === undefined) return `the flat block gap of ${item.family} names no flat block`;
+    if (entry === undefined) continue;
     const before = asked.get(entry.below);
     if (before !== undefined && Math.abs(before - item.gap) > EPS) return `the flat block gaps of tier gap ${entry.below} differ`;
     asked.set(entry.below, item.gap);
@@ -45,6 +45,27 @@ export function flatBlockGapsFault(model: LayoutModel): string | undefined {
 }
 
 /**
+ * The families of the input `flatBlockGaps` that the block records of `model` do not hold flat: a family whose record has no `mode: 'flat'` or no
+ * floor, or that has no record and no decline (field 2026-11 ticket 01). A block a later probe declined keeps its entry and has no record:
+ * `reserveBlockGaps` reads no entry without a block, so it is held. The one premise of the input, read where the record owner has run: the 7e
+ * postconditions (they refuse a placement run that breaks it before publication, so a round trial whose geometry takes a block under the cap
+ * is withdrawn by name) and the restore of a model (`flatBlockGapsFault`).
+ *
+ * `recorded` says whether the record owner (`reserveBlockGaps`, stage 7e `bundles`) has run on the model: by default, whether the model has
+ * completed 7e. The 7e postconditions judge the net draft before its stage is written, and pass `true`. An absent record list holds nothing to
+ * compare: placement reads the input only beside block records, so a model with none is not judged here.
+ */
+export function unheldFlatBlocks(model: LayoutModel, recorded = stageReached(model.stage, 'bundles')): string[] {
+  const records = model.blockReservations;
+  if (model.flatBlockGaps === undefined || records === undefined || !recorded) return [];
+  return model.flatBlockGaps.map(item => item.family).filter(family => {
+    const entry = records.find(candidate => candidate.family === family);
+    if (entry === undefined) return !model.declinedSolidBlocks?.some(declined => declined.family === family);
+    return entry.mode !== 'flat' || entry.floor === undefined;
+  });
+}
+
+/**
  * The solid blocks a placement recorded under the cap: the families of `blockReservations` with no `mode: 'flat'` (`reserveBlockGaps` decides the
  * mode from the 34 degree demand against `BLOCK_CAP`), sorted. The one reader of that fact for the leg pitch: `initial.ts` writes it as the placement
  * input `steepBlocks` from a complete placement, and stage 6 of every later run reads the input (`reservedBlockAngle`).
@@ -55,6 +76,9 @@ export function steepFamilies(model: LayoutModel): string[] {
 
 /** The finding kind of a 7e transaction refused for a steep block it does not hold (`postconditions.ts`; `PostconditionRefusal`). */
 export const STEEP_PREMISE = 'steepBlocks';
+
+/** The finding kind of a 7e transaction refused for a block of the input `flatBlockGaps` it does not hold flat (`postconditions.ts`). */
+export const FLAT_PREMISE = 'flatBlockGaps';
 
 /**
  * The families of the input `steepBlocks` that the block records of `model` do not hold steep: a family with no record, or with `mode: 'flat'`

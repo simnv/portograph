@@ -1,0 +1,78 @@
+# Expected: field 2026-11 ticket 01. Three routers, each in its own tier-0 group, over six one-row pods of two leaves; every leaf links to
+# every router, so each pod is a complete solid block toward the router tier. A flank firewall beside core-3 links to r3 and r1. The outer
+# pods (pod-1, pod-6) are flat blocks past the 600 px cap, the inner pods stand under it. At 2:1 the first placement gives the two flat
+# blocks the aspect gap (`FLAT_BLOCK_GAP_CHOSEN`, input `flatBlockGaps`). A later course round trial moves the routers, and its own
+# block records take pod-6 under the cap. On main bf114a3b that trial was kept, and publication threw "The placement input flatBlockGaps:
+# the flat block gap of block:pod-6:0: names no flat block" on every aspect from 3:2 to 23:10. Now the 7e postconditions refuse that trial
+# by name (kind `flatBlockGaps`, `unheldFlatBlocks`), the round withdraws it, and the sheet publishes on every aspect of the sweep with no
+# removed link. Test `test/pipeline/flat-gap-premise.test.ts`.
+portograph: 2
+profile: network
+layout: {aspect: "2:1"}
+groups:
+  core-1: {tier: 0}
+  core-2: {tier: 0}
+  core-3: {tier: 0}
+  pod-1: {tier: 1}
+  pod-2: {tier: 1}
+  pod-3: {tier: 1}
+  pod-4: {tier: 1}
+  pod-5: {tier: 1}
+  pod-6: {tier: 1}
+  fw: {align: right, of: core-3}
+nodes:
+  r1: {group: core-1, class: router}
+  r2: {group: core-2, class: router}
+  r3: {group: core-3, class: router}
+  leaf-1a: {group: pod-1, class: switch, label: "leaf-1a access"}
+  leaf-1b: {group: pod-1, class: switch, label: "leaf-1b access"}
+  leaf-2a: {group: pod-2, class: switch, label: "leaf-2a access"}
+  leaf-2b: {group: pod-2, class: switch, label: "leaf-2b access"}
+  leaf-3a: {group: pod-3, class: switch, label: "leaf-3a access"}
+  leaf-3b: {group: pod-3, class: switch, label: "leaf-3b access"}
+  leaf-4a: {group: pod-4, class: switch, label: "leaf-4a access"}
+  leaf-4b: {group: pod-4, class: switch, label: "leaf-4b access"}
+  leaf-5a: {group: pod-5, class: switch, label: "leaf-5a access"}
+  leaf-5b: {group: pod-5, class: switch, label: "leaf-5b access"}
+  leaf-6a: {group: pod-6, class: switch, label: "leaf-6a access"}
+  leaf-6b: {group: pod-6, class: switch, label: "leaf-6b access"}
+  fw-a: {group: fw, class: firewall}
+links:
+  - [r1, leaf-1a]
+  - [r1, leaf-1b]
+  - [r1, leaf-2a]
+  - [r1, leaf-2b]
+  - [r1, leaf-3a]
+  - [r1, leaf-3b]
+  - [r1, leaf-4a]
+  - [r1, leaf-4b]
+  - [r1, leaf-5a]
+  - [r1, leaf-5b]
+  - [r1, leaf-6a]
+  - [r1, leaf-6b]
+  - [r2, leaf-1a]
+  - [r2, leaf-1b]
+  - [r2, leaf-2a]
+  - [r2, leaf-2b]
+  - [r2, leaf-3a]
+  - [r2, leaf-3b]
+  - [r2, leaf-4a]
+  - [r2, leaf-4b]
+  - [r2, leaf-5a]
+  - [r2, leaf-5b]
+  - [r2, leaf-6a]
+  - [r2, leaf-6b]
+  - [r3, leaf-1a]
+  - [r3, leaf-1b]
+  - [r3, leaf-2a]
+  - [r3, leaf-2b]
+  - [r3, leaf-3a]
+  - [r3, leaf-3b]
+  - [r3, leaf-4a]
+  - [r3, leaf-4b]
+  - [r3, leaf-5a]
+  - [r3, leaf-5b]
+  - [r3, leaf-6a]
+  - [r3, leaf-6b]
+  - [fw-a, r3]
+  - [fw-a, r1]

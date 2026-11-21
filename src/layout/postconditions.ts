@@ -16,14 +16,15 @@ import { blockedChords } from './frame-paths.js';
 import { holds } from './reservation-checks.js';
 import { groupExitViolations, missingGroupExits } from './group-exit-check.js';
 import { PostconditionRefusal, qualifyingRefusal } from './placement-refusal.js';
-import { unheldSteepBlocks } from './placement-inputs.js';
+import { unheldFlatBlocks, unheldSteepBlocks } from './placement-inputs.js';
 
 /**
  * The kinds a postcondition reads. `laneSide` is the lanes clear of every occupied box and no group across a lane it stood beside; `frozenChord`
  * a frozen chord newly blocked; `groupExit` a reserved exit broken by a box, or a required exit missing; `stored` a ledger entry newly failed;
- * `steepBlocks` a block of the input `steepBlocks` that the block records of 7e do not hold steep (`STEEP_PREMISE`).
+ * `steepBlocks` a block of the input `steepBlocks` that the block records of 7e do not hold steep (`STEEP_PREMISE`); `flatBlockGaps` a block of
+ * the input `flatBlockGaps` that the block records of 7e do not hold flat (`FLAT_PREMISE`).
  */
-export type PostconditionKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'frozenChord' | 'sideAlignment' | 'spanCorridor' | 'groupExit' | 'stored' | 'steepBlocks';
+export type PostconditionKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'frozenChord' | 'sideAlignment' | 'spanCorridor' | 'groupExit' | 'stored' | 'steepBlocks' | 'flatBlockGaps';
 
 export interface PostconditionViolation {
   rule: 'bundles' | 'bands';
@@ -113,6 +114,12 @@ function readViolations(before: LayoutModel, after: LayoutModel, rule: 'bundles'
   // predicate (`steepBlocksFault`): the run is refused by name, never by a validator error.
   if (rule === 'bundles') attempt('steepBlocks', () => {
     for (const family of unheldSteepBlocks(after, true)) add('steepBlocks', family, 'the leg pitch was reserved at the 34 degree angle and the block is not recorded under the cap');
+  });
+  // The flat-block premise (field 2026-11 ticket 01): the input `flatBlockGaps` is copied unchanged into every run, but each run decides the mode of
+  // its blocks again from its own geometry (`reserveBlockGaps`). A run whose geometry takes a block of the input under the cap (a round trial that
+  // moves the far units) is refused here by name, before publication validates the same predicate (`flatBlockGapsFault`).
+  if (rule === 'bundles') attempt('flatBlockGaps', () => {
+    for (const family of unheldFlatBlocks(after, true)) add('flatBlockGaps', family, 'the gap was chosen for a flat block and the block is not recorded flat');
   });
   // Stored kinds: no ledger entry fails that held at entry.
   attempt('stored', () => {

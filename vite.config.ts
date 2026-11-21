@@ -60,6 +60,7 @@ const heavyFiles = [
   'test/pipeline/canton-close-up.test.ts',
   'test/pipeline/canton-walls.test.ts',
   'test/pipeline/chord-clear.test.ts',
+  'test/pipeline/flat-gap-premise.test.ts',
   'test/pipeline/min-separation-writers.test.ts',
   'test/pipeline/overlay-window.test.ts',
   'test/pipeline/placement-attempt.test.ts',
