@@ -60,9 +60,41 @@ describe('the flat-block premise is one reader (R1, R5)', () => {
     declined.blockReservations = declined.blockReservations!.filter(item => item.family !== 'block:pod-1:0:');
     declined.declinedSolidBlocks = [...(declined.declinedSolidBlocks ?? []), { family: 'block:pod-1:0:', reason: 'a controlled refusal' }];
     expect(unheldFlatBlocks(declined)).toEqual([]);
+    // Before 7e no record can stand: a model at stage 6 with no record list is judged by the shape check alone.
     const early = structuredClone(await draft());
-    delete early.blockReservations;
+    delete early.blockReservations; early.stage = 'rows';
     expect(unheldFlatBlocks(early)).toEqual([]);
+    expect(flatBlockGapsFault(early)).toBeUndefined();
     expect(unheldFlatBlocks(await draft(), false)).toEqual([]);
+  });
+
+  // Review 1 of field ticket 01 (P2): from 7e on an absent record list is zero records, not an unread list.
+  it('reads an absent record list after 7e as zero records: each entry needs its own stored decline', async () => {
+    const families = (await draft()).flatBlockGaps!.map(item => item.family);
+    expect(families.length).toBeGreaterThan(0);
+    const absent = structuredClone(await draft());
+    delete absent.blockReservations;
+    expect(absent.stage).toBe('link-labels');
+    expect(unheldFlatBlocks(absent)).toEqual(families);
+    expect(flatBlockGapsFault(absent)).toMatch(/names no flat block/);
+    expect(postconditionViolations(await draft(), absent, 'bundles').filter(item => item.kind === FLAT_PREMISE).map(item => item.subject)).toEqual(families);
+    expect(() => restoreLayoutModel(JSON.stringify(absent))).toThrow(/flatBlockGaps/);
+    // The same absent list with a stored decline for every entry holds the input.
+    const declined = structuredClone(absent);
+    declined.declinedSolidBlocks = [...(declined.declinedSolidBlocks ?? []), ...families.map(family => ({ family, reason: 'a controlled refusal' }))];
+    expect(unheldFlatBlocks(declined)).toEqual([]);
+    expect(flatBlockGapsFault(declined)).toBeUndefined();
+    // A decline for one entry alone leaves the other entries unheld.
+    const one = structuredClone(absent);
+    one.declinedSolidBlocks = [...(one.declinedSolidBlocks ?? []), { family: families[0]!, reason: 'a controlled refusal' }];
+    expect(unheldFlatBlocks(one)).toEqual(families.slice(1));
+  });
+
+  it('refuses at restore a gap for a block that never existed, on a final model with no record list', async () => {
+    const forged = structuredClone(await draft());
+    delete forged.blockReservations;
+    forged.flatBlockGaps = [{ family: 'block:absent:', gap: 123 }];
+    expect(flatBlockGapsFault(forged)).toMatch(/block:absent: names no flat block/);
+    expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/flatBlockGaps/);
   });
 });

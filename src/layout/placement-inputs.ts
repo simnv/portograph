@@ -22,7 +22,9 @@ export function flatBlockGapsFault(model: LayoutModel): string | undefined {
     if (seen.has(item.family)) return `the flat block gap of ${item.family} is recorded twice`;
     seen.add(item.family);
   }
-  const records = model.blockReservations;
+  // From 7e on an absent record list is a record too: zero block records, so every entry needs its own stored decline (field 2026-11 ticket 01,
+  // review 1). Before 7e no record can stand, and the shape check above is the whole check.
+  const records = model.blockReservations ?? (stageReached(model.stage, 'bundles') ? [] : undefined);
   if (records === undefined) return undefined;
   const unheld = unheldFlatBlocks(model, true);
   if (unheld.length) return `the flat block gap of ${unheld[0]} names no flat block`;
@@ -52,12 +54,12 @@ export function flatBlockGapsFault(model: LayoutModel): string | undefined {
  * is withdrawn by name) and the restore of a model (`flatBlockGapsFault`).
  *
  * `recorded` says whether the record owner (`reserveBlockGaps`, stage 7e `bundles`) has run on the model: by default, whether the model has
- * completed 7e. The 7e postconditions judge the net draft before its stage is written, and pass `true`. An absent record list holds nothing to
- * compare: placement reads the input only beside block records, so a model with none is not judged here.
+ * completed 7e. The 7e postconditions judge the net draft before its stage is written, and pass `true`. Before 7e nothing is compared. From 7e on
+ * an absent record list holds zero records (review 1): a family of the input then needs its own stored decline, as `unheldSteepBlocks` reads it.
  */
 export function unheldFlatBlocks(model: LayoutModel, recorded = stageReached(model.stage, 'bundles')): string[] {
-  const records = model.blockReservations;
-  if (model.flatBlockGaps === undefined || records === undefined || !recorded) return [];
+  if (model.flatBlockGaps === undefined || !recorded) return [];
+  const records = model.blockReservations ?? [];
   return model.flatBlockGaps.map(item => item.family).filter(family => {
     const entry = records.find(candidate => candidate.family === family);
     if (entry === undefined) return !model.declinedSolidBlocks?.some(declined => declined.family === family);

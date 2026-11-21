@@ -117,7 +117,8 @@ function readViolations(before: LayoutModel, after: LayoutModel, rule: 'bundles'
   });
   // The flat-block premise (field 2026-11 ticket 01): the input `flatBlockGaps` is copied unchanged into every run, but each run decides the mode of
   // its blocks again from its own geometry (`reserveBlockGaps`). A run whose geometry takes a block of the input under the cap (a round trial that
-  // moves the far units) is refused here by name, before publication validates the same predicate (`flatBlockGapsFault`).
+  // moves the far units) is refused here by name, a typed refusal its round withdraws, before the protect check of the 7e model and publication
+  // read the same predicate (`flatBlockGapsFault`), where it was a plain error that escaped the round.
   if (rule === 'bundles') attempt('flatBlockGaps', () => {
     for (const family of unheldFlatBlocks(after, true)) add('flatBlockGaps', family, 'the gap was chosen for a flat block and the block is not recorded flat');
   });
