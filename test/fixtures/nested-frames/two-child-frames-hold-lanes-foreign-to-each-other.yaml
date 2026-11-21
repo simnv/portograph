@@ -1,0 +1,112 @@
+# Field-2026-11 ticket 05, review 1 (P1). Two child frames of one member each hold a lane foreign to the other: the
+# frame order has a cycle. Their lanes go before the lane the member holds, and that one before the lane the canton
+# holds. Stage 7a passes and every link is drawn; G2, G4 and G6 findings stay open (pinned in the test).
+portograph: 2
+groups:
+  site:
+    label: Site
+  middle:
+    tier: 1
+    canton: site
+    label: Middle
+  up:
+    tier: 0
+    canton: site
+    label: Up
+  east:
+    parent: middle
+    label: East
+  west:
+    parent: middle
+    label: West
+  low:
+    tier: 2
+    canton: site
+    label: Low
+  extra:
+    tier: 3
+nodes:
+  m:
+    group: middle
+    class: router
+  u1:
+    group: up
+    class: provider
+    label: "wide wide wide wide wide wide "
+  eg:
+    group: east
+    class: router
+    label: Eg
+  ed:
+    group: east
+    class: switch
+    label: Ed
+  ea:
+    group: east
+    class: server
+    label: Ea
+  wg:
+    group: west
+    class: router
+    label: Wg
+  wd:
+    group: west
+    class: switch
+    label: Wd
+  wa:
+    group: west
+    class: server
+    label: Wa
+  l0:
+    group: low
+    class: server
+    label: L0 wide low node of the main building room
+    ports:
+      - name: p
+        side: left
+      - name: q
+        side: left
+  l1:
+    group: low
+    class: server
+    label: L1 wide low node of the main building room
+    ports:
+      - name: p
+        side: left
+      - name: q
+        side: left
+  m2:
+    group: middle
+    class: router
+  bot:
+    group: extra
+    class: server
+links:
+  - - wg
+    - wd
+  - - u1
+    - eg
+  - - u1
+    - wg
+  - - wg
+    - l1.p
+  - - eg
+    - l0.p
+  - - wa
+    - l0.q
+  - - ea
+    - l1.q
+  - - u1
+    - l0
+  - - m
+    - u1
+  - - m
+    - m2
+  - - m2
+    - l0
+  - - m
+    - bot
+  - - wg
+    - l0
+  - - ed
+    - m

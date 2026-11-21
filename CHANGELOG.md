@@ -24,6 +24,7 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 
 ### Fixed
 
+- A canton whose member holds a child group no longer fails with `Lane … crosses occupied group …`. A lane that a member holds is now reserved before a lane that the canton holds and that crosses the member.
 - A layout no longer fails with `Removed link … stores an answer … that no router gives: it meets both ends of its gap, honours its checkpoints and is not orthogonal`. libavoid gives such an answer when it cannot reach a point after it passed every checkpoint. Stage 8 removes the link with the warning `ROUTE_GAP_REJECTED`, and restore now accepts that removal.
 
 ## [0.3.0] - 2026-11-19

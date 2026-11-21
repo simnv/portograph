@@ -1,0 +1,37 @@
+# Expected: every link is drawn and no gate fails. The canton `site` has three members on
+# consecutive tiers; member `m-2` holds the child frame `pod-1` and the loose node `h-1`.
+# `isp-2 -> r3a` ends in the canton (in member `m-3`) and crosses the sub-tier of `pod-1`, so the
+# canton holds its lane, and it is foreign to `m-2`. `h-1 -> r1b` ends in `m-2` and is foreign to
+# `pod-1`: `m-2` holds its lane beside `pod-1` and grows to hold it.
+#
+# Read per link, both links are "held", and source order reserved `isp-2 -> r3a` first, beside
+# `pod-1`. The lane of `h-1 -> r1b` then grew `m-2` over it, and stage 7a threw
+# `Lane lane:"link-5":2 crosses occupied group pod-1#0` (field-2026-11 ticket 05). Read per frame,
+# a lane that `m-2` holds is reserved before every lane foreign to `m-2`, and the foreign lane
+# stands outside `m-2` as it grows.
+portograph: 2
+groups:
+  site: { label: Site }
+  m-1: { tier: 1, canton: site, label: M1 }
+  m-2: { tier: 2, canton: site, label: M2 }
+  m-3: { tier: 3, canton: site, label: M3 }
+  pod-1: { parent: m-2, label: Pod 1 }
+  far: { tier: 2, label: Far }
+  top: { tier: 0, label: Top }
+nodes:
+  isp-1: { group: top, class: cloud }
+  isp-2: { group: top, class: cloud }
+  leaf-1a: { group: pod-1, class: switch }
+  leaf-1b: { group: pod-1, class: switch }
+  h-1: { group: m-2, class: server }
+  r1a: { group: m-1, class: router }
+  r1b: { group: m-1, class: router }
+  r3a: { group: m-3, class: router }
+  fw-1: { group: far, class: firewall }
+links:
+  - [leaf-1a, r1a]
+  - [leaf-1b, r1b]
+  - [isp-1, leaf-1b]
+  - [isp-1, r1a]
+  - [isp-2, r3a]
+  - [h-1, r1b]

@@ -25,6 +25,7 @@ import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { corridorSideOf, corridorStandsOn } from './reservations.js';
 import { nodeTier, transitTiers } from './read/tier.js';
+import { frameSubtreeCells } from '../model/model.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { orderPortsByLanes } from './turn-order.js';
 import { facingPairs } from './parallel-sets.js';
@@ -1129,6 +1130,62 @@ function heldLanesOverForeign(model: LayoutModel, lanes: readonly Lane[], candid
   return [...named].sort(compareId);
 }
 /**
+ * The order of the foreign loop of `reserveTransitLanes`: a link whose lane a frame holds comes before every link foreign to that frame
+ * (ticket 23, read per frame; field-2026-11 ticket 05). A link holds a lane in a frame when it ends in the frame and crosses a sub-tier of one of
+ * its cells; it is foreign to the frame when it crosses such a sub-tier and ends outside the frame. Read per link, one held/foreign split cannot
+ * order nested frames: in a canton a link that ends in another member is held by the canton and foreign to the member it crosses, and a link
+ * held by that member is foreign to a child frame in it, so both read as held and source order decides. The held lane then grows the member
+ * over the foreign lane reserved before it.
+ *
+ * The relation can hold a cycle: two child frames of one member, each holding a lane foreign to the other (review 1). So the order is read on
+ * its strongly connected components: a component goes when every component before it has gone, the ready component with the earliest index
+ * in `base` first, and the links inside a component keep their `base` order. `base` is the order before the rule (held links first, then source
+ * order), so with no nested frame the result is `base`. Last key: the index in `base`.
+ */
+function nestedReservationOrder(model: LayoutModel, base: readonly LayoutLink[]): LayoutLink[] {
+  const frames = model.document.frames ?? {};
+  const relations = base.map(link => {
+    const crossed = new Set(transitTiers(model, link)), ends = link.attachments ? [link.attachments.from.node, link.attachments.to.node] : [];
+    const held = new Set<string>(), foreign = new Set<string>();
+    for (const id of Object.keys(frames)) {
+      if (!frameSubtreeCells(frames, id).some(cell => crossed.has(model.groups[cell]?.tier ?? Number.NaN))) continue;
+      (ends.some(node => frameNodes(model, id).includes(node)) ? held : foreign).add(id);
+    }
+    return { held, foreign };
+  });
+  // after[a] lists the links that must follow link a: a frame holds a and is foreign to them.
+  const after = relations.map((item, at) => relations.flatMap((other, index) => index !== at && [...item.held].some(id => other.foreign.has(id)) ? [index] : []));
+  // Tarjan's strongly connected components; finite, so no cap (R4).
+  const component = new Array<number>(base.length).fill(-1), low: number[] = [], seen: number[] = [], stack: number[] = [], members: number[][] = [];
+  let clock = 0;
+  const visit = (at: number): void => {
+    seen[at] = low[at] = clock++;
+    stack.push(at);
+    for (const next of after[at]!) {
+      if (seen[next] === undefined) { visit(next); low[at] = Math.min(low[at]!, low[next]!); }
+      else if (component[next] === -1) low[at] = Math.min(low[at]!, seen[next]!);
+    }
+    if (low[at] !== seen[at]) return;
+    const part: number[] = [];
+    for (let top = stack.pop()!; ; top = stack.pop()!) { component[top] = members.length; part.push(top); if (top === at) break; }
+    members.push(part.sort((a, b) => a - b));
+  }
+  for (let at = 0; at < base.length; at++) if (seen[at] === undefined) visit(at);
+  // A component goes as late as `base` puts it, and as early as a frame needs: in `base` order of their first links, each component first
+  // places the components it waits on (pulled forward, in the same order), then its own links. A component that no frame orders keeps its place.
+  const before = members.map(() => new Set<number>());
+  for (const [at, next] of after.entries()) for (const index of next) if (component[index] !== component[at]) before[component[index]!]!.add(component[at]!);
+  const order: LayoutLink[] = [], placed = new Set<number>();
+  const place = (id: number): void => {
+    if (placed.has(id)) return;
+    placed.add(id);
+    for (const prior of [...before[id]!].sort((a, b) => members[a]![0]! - members[b]![0]!)) place(prior);
+    for (const at of members[id]!) order.push(base[at]!);
+  };
+  for (const id of members.map((part, id) => ({ id, first: part[0]! })).sort((a, b) => a.first - b.first).map(item => item.id)) place(id);
+  return order;
+}
+/**
  * The transit lanes of 7a, in the order of the passes: the lanes of the links foreign to a frame (held lanes first), then the tier pass. `early` names
  * the held lanes of the tier pass reserved before every other lane (`heldLanesOverForeign`); empty, this is the order before ticket 46.
  */
@@ -1466,7 +1523,7 @@ function reserveTransitLanes(model: LayoutModel, early: ReadonlySet<string>): { 
   };
   const heldLinks = new Set(links.filter(holdsLane));
   let separated = false;
-  for (const link of [...links.filter(item => heldLinks.has(item)), ...links.filter(item => !heldLinks.has(item))]) {
+  for (const link of nestedReservationOrder(model, [...links.filter(item => heldLinks.has(item)), ...links.filter(item => !heldLinks.has(item))])) {
     if (!separated && !heldLinks.has(link)) { separateHeldFrames(pending); separated = true; }
     const crossed = transitTiers(model, link), width = laneWidth(model, link), half = width / 2;
     const cellsOf = new Map<string, LayoutGroup[]>();

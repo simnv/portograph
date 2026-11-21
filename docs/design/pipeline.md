@@ -2295,7 +2295,15 @@ lane x outside the frame for all the sub-tiers it crosses (`foreignReach`). It n
 frame.
 
 Lane x is immutable, and a frame only grows. So a lane that a frame holds is reserved before a
-foreign lane: `allocateLanes` takes the links that hold a lane in a frame first (`holdsLane`). The
+foreign lane: `allocateLanes` takes the links that hold a lane in a frame first (`holdsLane`), and it
+reads that order per frame (`nestedReservationOrder`, field-2026-11 ticket 05): a link that a frame
+holds goes before every link foreign to that frame. In a canton, a link that ends in another member
+is held by the canton and foreign to the member it crosses, and a link that the member holds is
+foreign to a child frame in it. Read per link, both are held, and the member grew over the lane
+reserved first. The order is read on the strongly connected components of that relation (two child
+frames can each hold a lane foreign to the other), and a link moves only as early as a frame needs:
+the components go in the order before the rule, and each one first places the components it waits
+on. Links inside a component, and links that no frame orders, keep the order before the rule. The
 tier pass after the foreign loop also holds lanes: the lane of a link in a sub-tier where the link
 ends in a frame cell and is foreign to no frame (`heldInFrame`). Reserved after a foreign lane, such
 a held lane can stand only beyond it, and the frame then grows around the foreign lane ("Lane crosses
