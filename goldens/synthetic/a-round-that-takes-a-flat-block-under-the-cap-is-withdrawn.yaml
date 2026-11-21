@@ -1,14 +1,15 @@
 # Expected: field 2026-11 ticket 01. Three routers, each in its own tier-0 group, over six one-row pods of two leaves; every leaf links to
 # every router, so each pod is a complete solid block toward the router tier. A flank firewall beside core-3 links to r3 and r1. The outer
-# pods (pod-1, pod-6) are flat blocks past the 600 px cap, the inner pods stand under it. At 2:1 the first placement gives the two flat
+# pods (pod-1, pod-6) are flat blocks past the 600 px cap, the inner pods stand under it. At 23:10 the first placement gives the two flat
 # blocks the aspect gap (`FLAT_BLOCK_GAP_CHOSEN`, input `flatBlockGaps`). A later course round trial moves the routers, and its own
 # block records take pod-6 under the cap. On main bf114a3b that trial was kept, and publication threw "The placement input flatBlockGaps:
 # the flat block gap of block:pod-6:0: names no flat block" on every aspect from 3:2 to 23:10. Now the 7e postconditions refuse that trial
 # by name (kind `flatBlockGaps`, `unheldFlatBlocks`), the round withdraws it, and the sheet publishes on every aspect of the sweep with no
-# removed link. Test `test/pipeline/flat-gap-premise.test.ts`.
+# removed link. At 23:10, 5:2 and 3:1 every gate passes; at 3:2, 16:9, 2:1 and 21:10 the published placement keeps a G6 parallel clearance
+# between the flank link link-13 and the straight member link-11 (an open defect, outside this ticket). Test `test/pipeline/flat-gap-premise.test.ts`.
 portograph: 2
 profile: network
-layout: {aspect: "2:1"}
+layout: {aspect: "23:10"}
 groups:
   core-1: {tier: 0}
   core-2: {tier: 0}

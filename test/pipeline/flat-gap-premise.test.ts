@@ -13,7 +13,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const text = readFileSync(new URL('../../goldens/synthetic/a-round-that-takes-a-flat-block-under-the-cap-is-withdrawn.yaml', import.meta.url), 'utf8');
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 const ASPECTS = ['3:2', '16:9', '2:1', '21:10', '23:10', '5:2', '3:1'];
-const at = (aspect: string): string => text.replace('layout: {aspect: "2:1"}', `layout: {aspect: "${aspect}"}`);
+const at = (aspect: string): string => text.replace('layout: {aspect: "23:10"}', `layout: {aspect: "${aspect}"}`);
 
 afterEach(() => { delete postconditionSink.hook; });
 
@@ -26,7 +26,7 @@ describe('a round trial that takes a flat block under the cap is withdrawn (fiel
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
   });
 
-  it('refuses the trial at its producer boundary, by the premise, at 2:1', async () => {
+  it('refuses the trial at its producer boundary, by the premise, at 23:10', async () => {
     const found: PostconditionViolation[] = [];
     postconditionSink.hook = violation => { if (violation.kind === FLAT_PREMISE) found.push(violation); };
     const model = await layout(parse(text), options);
