@@ -10,11 +10,11 @@ import { pathBends } from '../../src/layout/objective.js';
 import { compareId } from '../../src/layout/skeleton-graph.js';
 
 /**
- * Field-2026-11 ticket 05: child groups inside the members of a canton. Two faults, one fixture each.
- * 1. Stage 7a reserved a lane the canton holds (and that is foreign to a member) before a lane the member holds, so the member grew over it
- *    and `validateLanes` threw `Lane ... crosses occupied group ...`. The held/foreign order of the transit lanes is now read per frame.
- * 2. The router read a frame, which lets through every link that ends in it, where the stitch reads its rank cells, so a link was routed
- *    through a foreign cell of its own frame and removed. A rank cell is now a router obstacle with the consumers the stitch reads.
+ * Field-2026-11 ticket 05: child groups inside the members of a canton. Stage 7a reserved a lane the canton holds (and that is foreign to a
+ * member) before a lane the member holds, so the member grew over it and `validateLanes` threw `Lane ... crosses occupied group ...`. The
+ * held/foreign order of the transit lanes is now read per frame, on its strongly connected components, and a link moves only as early as a
+ * frame needs (pull forward; `pullForwardOrder`, unit test `test/layout/reservation-order.test.ts`). Two cycles that share a link still fail
+ * (known open, follow-up ticket 12).
  */
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -94,5 +94,16 @@ describe('the frame order is read on its strongly connected components, and a li
     expect(gateFailures(score(model).snapshot).sort()).toEqual(['G4:collinear-overlap', 'G5:port-order', 'G6:parallel-clearance']);
     const api = { serializeLayoutModel };
     expect(firstDifference(comparable(api, model), comparable(api, await run(reversed(text, 'links'))))).toBeUndefined();
+  }, 60000);
+});
+
+describe('known open: two cycles that share a link (field-2026-11 ticket 05, re-check of review 1; follow-up ticket 12)', () => {
+  it('still stops at stage 7a: a later held lane of the component grows west across the earlier lane of link-8', async () => {
+    // Inside one component the base order reserves link-8, then link-10 and link-11, which west holds; either grows west across link-8.
+    // Main fails on this sheet too (at link-1). Ticket 12 reserves room for the other held lanes of a cyclic component; when it lands, this
+    // test fails: turn it into a test that every link is drawn.
+    const text = readFileSync(new URL('../fixtures/nested-frames/two-cycles-share-a-link.yaml', import.meta.url), 'utf8');
+    await expect(run(text)).rejects.toThrow('Lane lane:"link-8":2 crosses occupied group west#1');
+    await expect(run(reversed(text, 'links'))).rejects.toThrow('Lane lane:"link-8":2 crosses occupied group west#1');
   }, 60000);
 });
