@@ -16,6 +16,7 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 ### Added
 
 - **`--fail-on-removed`** (`layout`, `render`, `score`): the command exits with 1 when the router removed a link, and still writes all its files. The warning of each removed link (`ROUTE_GAP_REJECTED`, `ROUTE_CHECKPOINT_SKIPPED`) now names the two ends of the link and its place in `links`. Without the flag, a removal still gives exit code 0.
+- **`meta:` on a group** (a plain tier group, a flank, a canton, a canton member and a child group): same key rules as on a node. The draw.io export writes a group that has `meta:` as a bound cell with `pg-kind="group"` and `pg-id` (the group id) and the meta keys. A group with no `meta:` is unchanged. No layout change. The schema version of the binding contract stays 1 (a new kind and no changed rule).
 
 ### Changed
 

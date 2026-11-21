@@ -1,0 +1,22 @@
+# Expected: `meta:` on a group reaches the draw.io export (field ticket 07, binding contract section 4). A canton, a member, a
+# child group, a flank and a plain tier group each carry `meta:`; each gets a bound cell with pg-kind="group" and pg-id (the group
+# id) and the meta keys after them in sorted order. A group with no `meta:` stays a bare cell. The meta changes no geometry.
+# Test `drawio-binding.test.ts` (draw.io group meta); the parse of the keys is in `test/parse/meta.test.ts`.
+portograph: 2
+groups:
+  west: { label: West, meta: { map: west-map, level: 1 } }
+  upstream: { tier: 0, label: Upstream, meta: { map: upstream-map } }
+  site: { tier: 1, canton: west, label: Site, meta: { map: site-map, live: true } }
+  clients: { tier: 2, canton: west, label: Clients }
+  pod-1: { parent: site, label: "Pod 1", meta: { map: pod-1-map } }
+  annex: { align: right, of: upstream, label: Annex, meta: { map: annex-map } }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  ext: { group: annex, class: server, label: Extra }
+  gw: { group: site, class: router, label: Gateway }
+  srv: { group: pod-1, class: server, label: Server }
+  cl: { group: clients, class: server, label: Client }
+links:
+  - [isp, gw]
+  - [gw, srv]
+  - { from: srv, to: cl, class: flow }

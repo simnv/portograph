@@ -111,7 +111,7 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
   const cantons = ids.filter(id => isCanton(id) && source.groups[id]!.members!.some(member => plans.get(member)?.expands));
   for (const id of cantons) {
     const item = source.groups[id]!;
-    frames[id] = { label: item.label, ...(item.class !== undefined ? { class: item.class } : {}), kind: 'canton', cells: [] };
+    frames[id] = { label: item.label, ...(item.class !== undefined ? { class: item.class } : {}), ...(item.meta !== undefined ? { meta: item.meta } : {}), kind: 'canton', cells: [] };
   }
   const firstCell = (id: string): string => plans.get(id)?.expands ? plans.get(id)!.cells.find(cell => cell.frame === id)?.id ?? id : id;
   for (const id of ids) {
@@ -139,7 +139,7 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
     };
     for (const owner of [id, ...plan.children]) {
       const item = source.groups[owner]!;
-      frames[owner] = { label: item.label, ...(item.class !== undefined ? { class: item.class } : {}), ...(owner !== id ? { parent: id } : cantons.includes(cantonOf(id) ?? '') ? { parent: cantonOf(id)! } : {}), cells: [] };
+      frames[owner] = { label: item.label, ...(item.class !== undefined ? { class: item.class } : {}), ...(item.meta !== undefined ? { meta: item.meta } : {}), ...(owner !== id ? { parent: id } : cantons.includes(cantonOf(id) ?? '') ? { parent: cantonOf(id)! } : {}), cells: [] };
     }
     for (const cell of plan.cells) {
       put(cell.id, { ...withStyle(cell.frame), tier: base(id) + cell.rank, frame: cell.frame, documentTier: source.groups[id]!.tier! } as NormalisedGroup);

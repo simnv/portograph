@@ -84,6 +84,7 @@ pipeline. Labels are free text; ids are not.
 | `label` | string | default: id |
 | `shape` | `ranked` \| `row` \| `bar` \| `grid` | default `ranked` (ADR-0019); `ring` and `free` are named in the parser and refused with `UNSUPPORTED_SHAPE` (audit m-21, D17, 2026-11-07). `bar` nodes stack in declaration order |
 | `class` | string | |
+| `meta` | map | metadata for the draw.io export, on the group cell (a canton, a member, a child group and a flank too); see **Meta** below |
 | `collapsed` | bool | M1: warning, ignored |
 | `layout` | map | accepted and stored as ELK scalar options; no stage passes it to ELK for the group's own algorithm today (audit M-6, D17, 2026-11-07), so it has no effect on the layout, and the parser gives no diagnostic for it. Whether it warns, fails or becomes a real pass-through is open (PQ-6, ticket T-06) |
 
@@ -264,7 +265,7 @@ family; none carries `route:`. Membership is preserved in the model.
 
 ## Meta
 
-`meta:` is a flat map of scalars: a string, a finite number or a boolean. The pipeline carries it
+`meta:` is a flat map of scalars: a string, a finite number or a boolean. It is allowed on the root, a group, a node, a port and a link. The pipeline carries it
 and does not read it, so it never changes geometry. The draw.io export writes each entry as an
 attribute of the cell (docs/drawio-binding-contract.md). A key starts with a letter or an
 underscore and contains letters, digits, underscores or hyphens (`BAD_META_KEY`). The keys `id`,

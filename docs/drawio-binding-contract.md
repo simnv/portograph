@@ -13,7 +13,7 @@ rule in this document. A change to a rule increments the schema version.
 - A bound cell is an `<object>` element around an `<mxCell>`. The `<object>` holds the cell `id`,
   the `label` (the old `value`) and the binding attributes. The inner `<mxCell>` holds `style`,
   `vertex` or `edge`, `parent`, `source`, `target` and the geometry. It has no `id` and no `value`.
-- All other cells (groups, icon tiles, legend, overlay marks, layers) are bare `<mxCell>`
+- All other cells (a group with no `meta:`, icon tiles, legend, overlay marks, layers) are bare `<mxCell>`
   elements, as before. A mesh bus piece and a text cell that only needs a `tooltip` are an `<object>`
   with `tooltip` and no `pg-kind`. Such an `<object>` is not a binding; a reader keys on `pg-kind`.
 
@@ -47,6 +47,7 @@ keeps `pg-id`. The cell `id` follows from `pg-id` and is for convenience only.
 | node | the YAML node id: `sw1` | `pg-node~sw1` |
 | port | `<node>:<port>`: `sw1:eth2`; `<node>:<port>#<n>` for the n-th port of one name, n > 1 | `pg-port~sw1~eth2~1` |
 | link | see section 2.1 | `pg-link~<link id>`; `pg-link~<link id>~<i>` for run i of a split link |
+| group | the YAML group id: `west`. Only a group with `meta:` is bound; see section 4 | `pg-group~west` |
 | link label | — (the cell has `pg-of`) | `pg-linkLabel~<link id>` |
 | node icon | — (the cell has `pg-of`) | `pg-icon~<node>` |
 
@@ -87,8 +88,8 @@ All attribute values are strings. A reader must parse numbers and booleans.
 | Attribute | On | Value |
 | --- | --- | --- |
 | `pg-schema` | root cell `id="0"` | `1` |
-| `pg-kind` | every bound cell | `node`, `port`, `link`, `link-label` or `node-icon` |
-| `pg-id` | node, port, link | the id from section 2 |
+| `pg-kind` | every bound cell | `node`, `port`, `link`, `link-label`, `node-icon` or `group` |
+| `pg-id` | node, port, link, group | the id from section 2 |
 | `pg-node` | port | the node id |
 | `pg-port` | port | the port name. For a network diagram this is the OS interface name, for example `eth2` |
 | `pg-from` | link | the `from` end, in the form of section 2.1, rule 2 |
@@ -195,11 +196,13 @@ with `pg-class="trunk"`, and the label `10G` is a `link-label` child of run 1.
 
 ## 4. Author metadata
 
-The YAML `meta:` map on a node, on a port (map form) and on a link becomes attributes of that
+The YAML `meta:` map on a group, on a node, on a port (map form) and on a link becomes attributes of that
 cell. The root `meta:` becomes attributes of the root cell (`id="0"`).
 
 ```yaml
 meta: { datasource: victoriametrics }
+groups:
+  core: { tier: 0, meta: { map: core-site } }
 nodes:
   sw1:
     group: core
@@ -233,6 +236,10 @@ Rules:
   cell also has an author `meta.tooltip`, the author text comes first, then a new line, then the
   generated text. A reader that binds by `pg-kind` ignores a
   cell with no `pg-kind`.
+- A group is a bound cell (`pg-kind="group"`, `pg-id` = the group id) only when the YAML gives it `meta:`. This holds for a
+  plain tier group, a flank, a canton, a canton member and a child group. A group with no `meta:` stays a bare cell, so a file
+  of a sheet with no group meta does not change. A frame (a canton, a member, a child group) has the meta of its document
+  group. A reader can use it to lead a frame to its own map. The cell of a group holds the nodes and the child frames inside it.
 - No cell inherits the root `meta:`. A reader can use it as a default for every cell.
 
 Common keys for a network diagram: `host`, `job`, `instance`, `ifname`, `device`, `capacity`
@@ -246,6 +253,7 @@ thing that owns it:
 | Write on | What | Example keys |
 | --- | --- | --- |
 | root `meta:` | a value that is the same for the full sheet | `datasource`, `site` |
+| group `meta:` | a property of the frame, for example the map it leads to | `map`, `site` |
 | node `meta:` | the identity of the host | `job`, `instance`, `host` |
 | port `meta:` | the identity of the interface on that host | `device`, `ifname` |
 | link `meta:` | a property of the link itself, and the exceptions below | `capacity`, `bind` |

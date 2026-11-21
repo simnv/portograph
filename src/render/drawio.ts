@@ -909,6 +909,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     layout.labels.find(label => label.role === 'group' && !label.omitted
       && label.owner.kind === 'group' && label.owner.id === owner);
 
+  // The `meta:` of a drawn group: its own entry, or its frame's when stage 1 replaced it by rank cells (a canton, a member, a child group).
+  const groupMeta = (id: string): Meta | undefined => document.groups[id]?.meta ?? document.frames?.[id]?.meta;
   for (const shape of shapes) {
     const { id, bounds, frame } = shape;
     const box = shiftRect(bounds);
@@ -963,7 +965,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       });
     const holder = frame ? frameParent.get(id) : undefined;
     vertex(cellId('group', id), holder === undefined ? layerId('diagram') : cellId('group', holder), style,
-      holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? plainText(labelLines(title!)) : undefined);
+      holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? plainText(labelLines(title!)) : undefined, {},
+      // A group is a bound cell only when the author gave it `meta:` (a frame, a canton, a member or a child group alike); a group
+      // with none stays a bare cell, so a file of a sheet with no group meta is the same as before.
+      groupMeta(id) === undefined ? undefined : binding({ 'pg-kind': 'group', 'pg-id': id }, groupMeta(id)));
     if (title && !swimlane) {
       textCell(cellId('groupTitle', id), cellId('group', id), title,
         relative(shiftRect(title.bounds!), box), titlePaint);

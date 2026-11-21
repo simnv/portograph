@@ -232,6 +232,39 @@ links: ${links}
   }, 60000);
 });
 
+describe('draw.io group meta (field ticket 07)', () => {
+  const yaml = readFileSync(new URL('../../goldens/synthetic/drawio-group-meta.yaml', import.meta.url), 'utf8');
+  const withoutMeta = yaml.replace(/, meta: \{[^}]*\}/g, '');
+
+  it('binds a plain group, a flank, a canton, a member and a child group that carry meta, and leaves the others bare', async () => {
+    const xml = await render(yaml);
+    const groups = objects(xml).filter(item => item.attributes['pg-kind'] === 'group');
+    expect(groups.map(item => item.attributes['pg-id']).sort()).toEqual(['annex', 'pod-1', 'site', 'upstream', 'west']);
+    for (const item of groups) {
+      expect(item.attributes.id).toBe(`pg-group~${item.attributes['pg-id']}`);
+      expect(item.attributes.map).toBe(`${item.attributes['pg-id']}-map`);
+      expect(attributesOf(/<mxCell\b([^>]*)/.exec(item.body)![1]!).vertex).toBe('1');
+    }
+    expect(groups.find(item => item.attributes['pg-id'] === 'site')!.attributes).toMatchObject({ live: 'true' });
+    expect(groups.find(item => item.attributes['pg-id'] === 'west')!.attributes).toMatchObject({ level: '1' });
+    // The pg- keys come first, then the meta keys in sorted order.
+    expect(Object.keys(groups.find(item => item.attributes['pg-id'] === 'west')!.attributes)).toEqual(['id', 'label', 'pg-kind', 'pg-id', 'level', 'map']);
+    // `clients` has no meta: its cell is a bare mxCell, as before.
+    expect(allIds(xml)).toContain('pg-group~clients');
+    expect(objects(xml).some(item => item.attributes.id === 'pg-group~clients')).toBe(false);
+    // A child group nests in its parent frame, and the frame in its canton, as without meta.
+    expect(attributesOf(/<mxCell\b([^>]*)/.exec(groups.find(item => item.attributes['pg-id'] === 'pod-1')!.body)![1]!).parent).toBe('pg-group~site');
+  }, 60000);
+
+  it('draws the same cells and boxes as the sheet with no meta; the only difference is the group objects', async () => {
+    const [bound, bare] = [await render(yaml), await render(withoutMeta)];
+    expect(objects(bare).some(item => item.attributes['pg-kind'] === 'group')).toBe(false);
+    const geometry = (xml: string): string[] => [...xml.matchAll(/<mxGeometry\b[^>]*>/g)].map(match => match[0]);
+    expect(geometry(bound)).toEqual(geometry(bare));
+    expect(allIds(bound)).toEqual(allIds(bare));
+  }, 60000);
+});
+
 describe('draw.io pg-symbol', () => {
   const symbolSheet = (classes: Record<string, string | undefined>): string => `portograph: 2
 groups: {ga: {tier: 0}}

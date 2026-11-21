@@ -37,7 +37,7 @@ const META_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 /** Keys draw.io or the binding contract own on a cell (docs/drawio-binding-contract.md). */
 const RESERVED_META = /^(?:pg-.*|id|label|placeholders|xml.*)$/i;
 
-/** `meta:` on the root, a node, a port or a link: a flat map of scalars that only the draw.io export reads. */
+/** `meta:` on the root, a group, a node, a port or a link: a flat map of scalars that only the draw.io export reads. */
 function meta(value: unknown, path: string, v: Validation): Meta | undefined {
   const result: Meta = {};
   for (const [key, item] of v.map(value, path)) {
@@ -62,11 +62,14 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     const path = `$.groups.${id}`;
     if (v.identifier(id, path) === undefined) continue;
     const fields = v.map(value, path);
-    v.keys(fields, ['tier', 'align', 'of', 'parent', 'canton', 'label', 'shape', 'class', 'collapsed', 'layout'], path);
+    v.keys(fields, ['tier', 'align', 'of', 'parent', 'canton', 'label', 'shape', 'class', 'collapsed', 'layout', 'meta'], path);
     const content: GroupContent = { label: id, shape: 'ranked' };
     optionalStrings(fields, content, ['label', 'class'], path, v);
+    // A canton, a member, a child group and a flank take `meta:` like a node does; the draw.io export writes it on the group cell.
+    const data = fields.has('meta') ? meta(fields.get('meta'), `${path}.meta`, v) : undefined;
+    if (data !== undefined) content.meta = data;
     if (cantonNames.has(id)) {
-      for (const key of ['tier', 'align', 'of', 'parent', 'shape', 'layout', 'collapsed']) if (fields.has(key)) v.report('CANTON_KEYS', `${path}.${key}`, `A canton takes a label and a class only, not ${key}`);
+      for (const key of ['tier', 'align', 'of', 'parent', 'shape', 'layout', 'collapsed']) if (fields.has(key)) v.report('CANTON_KEYS', `${path}.${key}`, `A canton takes a label, a class and a meta only, not ${key}`);
       if (fields.has('canton')) v.report('CANTON_NESTED', `${path}.canton`, 'A canton is not a member of a canton; the depth is canton, member, child');
       put(doc.groups, id, { ...content, members: [] });
       continue;

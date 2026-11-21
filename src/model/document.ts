@@ -40,6 +40,8 @@ export interface GroupContent {
   label: string;
   shape: GroupShape;
   class?: string;
+  /** Author metadata of the group, carried and never read; the draw.io export writes it on the group cell. Present only when the author wrote `meta:`. */
+  meta?: Meta;
   collapsed?: boolean;
   layout?: Record<string, string | number | boolean>;
   /** A child group names its parent; one level only. A child has no tier of its own and takes its parent's. */
@@ -74,6 +76,8 @@ export type NormalisedGroup = GroupContent & (
 export interface NormalisedFrame {
   label: string;
   class?: string;
+  /** The `meta:` of the document group this frame stands for; the rank cells carry none (the frame is the drawn group). */
+  meta?: Meta;
   /** `canton`: the frame of a canton (docs/design/canton-groups.md, Section 3); it has no cell of its own, only member frames. */
   kind?: 'canton';
   parent?: string;

@@ -55,6 +55,38 @@ describe('meta: accepted', () => {
   });
 });
 
+describe('meta: on groups (field ticket 07)', () => {
+  const groupsWith = (extra: Record<string, unknown>) => ({
+    land: { label: 'Land', ...extra },
+    g: { tier: 0, canton: 'land' },
+    h: { tier: 1, canton: 'land', meta: { site: 'h' } },
+    kid: { parent: 'g', meta: { kind: 'child' } },
+    free: { tier: 2 },
+    side: { align: 'left', of: 'free', meta: { kind: 'flank' } },
+  });
+  const sheet = (extra: Record<string, unknown>) => doc({ groups: groupsWith(extra), nodes: { a: { group: 'g', ports: ['p', 'q'] }, b: { group: 'h', ports: ['p'] } } });
+
+  it('on a tier group, a canton, a member, a child group and a flank, with the same key rules as a node', () => {
+    const document = parse(sheet({ meta: { map: 'north', level: 2, live: true } }));
+    expect(document.groups['land']!.meta).toEqual({ map: 'north', level: 2, live: true });
+    expect(document.groups['h']!.meta).toEqual({ site: 'h' });
+    expect(document.groups['kid']!.meta).toEqual({ kind: 'child' });
+    expect(document.groups['side']!.meta).toEqual({ kind: 'flank' });
+    expect(document.groups['g']).not.toHaveProperty('meta');
+  });
+
+  it('leaves no meta key for an empty map', () => {
+    expect(parse(sheet({ meta: {} })).groups['land']).not.toHaveProperty('meta');
+  });
+
+  it('refuses a bad key, a reserved key and a value that is no scalar, with the path of the group', () => {
+    expect(errors(sheet({ meta: { 'bad key': 1 } })).map(d => [d.code, d.path])).toEqual([['BAD_META_KEY', '$.groups.land.meta.bad key']]);
+    expect(errors(sheet({ meta: { 'pg-kind': 'x' } })).map(d => [d.code, d.path])).toEqual([['RESERVED_META_KEY', '$.groups.land.meta.pg-kind']]);
+    expect(errors(sheet({ meta: { deep: { a: 1 } } })).map(d => [d.code, d.path])).toEqual([['INVALID_TYPE', '$.groups.land.meta.deep']]);
+    expect(errors(doc({ groups: { g: { tier: 0, meta: { id: 1 } } } })).map(d => [d.code, d.path])).toEqual([['RESERVED_META_KEY', '$.groups.g.meta.id']]);
+  });
+});
+
 describe('meta: absent', () => {
   it('leaves no meta or id key anywhere in the document', () => {
     const text = JSON.stringify(parse(doc()));
