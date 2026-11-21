@@ -15,7 +15,10 @@ import { avoidAssets, spawnAvoidWorker } from './fixture.js';
 /**
  * Decision-review ticket 14. A removed link stores the router answer stage 8 judged (`rejectedRoute`), and publication and restore
  * judge it again (`tryStitch` on `preRoute`). A removal forged on a finished layout (path dropped, `removed`, `removedLinks`, a
- * `ROUTE_GAP_REJECTED` warning) is refused by name, with or without a stored answer; a removal stage 8 made restores.
+ * `ROUTE_GAP_REJECTED` warning) is refused by name when it stores no answer, an answer that is not one for the link's planned gaps,
+ * an answer below the floor (fewer than two finite points), or an answer that stitches into a usable path. A stored answer the judgement
+ * rejects restores, forged or not: restore proves that the points fail on this placement, not that the router gave them. A removal
+ * stage 8 made restores.
  * The corpus sheet `three-lateral-legs-stay-with-the-router` leaves `link-10` to the router.
  */
 const text = readFileSync(new URL('../../goldens/synthetic/three-lateral-legs-stay-with-the-router.yaml', import.meta.url), 'utf8');
@@ -145,9 +148,10 @@ describe('restore refuses a forged link removal (decision-review ticket 14)', ()
     const answer = (list: Point[]) => [{ connector: gap.connector, points: list }];
     expect(() => restore(forged(model, answer([])))).toThrow(`${floor}: fewer than two finite points`);
     expect(() => restore(forged(model, answer([gap.from])))).toThrow(`${floor}: fewer than two finite points`);
-    // An inner corner moved 1 px across, and an inner corner dropped, each still honouring the checkpoints (`skippedCheckpoint`):
-    // libavoid gives this shape when it cannot reach a point (field-2026-11 ticket 02), so it is no forgery the floor can tell. The
-    // judgement rejects it, and restore keeps the removal: part of the stated limit.
+    // An inner corner moved 1 px across, and an inner corner dropped, each still honouring the checkpoints (`skippedCheckpoint`): two
+    // examples of answers the floor accepts since field-2026-11 ticket 02. The probe there shows that a genuine libavoid answer can meet
+    // both ends and every checkpoint with a diagonal leg (its last leg); it does not show these two shapes. The judgement rejects them,
+    // and restore keeps the removal: part of the stated limit.
     const honours = (list: Point[]): boolean => skippedCheckpoint(item, new Map([[gap.connector, list]])) === undefined;
     const inner = points.slice(1, -1).map((_, index) => index + 1);
     const moved = inner.map(at => points.map((point, index) => index === at ? { x: point.x + 1, y: point.y + 1 } : { ...point })).find(honours);
