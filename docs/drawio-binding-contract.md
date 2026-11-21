@@ -13,7 +13,7 @@ rule in this document. A change to a rule increments the schema version.
 - A bound cell is an `<object>` element around an `<mxCell>`. The `<object>` holds the cell `id`,
   the `label` (the old `value`) and the binding attributes. The inner `<mxCell>` holds `style`,
   `vertex` or `edge`, `parent`, `source`, `target` and the geometry. It has no `id` and no `value`.
-- All other cells (a group with no `meta:`, icon tiles, legend, overlay marks, layers) are bare `<mxCell>`
+- All other cells (a group with no or an empty `meta:`, icon tiles, legend, overlay marks, layers) are bare `<mxCell>`
   elements, as before. A mesh bus piece and a text cell that only needs a `tooltip` are an `<object>`
   with `tooltip` and no `pg-kind`. Such an `<object>` is not a binding; a reader keys on `pg-kind`.
 
@@ -47,7 +47,7 @@ keeps `pg-id`. The cell `id` follows from `pg-id` and is for convenience only.
 | node | the YAML node id: `sw1` | `pg-node~sw1` |
 | port | `<node>:<port>`: `sw1:eth2`; `<node>:<port>#<n>` for the n-th port of one name, n > 1 | `pg-port~sw1~eth2~1` |
 | link | see section 2.1 | `pg-link~<link id>`; `pg-link~<link id>~<i>` for run i of a split link |
-| group | the YAML group id: `west`. Only a group with `meta:` is bound; see section 4 | `pg-group~west` |
+| group | the YAML group id: `west`. Only a group with a nonempty `meta:` map is bound; see section 4 | `pg-group~west` |
 | link label | — (the cell has `pg-of`) | `pg-linkLabel~<link id>` |
 | node icon | — (the cell has `pg-of`) | `pg-icon~<node>` |
 
@@ -236,9 +236,9 @@ Rules:
   cell also has an author `meta.tooltip`, the author text comes first, then a new line, then the
   generated text. A reader that binds by `pg-kind` ignores a
   cell with no `pg-kind`.
-- A group is a bound cell (`pg-kind="group"`, `pg-id` = the group id) only when the YAML gives it `meta:`. This holds for a
-  plain tier group, a flank, a canton, a canton member and a child group. A group with no `meta:` stays a bare cell, so a file
-  of a sheet with no group meta does not change. A frame (a canton, a member, a child group) has the meta of its document
+- A group is a bound cell (`pg-kind="group"`, `pg-id` = the group id) only when its `meta:` map has at least one key. This
+  holds for a plain tier group, a flank, a canton, a canton member and a child group. A group with no `meta:`, or with an empty
+  map (`meta: {}`), stays a bare cell, so a file of a sheet with no group meta does not change. A frame (a canton, a member, a child group) has the meta of its document
   group. A reader can use it to lead a frame to its own map. The cell of a group holds the nodes and the child frames inside it.
 - No cell inherits the root `meta:`. A reader can use it as a default for every cell.
 
@@ -298,7 +298,7 @@ links:
 
 These cells have no binding attributes:
 
-- group and frame boxes,
+- group and frame boxes whose `meta:` map is empty or absent (a group with at least one meta key is bound: section 4),
 - mesh bus bars, stubs, joints and risers. A mesh bus member link has no link cell. Its `class:` forms the bus and is not written. Its `meta:` is dropped from the file, and the export reports
   this: when a member has a `meta:`, it raises the warning `DRAWIO_BUS_MEMBER_DROPPED` once, with the ids of those links. Put binding meta on the member ports. One stub stands for all the member links of its node, so no
   bus cell is one link. A named port of a member has its cell and its meta,

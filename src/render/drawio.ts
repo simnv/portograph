@@ -966,9 +966,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const holder = frame ? frameParent.get(id) : undefined;
     vertex(cellId('group', id), holder === undefined ? layerId('diagram') : cellId('group', holder), style,
       holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? plainText(labelLines(title!)) : undefined, {},
-      // A group is a bound cell only when the author gave it `meta:` (a frame, a canton, a member or a child group alike); a group
-      // with none stays a bare cell, so a file of a sheet with no group meta is the same as before.
-      groupMeta(id) === undefined ? undefined : binding({ 'pg-kind': 'group', 'pg-id': id }, groupMeta(id)));
+      // A group is a bound cell only when it has a nonempty `meta:` map (a frame, a canton, a member or a child group alike); a group
+      // with none, or an empty map, stays a bare cell, so a file of a sheet with no group meta is the same as before.
+      Object.keys(groupMeta(id) ?? {}).length === 0 ? undefined : binding({ 'pg-kind': 'group', 'pg-id': id }, groupMeta(id)));
     if (title && !swimlane) {
       textCell(cellId('groupTitle', id), cellId('group', id), title,
         relative(shiftRect(title.bounds!), box), titlePaint);

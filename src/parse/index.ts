@@ -1,5 +1,6 @@
 import type { Endpoint, GroupContent, Meta, NormalisedDocument, NormalisedLink, NormalisedNode, NormalisedPort, Side } from '../model/index.js';
 import { DEFAULT_ASPECT, orderedGroupIds, orderedNodeIds, unsupportedMessage } from '../model/index.js';
+import { metaKeyFault, metaValueFault } from '../model/meta.js';
 import { NODE_CONTENT_STYLES } from '../profiles/network/content.js';
 import { BOTTOM_CLASSES, TOP_CLASSES } from '../profiles/network/tiers.js';
 import { DEFAULT_THEME_ID, findTheme, unknownThemeMessage } from '../profiles/network/themes.js';
@@ -32,20 +33,14 @@ function optionalStrings<T extends object, K extends keyof T & string>(input: Ma
   }
 }
 
-/** A meta key is an XML attribute name a draw.io cell can carry without a namespace. */
-const META_KEY = /^[A-Za-z_][A-Za-z0-9_-]*$/;
-/** Keys draw.io or the binding contract own on a cell (docs/drawio-binding-contract.md). */
-const RESERVED_META = /^(?:pg-.*|id|label|placeholders|xml.*)$/i;
-
 /** `meta:` on the root, a group, a node, a port or a link: a flat map of scalars that only the draw.io export reads. */
 function meta(value: unknown, path: string, v: Validation): Meta | undefined {
   const result: Meta = {};
   for (const [key, item] of v.map(value, path)) {
     const at = `${path}.${key}`;
-    if (!META_KEY.test(key)) v.report('BAD_META_KEY', at, 'A meta key starts with a letter or an underscore and contains letters, digits, underscores or hyphens');
-    else if (RESERVED_META.test(key)) v.report('RESERVED_META_KEY', at, `The meta key ${key} is reserved; the pg- prefix, id, label, placeholders and xml are not available`);
-    else if (typeof item === 'string' || typeof item === 'boolean' || (typeof item === 'number' && Number.isFinite(item))) put(result, key, item);
-    else v.report('INVALID_TYPE', at, 'Expected a string, a finite number or a boolean');
+    const fault = metaKeyFault(key) ?? metaValueFault(item);
+    if (fault !== undefined) v.report(fault.code, at, fault.message);
+    else put(result, key, item as string | number | boolean);
   }
   return Object.keys(result).length ? result : undefined;
 }

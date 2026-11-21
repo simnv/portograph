@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { drawio, layout, parse } from '../../src/index.js';
+import { drawio, layout, parse, restoreFinalLayout, serializeLayoutModel } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -254,6 +254,18 @@ describe('draw.io group meta (field ticket 07)', () => {
     expect(objects(xml).some(item => item.attributes.id === 'pg-group~clients')).toBe(false);
     // A child group nests in its parent frame, and the frame in its canton, as without meta.
     expect(attributesOf(/<mxCell\b([^>]*)/.exec(groups.find(item => item.attributes['pg-id'] === 'pod-1')!.body)![1]!).parent).toBe('pg-group~site');
+  }, 60000);
+
+  it('leaves a group with an empty meta map a bare cell, from YAML and from an edited layout JSON (contract section 4)', async () => {
+    const fromYaml = await render(yaml.replace('meta: { map: west-map, level: 1 }', 'meta: {}'));
+    expect(allIds(fromYaml)).toContain('pg-group~west');
+    expect(objects(fromYaml).some(item => item.attributes.id === 'pg-group~west')).toBe(false);
+    const model = JSON.parse(serializeLayoutModel(await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }))) as
+      { document: { frames: Record<string, { meta?: object }> } };
+    model.document.frames['west']!.meta = {};
+    const fromJson = drawio(restoreFinalLayout(JSON.stringify(model)));
+    expect(objects(fromJson).some(item => item.attributes.id === 'pg-group~west')).toBe(false);
+    expect(objects(fromJson).some(item => item.attributes.id === 'pg-group~site')).toBe(true);
   }, 60000);
 
   it('draws the same cells and boxes as the sheet with no meta; the only difference is the group objects', async () => {

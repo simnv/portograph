@@ -5,6 +5,7 @@ import { validateGroupLifts } from './lift.js';
 import { validateFeedSplits } from './feed-split.js';
 import { siblingRowsFault } from './sibling-frames.js';
 import { equal } from '../model/json-equality.js';
+import { documentMetaFault } from '../model/meta.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutFreeze, LayoutGroup, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
 import { LAYOUT_STAGES } from '../model/layout.js';
@@ -759,6 +760,10 @@ export function restoreLayoutModel(json: string): LayoutModel {
   const model = JSON.parse(json) as LayoutModel;
   jsonValue(model);
   if (!model || !stages.includes(model.stage) || !model.runtime || !Array.isArray(model.runtime.stages)) throw new Error('Invalid layout model');
+  // Every `meta` map of the saved document obeys the rules of the YAML reader (`documentMetaFault`, R1), at every stage: the draw.io writer
+  // puts a key into an attribute name, and a key it cannot write must be refused here, with its field path (R6).
+  const metaFault = model.document === undefined ? undefined : documentMetaFault(model.document);
+  if (metaFault !== undefined) throw new Error(`Invalid meta at ${metaFault.path}: ${metaFault.fault.code}: ${metaFault.fault.message}`);
   if (stages.indexOf(model.stage) < stages.indexOf('sides-two')) {
     if (model.freeze) throw new Error('Premature topology freeze');
     validateDocumentCss(model);

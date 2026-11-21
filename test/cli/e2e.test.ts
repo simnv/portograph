@@ -214,6 +214,19 @@ links:
     expect(json.stderr).toContain('"code":"LINKS_REMOVED"');
   });
 
+  it('refuses an edited layout JSON whose group meta key would make invalid XML, and writes no file (field ticket 07, review 1)', async () => {
+    const fixture = join(root, 'goldens/synthetic/drawio-group-meta.yaml');
+    const first = await command(['render', fixture, '-o', join(temp, 'group-meta.svg')]);
+    expect(first.code, first.stderr).toBe(0);
+    const saved = JSON.parse(readFileSync(join(temp, 'group-meta.layout.json'), 'utf8'));
+    saved.document.frames.west.meta = { 'floor number': 2 };
+    writeFileSync(join(temp, 'edited.layout.json'), JSON.stringify(saved));
+    const result = await command(['render', join(temp, 'edited.layout.json'), '--format', 'drawio', '-o', join(temp, 'edited.drawio')]);
+    expect(result.code, result.stderr).toBe(2);
+    expect(result.stderr).toContain('Invalid meta at $.frames.west.meta.floor number: BAD_META_KEY');
+    expect(readdirSync(temp)).not.toContain('edited.drawio');
+  });
+
   it('rejects usage and input errors without writing stdout', async () => {
     for (const args of [['render'], ['render', golden, 'extra'], ['render', '--unknown', golden],
       ['render', '--layers', 'invalid', golden], ['render', join(temp, 'missing')], ['score', golden]]) {

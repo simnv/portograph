@@ -51,7 +51,7 @@ to one canton. A canton holds tier groups of consecutive tiers and belongs to no
 ## Section 1 — Schema and validation (`src/parse/index.ts`)
 
 **Declaration.** A member names its canton: `site-a: { tier: 4, canton: west }`. The canton is a
-group entry with `label` and optional `class` only: `west: { label: West }`. Nothing else declares
+group entry with `label` and optional `class` and `meta` only: `west: { label: West }`. Nothing else declares
 it. `canton` joins the key list at `index.ts:37`.
 
 Two forms were considered and rejected. (a) `parent:` on the tier group. Today `parent` means a

@@ -100,7 +100,7 @@ A flank (`align` with `of`) stands beside a tier group; it is not nesting.
     canton (`CANTON_KEYS`).
 - **Canton** (`canton: <group id>` on each member). A canton is a group that another group names
   in `canton:`. It holds tier groups and no nodes.
-  - The canton itself takes `label` and `class` only (`CANTON_KEYS`), and it is not a member of a
+  - The canton itself takes `label`, `class` and `meta` only (`CANTON_KEYS`), and it is not a member of a
     canton (`CANTON_NESTED`).
   - A member is a tier group of shape `ranked` or `row` (`CANTON_MEMBER_SHAPE`): a member is a
     frame of rank cells, and stage 1 gives a `bar` or `grid` group no cells, so it cannot be one
