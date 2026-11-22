@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
-import { layout, parse, score, serializeLayoutModel } from '../../src/index.js';
+import { layout, parse, restoreFinalLayout, score, serializeLayoutModel } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { comparable, firstDifference, reversed } from '../../scripts/r3-lib.mjs';
@@ -14,7 +14,8 @@ import { compareId } from '../../src/layout/skeleton-graph.js';
  * member) before a lane the member holds, so the member grew over it and `validateLanes` threw `Lane ... crosses occupied group ...`. The
  * held/foreign order of the transit lanes is now read per frame, on its strongly connected components, and a link moves only as early as a
  * frame needs (pull forward; `pullForwardOrder`, unit test `test/layout/reservation-order.test.ts`). Two cycles that share a link still fail
- * (known open, follow-up ticket 12).
+ * (known open, follow-up ticket 12). A link that stage 8 rejects because it runs through a foreign rank cell of its own frame is routed once
+ * more, alone, after every batch, with the cells as walls (the cell retry, `retryCellRejections`; last block).
  */
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -105,5 +106,86 @@ describe('known open: two cycles that share a link (field-2026-11 ticket 05, re-
     const text = readFileSync(new URL('../fixtures/nested-frames/two-cycles-share-a-link.yaml', import.meta.url), 'utf8');
     await expect(run(text)).rejects.toThrow('Lane lane:"link-8":2 crosses occupied group west#1');
     await expect(run(reversed(text, 'links'))).rejects.toThrow('Lane lane:"link-8":2 crosses occupied group west#1');
+  }, 60000);
+});
+
+describe('a link a foreign rank cell of its own frame rejects is routed once more, alone, after every batch (field-2026-11 ticket 05, cell retry)', () => {
+  const sheet = (name: string): string => readFileSync(new URL(`../fixtures/nested-frames/${name}.yaml`, import.meta.url), 'utf8');
+  const api = { serializeLayoutModel };
+  const restored = (model: LayoutModel): LayoutModel => restoreFinalLayout(serializeLayoutModel(model));
+  /** Every gate finding with its elements, sorted; a fix or a new finding changes the list. */
+  const findings = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates)
+    .flatMap(([id, gate]) => gate.violations.map(item => `${id}:${item.code}:${item.elements.join(',')}`)).sort();
+  const turns = (model: LayoutModel): Record<string, number | null> => Object.fromEntries(model.links.map(link => [link.id, link.path ? pathBends(link) ?? null : null]));
+
+  it('draws fw-1 -> leaf-1a around the cell pod-1#1: every link drawn, no gate failing, and the restored model is the same', async () => {
+    const model = await run(fixture('a-link-keeps-out-of-a-foreign-cell-of-its-own-frame'));
+    drawnAll(model);
+    expect(gateFailures(score(model).snapshot)).toEqual([]);
+    expect(pathBends(model.links.find(link => link.id === 'link-6')!)).toBe(4);
+    const back = restored(model);
+    expect(back.removedLinks).toBeUndefined();
+    expect(firstDifference(comparable(api, model), comparable(api, back))).toBeUndefined();
+  }, 60000);
+
+  it('two retried links into one node: one at a time, the first reserves the stem of the second; the same in both link orders', async () => {
+    // Main removes link-6 (fw-1 -> leaf-1a) and link-7 (fw-2 -> leaf-1a). Without the stem reservation the first retried route ran over the
+    // stem tip of the second, and the second answer did not meet its port.
+    const text = fixture('two-links-retry-into-one-node-one-at-a-time');
+    const model = await run(text);
+    drawnAll(model);
+    expect(gateFailures(score(model).snapshot)).toEqual([]);
+    expect([pathBends(model.links.find(link => link.id === 'link-6')!), pathBends(model.links.find(link => link.id === 'link-7')!)]).toEqual([4, 4]);
+    expect(restored(model).removedLinks).toBeUndefined();
+    expect(firstDifference(comparable(api, model), comparable(api, await run(reversed(text, 'links'))))).toBeUndefined();
+  }, 60000);
+
+  it('route-441: link-4 and link-5 return; their new findings are pinned; link-8 (a bundle envelope, no cell) stays removed and restore agrees', async () => {
+    // Main removes link-4, link-5 and link-8 and has the two G6 findings of link-10 and link-11. Known regressions of the retry: link-5 runs
+    // too near link-12 and too near itself, and the crossings go from 0 to 3. Known open: link-8 (no retry; its rejection names no cell).
+    const text = sheet('two-links-retry-around-a-foreign-cell');
+    const model = await run(text);
+    expect(model.removedLinks).toEqual(['link-8']);
+    expect([pathBends(model.links.find(link => link.id === 'link-4')!), pathBends(model.links.find(link => link.id === 'link-5')!)]).toEqual([4, 6]);
+    expect(findings(model)).toEqual([
+      'G6:parallel-clearance:link-10,link-11', 'G6:parallel-clearance:link-10,link-11', 'G6:parallel-clearance:link-5,link-12', 'G6:parallel-clearance:link-5,link-5',
+    ]);
+    expect(score(model).snapshot.metrics.crossings.count).toBe(3);
+    expect(restored(model).removedLinks).toEqual(['link-8']);
+    expect(firstDifference(comparable(api, model), comparable(api, await run(reversed(text, 'links'))))).toBeUndefined();
+  }, 60000);
+
+  it('two retried links that stay removed: each stores the retry\'s answer, restore judges it again and agrees, in both link orders', async () => {
+    // Main removes link-7 and link-8 for the cell pod-1#1 (and link-4 for a bundle envelope). Known open: each retry skips a stem checkpoint.
+    const text = sheet('two-retried-links-stay-removed');
+    const model = await run(text);
+    expect(model.removedLinks).toEqual(['link-4', 'link-7', 'link-8']);
+    expect(model.diagnostics.filter(item => item.code === 'ROUTE_CHECKPOINT_SKIPPED').map(item => item.message.split(' ')[0])).toEqual(['link-7', 'link-8']);
+    for (const id of ['link-7', 'link-8']) expect(model.links.find(link => link.id === id)!.rejectedRoute?.length, id).toBeGreaterThan(0);
+    const back = restored(model);
+    expect(back.removedLinks).toEqual(['link-4', 'link-7', 'link-8']);
+    expect(firstDifference(comparable(api, model), comparable(api, back))).toBeUndefined();
+    expect(firstDifference(comparable(api, model), comparable(api, await run(reversed(text, 'links'))))).toBeUndefined();
+  }, 60000);
+
+  it('min-route (review 1, P1): the batches stay as they are, so the result is main\'s (fa3b48d3)', async () => {
+    const model = await run(sheet('a-cell-splits-no-batch'));
+    expect(model.removedLinks).toEqual(['link-9']);
+    expect(turns(model)).toEqual({
+      'link-1': 0, 'link-2': 2, 'link-3': 2, 'link-4': 2, 'link-5': 4, 'link-6': 4, 'link-7': 0, 'link-8': 4, 'link-9': null, 'link-10': 0, 'link-11': 0,
+    });
+    expect(gateFailures(score(model).snapshot).sort()).toEqual(['G4:collinear-overlap', 'G6:parallel-clearance', 'G6:parallel-clearance']);
+    expect(score(model).snapshot.metrics.crossings.count).toBe(4);
+  }, 60000);
+
+  it('known regression: the returned link fw-1 -> leaf-1a runs too near leaf-1b -> leaf-1c (G6) and crosses one link', async () => {
+    // Main removes link-7 and has the G9 finding only. When a fix keeps link-7 apart from link-8, this list loses the G6 entry: update it.
+    const text = sheet('a-returned-link-runs-beside-its-neighbour');
+    const model = await run(text);
+    drawnAll(model);
+    expect(pathBends(model.links.find(link => link.id === 'link-7')!)).toBe(8);
+    expect(findings(model)).toEqual(['G6:parallel-clearance:link-7,link-8', 'G9:min-separation:frame:site,group:far']);
+    expect(score(model).snapshot.metrics.crossings.count).toBe(1);
+    expect(firstDifference(comparable(api, model), comparable(api, await run(reversed(text, 'links'))))).toBeUndefined();
   }, 60000);
 });

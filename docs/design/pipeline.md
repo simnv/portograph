@@ -2538,6 +2538,24 @@ diagonal does. Only routing again at restore would refuse it. A warning proves n
 where it has a path, so a removed link is not drawn; `score` skips it. With `strictCheckpoints`
 every case keeps the throw.
 
+**The cell retry (field-2026-11 ticket 05).** In the ownership batches a rank cell is no router
+obstacle: its frame is, in its place, and a frame lets through every link that ends in it, so a cell
+never splits a batch and the batches are as before. The stitch reads the cell (`reservations`), which
+lets through only a link that ends in it, so a route that runs through a foreign cell of its own frame
+is rejected, and the rejection names the cell as data (`GapRejected.entered`, `RouteRejection.entered`;
+never read from the message). After every batch, in tolerant mode, stage 8 routes each such link once
+more, alone (`retryCellRejections`): every rank cell is a wall with the consumers the stitch reads,
+every completed route is a protected run, and the stems and lane approaches of the retries after it
+are reserved (`pendingStemObstacles`, as between the batches). The same stitch judges the answer. The
+retries go in plan order, and a drawn retry protects the retries after it. A retry that is rejected
+again leaves the link removed with the retry's answer and reason, and restore judges that answer again
+as for any removal. The retries run in the route session, so they count against its budget. One
+producer gives the router, the stitch and the retry the group boxes, their edge margin and their
+consumers (`groupReservations`): the router reads the top groups and the frames, the stitch the top
+groups and the cells, the retry the cells. Placement routes trial models, so a retry can change which
+placement a round keeps, and with it the routes of links the batches drew; on the 05b pool no drawn
+link was lost (ticket 05 comments).
+
 Ports are `ShapeConnectionPin`s, one non-zero class id per port (its ordinal after the topology
 freeze), direction = the side, **`setExclusive(false)` for any port carrying more than one link
 end**, counting ends a region rule already fixed. A link that consumes a declared shared run does

@@ -1,0 +1,70 @@
+# Field-2026-11 ticket 05, review 1 (probe min-route, P1). A rank cell as a router obstacle in the ownership
+# batches split a batch here, and a link drawn before was removed. The cell retry keeps the batches as they
+# are, so the result is main's: link-9 removed (a skipped checkpoint, not a cell), the same turns and findings.
+portograph: 2
+groups:
+  pod-1:
+    tier: 1
+    label: pod-1
+  pod-2:
+    tier: 1
+    label: pod-2
+  pod-3:
+    tier: 0
+    shape: row
+    label: pod-3
+  pod-4:
+    tier: 1
+    label: pod-4
+nodes:
+  r1:
+    group: pod-1
+    class: router
+  r2:
+    group: pod-1
+    class: switch
+  n-2-1:
+    group: pod-2
+    class: router
+  n-3-1:
+    group: pod-3
+    class: switch
+  n-4-1:
+    group: pod-4
+    class: switch
+  n-4-2:
+    group: pod-4
+    class: switch
+  n-4-3:
+    group: pod-4
+    class: switch
+  n-4-4:
+    group: pod-4
+    class: router
+    label: "wide wide wide wide wide wide wide wide "
+  n-4-5:
+    group: pod-4
+    class: switch
+links:
+  - - r2
+    - n-3-1
+  - - r1
+    - r2
+  - - r1
+    - n-2-1
+  - - r2
+    - n-4-5
+  - - r2
+    - n-2-1
+  - - r1
+    - n-4-3
+  - - n-2-1
+    - r1
+  - - n-4-5
+    - n-2-1
+  - - n-4-2
+    - n-4-4
+  - - n-2-1
+    - n-4-3
+  - - n-2-1
+    - r1

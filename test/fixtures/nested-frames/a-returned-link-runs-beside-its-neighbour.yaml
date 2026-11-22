@@ -1,0 +1,34 @@
+# Field-2026-11 ticket 05, 05b pool. Main removes link-7 (fw-1 -> leaf-1a): it enters the foreign cell
+# pod-1#1 of its own frame. The cell retry draws it with eight turns, but it runs too near link-8
+# (leaf-1b -> leaf-1c) and adds a G6 parallel-clearance finding, and one crossing. This is a known regression
+# of the retry; the test pins it. The G9 min-separation finding of site and far is on main too.
+portograph: 2
+groups:
+  site: { label: Site }
+  m-1: { tier: 1, canton: site, label: M1 }
+  m-2: { tier: 2, canton: site, label: M2 }
+  m-3: { tier: 3, canton: site, label: M3 }
+  pod-1: { parent: m-2, label: Pod 1 }
+  far: { tier: 2, label: Far }
+  top: { tier: 0, label: Top }
+nodes:
+  isp-1: { group: top, class: cloud }
+  leaf-1a: { group: pod-1, class: switch }
+  leaf-1b: { group: pod-1, class: switch }
+  leaf-1c: { group: pod-1, class: switch }
+  h-1: { group: m-2, class: server }
+  r1a: { group: m-1, class: router }
+  r1b: { group: m-1, class: router }
+  r3a: { group: m-3, class: router }
+  r3b: { group: m-3, class: router }
+  fw-1: { group: far, class: firewall }
+links:
+  - [leaf-1a, r1a]
+  - [leaf-1b, r1b]
+  - [leaf-1a, leaf-1c]
+  - [leaf-1b, leaf-1c]
+  - [isp-1, r1a]
+  - [isp-1, r3a]
+  - [h-1, r1b]
+  - [fw-1, leaf-1a]
+  - [fw-1, isp-1]

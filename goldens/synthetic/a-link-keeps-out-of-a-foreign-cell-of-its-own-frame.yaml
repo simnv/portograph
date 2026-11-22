@@ -1,0 +1,37 @@
+# Expected: every link is drawn and no gate fails. `fw-1` stands beside the canton `site` on the
+# tier of member `m-2`, and links to `leaf-1a` in the child frame `pod-1`. `leaf-1a` and `leaf-1b`
+# stand in the first row of `pod-1`, and `leaf-1c` alone in the second (cell `pod-1#1`), grown wide
+# to stand under both.
+#
+# The router reads the frame `pod-1` as its obstacle, and a frame lets through every link that ends
+# in it, so in its ownership batch libavoid runs `fw-1 -> leaf-1a` down through the cell `pod-1#1`.
+# The stitch reads the cell, which lets through only a link that ends in it, and rejects the route:
+# `Routed path on link-6 enters reserved group:pod-1#1` (field-2026-11 ticket 05). Stage 8 then
+# routes the link once more, alone, after every batch, with the rank cells as walls (the cell retry),
+# and the link is drawn with four turns.
+portograph: 2
+groups:
+  site: { label: Site }
+  m-1: { tier: 1, canton: site, label: M1 }
+  m-2: { tier: 2, canton: site, label: M2 }
+  pod-1: { parent: m-2, label: Pod 1 }
+  far: { tier: 2, label: Far }
+  top: { tier: 0, label: Top }
+nodes:
+  isp-1: { group: top, class: cloud }
+  leaf-1a: { group: pod-1, class: switch }
+  leaf-1b: { group: pod-1, class: switch }
+  leaf-1c: { group: pod-1, class: switch }
+  h-1: { group: m-2, class: server }
+  r1a: { group: m-1, class: router }
+  r1b: { group: m-1, class: router }
+  fw-1: { group: far, class: firewall }
+links:
+  - [leaf-1a, r1a]
+  - [leaf-1b, r1b]
+  - [leaf-1a, leaf-1c]
+  - [leaf-1b, leaf-1c]
+  - [isp-1, r1a]
+  - [h-1, r1b]
+  - [fw-1, leaf-1a]
+  - [fw-1, isp-1]

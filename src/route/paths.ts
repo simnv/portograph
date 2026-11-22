@@ -69,6 +69,8 @@ export interface RouteRejection {
   connector?: string;
   checkpoint?: Point;
   producer?: string;
+  /** The reservation a routed segment entered, when that is why the route was rejected (`GapRejected.entered`). */
+  entered?: string;
   /** The router answer judged, per routed gap of the link that has one, in plan order; stage 8 stores it as `LayoutLink.rejectedRoute` (DR-14). */
   answer: { connector: string; points: Point[] }[];
 }
@@ -121,7 +123,14 @@ export function ownedLanes(model: LayoutModel, link: LayoutLink): Lane[] {
  * A judgement on the router's answer for one gap: the points it returned cannot be drawn as this link's route.
  * Only these are rejections (ticket 24); any other throw in stitching is a defect and stays fatal.
  */
-export class GapRejected extends Error {}
+export class GapRejected extends Error {
+  /** The reservation a routed segment entered (`reservations` id, such as `group:pod-1#1`), when that is the reason; read as data, never from the message. */
+  readonly entered?: string;
+  constructor(message: string, entered?: string) {
+    super(message);
+    if (entered !== undefined) this.entered = entered;
+  }
+}
 
 /**
  * Split and annotate a routed gap where it meets its own reserved lanes. A lane admits only its
@@ -226,7 +235,7 @@ function foreignJudgement(model: LayoutModel, link: LayoutLink, segments: PathSe
   for (const segment of segments) {
     if (isReserved(segment)) continue;
     const box = boxes.find(item => segmentRect(segment, shrink(item.bounds, TOLERANCE)));
-    if (box) throw new GapRejected(`Routed path on ${link.id} enters reserved ${box.id}`);
+    if (box) throw new GapRejected(`Routed path on ${link.id} enters reserved ${box.id}`, box.id);
   }
   for (const [end, segment, first] of [['from', segments[0]!, true], ['to', segments.at(-1)!, false]] as const) {
     const port = endPort(model, link, end);
@@ -276,7 +285,8 @@ export function tryStitch(model: LayoutModel, plan: LinkPlan, routes: Map<string
   try { return { path: stitchPath(model, plan, routes) }; }
   catch (error) {
     if (!(error instanceof GapRejected)) throw error;
-    return { rejection: { link: plan.link, code: 'ROUTE_GAP_REJECTED', reason: error.message, answer: answerOf(plan, routes) } };
+    return { rejection: { link: plan.link, code: 'ROUTE_GAP_REJECTED', reason: error.message, ...(error.entered !== undefined ? { entered: error.entered } : {}),
+      answer: answerOf(plan, routes) } };
   }
 }
 

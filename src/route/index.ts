@@ -10,6 +10,8 @@ import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
 import { stitchPaths, stubCandidate, tryStitch, type RouteRejection, type Stitched } from './paths.js';
+import { groupReservations } from './reservations.js';
+import type { RouteBatch, RoutedConnector } from './types.js';
 import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
 
 export type { RouteObstacle } from './obstacles.js';
@@ -98,8 +100,47 @@ async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOpti
           }
         }
       }
+      if (stitched) await retryCellRejections(model, plan, route, routes, stitched, protectedRuns);
     });
   return { routes, ...(stitched ? { stitched } : {}) };
+}
+
+/**
+ * The cell retry of stage 8 (field-2026-11 ticket 05). A rank cell is no router obstacle in the ownership batches: the frame stands for it,
+ * and the frame lets through every link that ends in it, so a cell never splits a batch and no reservation of the batches changes. The
+ * stitch reads the cell (`reservations`), and a route that enters a foreign cell of its own frame is rejected (`GapRejected.entered`).
+ * Such a link is routed once more, alone, after every batch: with every rank cell it does not consume as an obstacle (`groupReservations`,
+ * the producer the stitch reads) and every completed route protected, then judged by the same stitch. Only a link the batches removed is
+ * asked again, and nothing routes after it but a later retry, so no route the batches kept changes. Order: plan order (the link order of
+ * the model); a retried route protects the retries after it, and the stems and lane approaches of the later retries protect it (as
+ * `pendingStemObstacles` does between the batches). A retry that is rejected again keeps the link removed with the retry's answer,
+ * which the removal check judges again on restore (DR-14). The retries run in the route session, so they count against its budget (R4).
+ */
+async function retryCellRejections(model: LayoutModel, plan: RoutePlan, route: (batch: RouteBatch) => Promise<RoutedConnector[]>,
+  routes: Map<string, Point[]>, stitched: Map<string, Stitched>, protectedRuns: { obstacle: RouteObstacle; segment: { from: Point; to: Point } }[]): Promise<void> {
+  const cells = groupReservations(model).filter(item => item.kind === 'cell');
+  const isCell = (entered: string | undefined): boolean => entered !== undefined && cells.some(cell => `group:${cell.id}` === entered);
+  const retries = plan.links.filter(linkPlan => {
+    const done = stitched.get(linkPlan.link);
+    return done !== undefined && 'rejection' in done && done.rejection.code === 'ROUTE_GAP_REJECTED' && isCell(done.rejection.entered);
+  });
+  const walls: RouteObstacle[] = cells.map(cell => ({ id: `group:${cell.id}`, bounds: cell.bounds, consumers: [...cell.consumers] }));
+  for (const [index, linkPlan] of retries.entries()) {
+    const batch = { id: `cell-retry:${linkPlan.link}`, links: [linkPlan.link] };
+    // As between the batches: the stems and lane approaches of the retries after this one are reserved before they have a route.
+    const later = new Set(retries.slice(index + 1).map(item => item.link));
+    const routed = await route(batchRequest(plan, batch, [...walls, ...completedCrossingObstacles(plan, batch, protectedRuns),
+      ...pendingStemObstacles(plan, batch, later)]));
+    const answer = new Map(routed.map(item => [item.connector, item.points] as const));
+    const again = tryStitch(model, linkPlan, answer);
+    stitched.set(linkPlan.link, again);
+    if ('rejection' in again) continue;
+    const link = model.links.find(item => item.id === linkPlan.link)!;
+    for (const [connector, points] of answer) {
+      routes.set(connector, points);
+      protectedRuns.push(...completedRouteCovers(model, link, connector, points));
+    }
+  }
 }
 
 /** One end of a link as an author writes it: `node.port#ordinal`, `node.#ordinal` for an anonymous port, `group <id>` for a group end. */

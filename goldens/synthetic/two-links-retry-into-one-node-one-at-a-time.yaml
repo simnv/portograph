@@ -1,0 +1,35 @@
+# Expected: every link is drawn and no gate fails. Sheet `a-link-keeps-out-of-a-foreign-cell-of-its-own-frame`
+# with a second firewall `fw-2` that also links to `leaf-1a`. In their ownership batch libavoid runs both
+# links down through the cell `pod-1#1`, and the stitch rejects both (field-2026-11 ticket 05). The cell
+# retry routes them one at a time, in plan order: the first retry reserves the stem of the second (as
+# `pendingStemObstacles` does between the batches), and the second retry has the first route as a
+# protected run. Without the stem reservation the first route ran over the stem tip of the second, and
+# the second answer did not meet its port. The result does not change when the links are written in reverse.
+portograph: 2
+groups:
+  site: { label: Site }
+  m-1: { tier: 1, canton: site, label: M1 }
+  m-2: { tier: 2, canton: site, label: M2 }
+  pod-1: { parent: m-2, label: Pod 1 }
+  far: { tier: 2, label: Far }
+  top: { tier: 0, label: Top }
+nodes:
+  isp-1: { group: top, class: cloud }
+  leaf-1a: { group: pod-1, class: switch }
+  leaf-1b: { group: pod-1, class: switch }
+  leaf-1c: { group: pod-1, class: switch }
+  h-1: { group: m-2, class: server }
+  r1a: { group: m-1, class: router }
+  r1b: { group: m-1, class: router }
+  fw-1: { group: far, class: firewall }
+  fw-2: { group: far, class: firewall }
+links:
+  - [leaf-1a, r1a]
+  - [leaf-1b, r1b]
+  - [leaf-1a, leaf-1c]
+  - [leaf-1b, leaf-1c]
+  - [isp-1, r1a]
+  - [h-1, r1b]
+  - [fw-1, leaf-1a]
+  - [fw-1, isp-1]
+  - [fw-2, leaf-1a]

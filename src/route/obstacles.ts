@@ -1,8 +1,8 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
-import { groupBoxes, groupConsumers } from '../score/model.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
+import { groupReservations } from './reservations.js';
 import { GROUP_LABEL_GEOMETRY, routedStroke } from '../layout/bands.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
@@ -172,11 +172,13 @@ export function routeObstacles(model: LayoutModel): RouteObstacle[] {
   }
   // A group box, with its edge margin, obstructs every link that neither attaches inside it nor
   // owns a lane in its margin (ADR-0013). Attached links still cross the boundary at their ports.
-  // A rank cell is never an obstacle: the frame it belongs to is, in its place.
-  for (const { id, bounds } of groupBoxes(model)) {
+  // A rank cell is no obstacle here: the frame it belongs to is, in its place. The cell is read by the stitch (`reservations`) and by the cell
+  // retry of stage 8 (`retryCellRejections`); one producer gives all three readers the box, the margin and the consumers (`groupReservations`).
+  for (const item of groupReservations(model)) {
+    if (item.kind === 'cell') continue;
     // A link that has left this box by a reserved exit starts outside it and may not come back into its margin (architecture ticket 13).
-    const left = new Set((model.groupExits ?? []).filter(exit => exit.exited.includes(id)).map(exit => exit.link));
-    push({ id: `group:${id}`, bounds: expand(bounds, half + GROUP_EDGE_LINK_CLEARANCE), consumers: groupConsumers(model, id).filter(link => !left.has(link)) });
+    const left = new Set((model.groupExits ?? []).filter(exit => exit.exited.includes(item.id)).map(exit => exit.link));
+    push({ id: `group:${item.id}`, bounds: item.bounds, consumers: item.consumers.filter(link => !left.has(link)) });
   }
   // A label band reserves placement space, not a solid barrier across the whole group.
   // Its measured label is protected above, including against the group's own attachments.
