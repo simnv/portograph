@@ -92,6 +92,8 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
         else v.report('INVALID_TYPE', `${path}.layout.${key}`, 'Expected an ELK scalar option');
       }
       content.layout = layout;
+      // No stage reads a group's `layout` (audit M-6, ticket 14): the key is accepted and stored, and it says so, like `collapsed`.
+      v.report('GROUP_LAYOUT_IGNORED', `${path}.layout`, 'layout on a group is ignored; no stage reads it (document settings go in the top-level layout)', 'warning', 'model');
     }
     if (fields.has('parent')) {
       const parent = v.identifier(fields.get('parent'), `${path}.parent`);

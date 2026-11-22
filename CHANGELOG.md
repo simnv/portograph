@@ -20,6 +20,7 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 
 ### Changed
 
+- A `layout:` key on a group now gives the warning `GROUP_LAYOUT_IGNORED`, at the key. No stage ever read it; the key is still accepted, so every file that rendered before still renders, and the layout does not change.
 - **Breaking: Node.js 26 or newer is required (was 22).** `engines.node` is `>=26`. CI and the release run on Node 26. On an older Node, npm warns at install, and portograph is not tested there.
 
 ### Fixed

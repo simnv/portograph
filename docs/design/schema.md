@@ -86,7 +86,7 @@ pipeline. Labels are free text; ids are not.
 | `class` | string | |
 | `meta` | map | metadata for the draw.io export, on the group cell (a canton, a member, a child group and a flank too); see **Meta** below |
 | `collapsed` | bool | M1: warning, ignored |
-| `layout` | map | accepted and stored as ELK scalar options; no stage passes it to ELK for the group's own algorithm today (audit M-6, D17, 2026-11-07), so it has no effect on the layout, and the parser gives no diagnostic for it. Whether it warns, fails or becomes a real pass-through is open (PQ-6, ticket T-06) |
+| `layout` | map | accepted and stored as ELK scalar options, and ignored: no stage passes it to ELK for the group's own algorithm (audit M-6, D17, 2026-11-07). The parser gives the warning `GROUP_LAYOUT_IGNORED` at `$.groups.<id>.layout` for every group that has the key, and the layout does not change. A value that is not a scalar is `INVALID_TYPE`. Whether it becomes a real pass-through is open (PQ-6, ticket T-06) |
 
 **Nested groups.** Groups nest in two ways, and the deepest structure is canton, member, child.
 A flank (`align` with `of`) stands beside a tier group; it is not nesting.

@@ -122,6 +122,19 @@ describe('schema normalisation', () => {
     expect(parse(source({ links: [] })).links).toEqual([]);
   });
 
+  it('warns that a group layout key is ignored, at the key, and still parses it (field ticket 14)', () => {
+    const found: { code: string; path?: string; severity: string }[] = [];
+    const doc = parse(source({ groups: { g: { layout: { 'elk.spacing.nodeNode': 20 } }, h: { tier: 1, layout: {} } } }), { onDiagnostic: d => found.push(d as never) });
+    const warned = found.filter(d => d.code === 'GROUP_LAYOUT_IGNORED');
+    expect(warned.map(d => [d.path, d.severity])).toEqual([['$.groups.g.layout', 'warning'], ['$.groups.h.layout', 'warning']]);
+    expect(doc.groups.g!.layout).toEqual({ 'elk.spacing.nodeNode': 20 });
+    expect(found.filter(d => d.severity === 'error')).toEqual([]);
+    // No key, no warning; the top-level layout is unaffected.
+    const quiet: string[] = [];
+    parse(source({ layout: { aspect: '16:9' }, groups: { g: {} } }), { onDiagnostic: d => quiet.push(d.code) });
+    expect(quiet).not.toContain('GROUP_LAYOUT_IGNORED');
+  });
+
   it('exposes warnings without adding authored keys and errors without accidental exceptions', () => {
     const warnings: string[] = [];
     const doc = parse(source({ groups: { g: { collapsed: true } } }), { onDiagnostic: d => warnings.push(d.code) });
