@@ -6,13 +6,16 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from './fixture.js';
 import type { CreateRouteAttempt } from '../../src/route/worker.js';
 import type { Point } from '../../src/model/geometry.js';
+import { cellRetryCutMessage, rejectionMessage } from '../../src/route/paths.js';
 
 /**
  * Field-2026-11 ticket 05, re-check of 05b (P1, restore). A link that stays removed after the cell retry of stage 8 stores both answers with
  * their roles: the first (`cellRejectedRoute`, it entered a foreign rank cell) and the retry's (`rejectedRoute`, its rejection). A retry
  * that the route session cut stores the first answer and `cellRetryCut`. Restore judges each role with `tryStitch`, and refuses a removal
- * whose only answer the retry routes again, with no retry answer and no cut mark. Limit: restore cannot prove that the router returned a
- * stored unusable answer, nor that the session ended (the same limit as ticket 02; only routing again could prove it).
+ * whose only answer the retry routes again, with no retry answer and no cut mark. A cut mark needs its two warnings (round 2), and no retry
+ * after a cut one in the retry's order records a completed retry (round 2). Limit: restore cannot prove that the router returned a stored
+ * unusable answer, nor that the session ended; a warning is no proof of a deadline (the same limit as ticket 02; only routing again could
+ * prove it).
  */
 const nested = (name: string): string => readFileSync(new URL(`../fixtures/nested-frames/${name}.yaml`, import.meta.url), 'utf8');
 type Answer = { connector: string; points: Point[] }[];
@@ -53,6 +56,14 @@ const forged = (model: LayoutModel, id: string, answer: Answer, extra: Partial<L
   return copy;
 };
 const answerOf = (answers: Answer, id: string): Answer => answers.filter(item => item.connector.startsWith(`${id}#`));
+/** The model with the two warnings of a cut retry of `id` added, as stage 8 writes them for a batch answer that entered `cell`. */
+const cutWarnings = (model: LayoutModel, id: string, cell: string, which: ('removal' | 'cut')[] = ['removal', 'cut']): LayoutModel => {
+  const copy = structuredClone(model), link = copy.links.find(item => item.id === id)!;
+  const rejection = { link: id, code: 'ROUTE_GAP_REJECTED' as const, reason: `Routed path on ${id} enters reserved ${cell}`, answer: [] };
+  if (which.includes('removal')) copy.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'ROUTE_GAP_REJECTED', message: rejectionMessage(link, rejection), owners: [{ ...link.owner }] });
+  if (which.includes('cut')) copy.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'ROUTE_CELL_RETRY_CUT', message: cellRetryCutMessage(id), owners: [{ ...link.owner }] });
+  return copy;
+};
 
 describe('restore judges the roles of a cell retry (field-2026-11 ticket 05, re-check of 05b)', () => {
   it('refuses a drawn retry forged as a removal that stores only the first answer; the genuine model restores', async () => {
@@ -74,6 +85,12 @@ describe('restore judges the roles of a cell retry (field-2026-11 ticket 05, re-
       .toBe('Removed link link-7 has a usable stored route; its removal is not reproduced');
     expect(restoreError(forged(model, 'link-7', first, { cellRejectedRoute: first })))
       .toBe('Removed link link-7 stores a retry answer that enters group:pod-1#1; the cell retry routes with the rank cells as walls');
+    // Round 2, P2: a claimed cut keeps its two warnings, derived from the saved answer, so the removal is never silent.
+    const claimed = forged(model, 'link-7', first, { cellRetryCut: true });
+    expect(restoreError(claimed)).toBe('Removed link link-7 marks a cut cell retry without its ROUTE_GAP_REJECTED warning');
+    expect(restoreError(cutWarnings(claimed, 'link-7', 'group:pod-1#1', ['removal']))).toBe('Removed link link-7 marks a cut cell retry without its ROUTE_CELL_RETRY_CUT warning');
+    // The stated limit: with both warnings the claimed cut restores; a warning is no proof of a deadline.
+    expect(restoreError(cutWarnings(claimed, 'link-7', 'group:pod-1#1'))).toBe('ACCEPTED');
   }, 120000);
 
   it('restores a genuine twice-rejected removal with both roles, and refuses it without the first role or with a wrong one', async () => {
@@ -97,5 +114,9 @@ describe('restore judges the roles of a cell retry (field-2026-11 ticket 05, re-
       .toBe('Removed link link-4 marks a cut cell retry, but its answer enters no rank cell');
     expect(restoreError(forged(model, 'link-7', link7.rejectedRoute!, { cellRejectedRoute: link7.cellRejectedRoute!, cellRetryCut: true })))
       .toBe('Removed link link-7 stores a first answer and a cut cell retry; a cut retry has no answer of its own');
+    // Round 2, P2: one route session ends at its cut. link-7 retries before link-8 (plan order), so a cut link-7 beside a completed retry of
+    // link-8 is a history the loop cannot write, also with both warnings of the cut.
+    expect(restoreError(cutWarnings(forged(model, 'link-7', link7.cellRejectedRoute!, { cellRetryCut: true }), 'link-7', 'group:pod-1#1')))
+      .toBe('Removed link link-8 records a completed cell retry after the cut retry of link-7; one route session ends at its cut');
   }, 120000);
 });

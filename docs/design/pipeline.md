@@ -2562,9 +2562,12 @@ Restore judges the roles with `tryStitch`, with the one predicate stage 8 reads
 (`cellRetryEligible`). The first answer must be a rejection the retry routes again, and the retry's
 answer a rejection that enters no rank cell (the retry routes with the cells as walls). A removal
 whose only answer the retry would route again, with no retry answer and no cut mark, is refused. A cut
-mark needs such an answer and no first answer beside it. Limit: restore cannot prove that the router
-returned a stored unusable answer, nor that the session ended; only routing again could prove it (the
-same limit as ticket 02). One
+mark needs such an answer, no first answer beside it, and its two warnings (the removal warning and
+`ROUTE_CELL_RETRY_CUT`, derived from the saved answer), so a cut is never silent. One route session
+ends at its cut: after a cut link, in the retry's order (`cellRetryOrder`, the reader stage 8 uses),
+no link records a completed retry. Limit: restore cannot prove that the router returned a stored
+unusable answer, nor that the session ended; a warning is no proof of a deadline. Only routing again
+could prove it (the same limit as ticket 02). One
 producer gives the router, the stitch and the retry the group boxes, their edge margin and their
 consumers (`groupReservations`): the router reads the top groups and the frames, the stitch the top
 groups and the cells, the retry the cells. Placement routes trial models, so a retry can change which

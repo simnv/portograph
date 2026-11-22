@@ -6,11 +6,11 @@ import { endPort } from '../layout/approach.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EPS, horizontal, length, near, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { outward } from '../score/model.js';
-import { effectiveLayer, placementRuns, plannedRunsOf, planRoute, reversedRuns, type LinkPlan, type PlannedRun } from './plan.js';
+import { cellRetryOrder, effectiveLayer, placementRuns, plannedRunsOf, planRoute, reversedRuns, type LinkPlan, type PlannedRun } from './plan.js';
 import { frozenLevelChordsFault, isRoutedChord } from '../layout/frame-paths.js';
 import { pathEnd } from '../layout/path-end.js';
 import { sharedBlockers, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
-import { ownedLanes, stubCandidate, tryStitch, type RouteRejection } from './paths.js';
+import { cellRetryCutMessage, ownedLanes, rejectionMessage, stubCandidate, tryStitch, type RouteRejection } from './paths.js';
 import { cellRetryEligible, MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
 
 
@@ -205,7 +205,8 @@ function routerAnswerFloor(points: readonly Point[]): string | undefined {
  * router answer reaches (`routerAnswerFloor`); an answer the judgement cannot read; an answer that stitches into a usable path.
  * After the cell retry of stage 8 a removal has roles (field-2026-11 ticket 05): the first answer (`cellRejectedRoute`) must be a rejection
  * the retry routes again (`cellRetryEligible`) and the retry's answer one that enters no cell; a lone answer the retry would route again
- * needs the cut mark (`cellRetryCut`), and is refused without it.
+ * needs the cut mark (`cellRetryCut`), and is refused without it. A cut mark needs its two warnings (the removal and `ROUTE_CELL_RETRY_CUT`,
+ * derived from the saved answer), and no retry after a cut one, in the retry's order (`cellRetryOrder`), records a completed retry.
  * The router does not run again: this proves that the stored answer is unusable and has a router answer's shape, not that the router
  * had to give it, nor that a cut retry's session ended. A well-formed answer the judgement rejects still passes; only routing again would
  * refuse it. No removed link: nothing is planned.
@@ -232,9 +233,23 @@ function removalsReproduced(model: LayoutModel): void {
       if (cellRetryEligible(view, final)) throw new Error(`Removed link ${link.id} stores a retry answer that enters ${final.entered}; the cell retry routes with the rank cells as walls`);
     } else if (link.cellRetryCut === true) {
       if (!cellRetryEligible(view, final)) throw new Error(`Removed link ${link.id} marks a cut cell retry, but its answer enters no rank cell`);
+      // The mark keeps its two warnings, derived here from the saved answer, so a cut is never silent. A warning is no proof of a deadline.
+      for (const [code, message] of [[final.code, rejectionMessage(link, final)], ['ROUTE_CELL_RETRY_CUT', cellRetryCutMessage(link.id)]] as const) {
+        if (!model.diagnostics.some(item => item.severity === 'warning' && item.code === code && item.message === message)) {
+          throw new Error(`Removed link ${link.id} marks a cut cell retry without its ${code} warning`);
+        }
+      }
     } else if (cellRetryEligible(view, final)) {
       throw new Error(`Removed link ${link.id} stores only an answer that enters ${final.entered}; the cell retry routes it again, and no retry answer is stored`);
     }
+  }
+  // One route session ends at a cut: the retries after a cut link, in the retry's own order (`cellRetryOrder`), did not run, so none of them
+  // records a completed retry (a first answer beside the retry's answer).
+  const recorded = cellRetryOrder(plan, id => removed.some(link => link.id === id && (link.cellRetryCut === true || link.cellRejectedRoute !== undefined)));
+  const cut = recorded.findIndex(item => removed.find(link => link.id === item.link)!.cellRetryCut === true);
+  const after = cut < 0 ? undefined : recorded.slice(cut + 1).find(item => removed.find(link => link.id === item.link)!.cellRejectedRoute !== undefined);
+  if (after !== undefined) {
+    throw new Error(`Removed link ${after.link} records a completed cell retry after the cut retry of ${recorded[cut]!.link}; one route session ends at its cut`);
   }
 }
 

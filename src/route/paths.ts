@@ -278,6 +278,25 @@ function joinSeams(segments: PathSegment[], claimed: readonly boolean[]): PathSe
 
 export type Stitched = { path: LayoutPath } | { rejection: RouteRejection };
 
+/** One end of a link as an author writes it: `node.port#ordinal`, `node.#ordinal` for an anonymous port, `group <id>` for a group end. */
+function endText(end: LayoutLink['from']): string {
+  if (end.node === undefined) return `group ${end.group}`;
+  return `${end.node}.${end.anonymous === true ? '' : end.name}#${end.ordinal}`;
+}
+
+/** The warning of one removed link: its id, its two ends (the concrete ports when a group link was expanded) and the document link it came from, then the reason. */
+export function rejectionMessage(link: LayoutLink, item: RouteRejection): string {
+  const named = `${link.id} was removed (${endText(link.attachments?.from ?? link.from)} to ${endText(link.attachments?.to ?? link.to)}, document link ${link.sourceIndex})`;
+  return item.code === 'ROUTE_CHECKPOINT_SKIPPED'
+    ? `${named}: the router skipped the required checkpoint (${item.checkpoint!.x}, ${item.checkpoint!.y}) of ${item.connector}, reserved by ${item.producer}.`
+    : `${named}: its route was rejected (${item.reason}).`;
+}
+
+/** The warning of a removed link whose cell retry the route session cut (`ROUTE_CELL_RETRY_CUT`); stage 8 writes it and restore asks for it. */
+export function cellRetryCutMessage(id: string): string {
+  return `${id} was not routed again around the rank cells: the route session ended first.`;
+}
+
 /**
  * One link's final path, or the reason its route is unusable. A route that skips a required checkpoint, and a
  * route that stitching refuses for any other reason, are the same class: the link cannot be drawn, and the

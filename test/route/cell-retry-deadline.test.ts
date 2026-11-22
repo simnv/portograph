@@ -57,6 +57,10 @@ describe('a route-session deadline during the cell retry (field-2026-11 ticket 0
     ]);
     for (const link of model.links) if (link.removed !== true) expect(link.path, link.id).toBeDefined();
     expect(restoreFinalLayout(serializeLayoutModel(model)).removedLinks).toEqual(['link-6', 'link-7']);
+    // Round 2: the genuine cut restores only with its warnings (a warning is no proof of a deadline; it keeps the cut visible).
+    const without = structuredClone(model);
+    without.diagnostics = without.diagnostics.filter(item => !(item.code === 'ROUTE_CELL_RETRY_CUT' && item.message.startsWith('link-7 ')));
+    expect(() => restoreFinalLayout(serializeLayoutModel(without))).toThrow('Removed link link-7 marks a cut cell retry without its ROUTE_CELL_RETRY_CUT warning');
   }, 120000);
 
   it('stops the command when the session deadline is the command deadline', async () => {

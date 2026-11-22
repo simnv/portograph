@@ -8,8 +8,8 @@ import { unfitGaps, unfitMessage } from '../layout/gap-room.js';
 import { bodiesPassedOver } from '../layout/overlay-paths.js';
 import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
-import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
-import { stitchPaths, stubCandidate, tryStitch, type RouteRejection, type Stitched } from './paths.js';
+import { batchRequest, cellRetryOrder, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
+import { cellRetryCutMessage, rejectionMessage, stitchPaths, stubCandidate, tryStitch, type RouteRejection, type Stitched } from './paths.js';
 import { cellRetryEligible, groupReservations } from './reservations.js';
 import type { RouteBatch, RoutedConnector } from './types.js';
 import { ROUTE_BUDGET_MS, RouteDeadlineError, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
@@ -150,7 +150,7 @@ const rejectionOf = (done: Stitched | undefined): RouteRejection | undefined => 
 async function retryCellRejections(model: LayoutModel, plan: RoutePlan, route: (batch: RouteBatch) => Promise<RoutedConnector[]>,
   routes: Map<string, Point[]>, stitched: Map<string, Stitched>, protectedRuns: { obstacle: RouteObstacle; segment: { from: Point; to: Point } }[],
   outstanding: Set<string>): Promise<void> {
-  const retries = plan.links.filter(linkPlan => outstanding.has(linkPlan.link));
+  const retries = cellRetryOrder(plan, id => outstanding.has(id));
   const walls: RouteObstacle[] = groupReservations(model).filter(item => item.kind === 'cell')
     .map(cell => ({ id: `group:${cell.id}`, bounds: cell.bounds, consumers: [...cell.consumers] }));
   for (const [index, linkPlan] of retries.entries()) {
@@ -187,20 +187,6 @@ export function markRemoved(link: LayoutLink, item: RouteRejection): void {
   if (item.retryCut === true) link.cellRetryCut = true;
 }
 
-/** One end of a link as an author writes it: `node.port#ordinal`, `node.#ordinal` for an anonymous port, `group <id>` for a group end. */
-function endText(end: LayoutLink['from']): string {
-  if (end.node === undefined) return `group ${end.group}`;
-  return `${end.node}.${end.anonymous === true ? '' : end.name}#${end.ordinal}`;
-}
-
-/** The warning of one removed link: its id, its two ends (the concrete ports when a group link was expanded) and the document link it came from, then the reason. */
-function rejectionMessage(link: LayoutLink, item: RouteRejection): string {
-  const named = `${link.id} was removed (${endText(link.attachments?.from ?? link.from)} to ${endText(link.attachments?.to ?? link.to)}, document link ${link.sourceIndex})`;
-  return item.code === 'ROUTE_CHECKPOINT_SKIPPED'
-    ? `${named}: the router skipped the required checkpoint (${item.checkpoint!.x}, ${item.checkpoint!.y}) of ${item.connector}, reserved by ${item.producer}.`
-    : `${named}: its route was rejected (${item.reason}).`;
-}
-
 /**
  * Stage 8. libavoid routes only what the region rules did not claim; every reserved run is kept
  * exactly and stitched into a complete source-to-target path. The router runs asynchronously in a
@@ -225,7 +211,7 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
       draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: item.code,
         message: rejectionMessage(link, item), owners: [{ ...link.owner }] });
       if (item.retryCut === true) draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'ROUTE_CELL_RETRY_CUT',
-        message: `${link.id} was not routed again around the rank cells: the route session ended first.`, owners: [{ ...link.owner }] });
+        message: cellRetryCutMessage(link.id), owners: [{ ...link.owner }] });
     }
     // A gap that stopped fitting after 7f sized it (the corridor move, a later stage) is planned by nobody: its parts are the router's,
     // and the diagnostic says so, unless 7f already named the gap (`TIER_GAP_PART_UNFIT` from the round cap).

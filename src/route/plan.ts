@@ -699,6 +699,14 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
 }
 
 /**
+ * The links of the cell retry of stage 8 in the order it routes them: plan order (field-2026-11 ticket 05). The retry (`retryCellRejections`)
+ * and restore (`removalsReproduced`, which reads the recorded retries in this order) share this one reader (R1).
+ */
+export function cellRetryOrder(plan: RoutePlan, retried: (link: string) => boolean): LinkPlan[] {
+  return plan.links.filter(item => retried(item.link));
+}
+
+/**
  * The reserved stems and lane approaches a batch must leave alone: those of the links no batch has
  * routed yet. An earlier batch is otherwise free to run through the outward stem or the head-on
  * lane approach of a link it has never seen, and that link then has no route to its own port or
