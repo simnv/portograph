@@ -13,6 +13,8 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-22
+
 ### Added
 
 - **`--fail-on-removed`** (`layout`, `render`, `score`): the command exits with 1 when the router removed a link, and still writes all its files. The warning of each removed link (`ROUTE_GAP_REJECTED`, `ROUTE_CHECKPOINT_SKIPPED`) now names the two ends of the link and its place in `links`. Without the flag, a removal still gives exit code 0.
@@ -25,6 +27,8 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 
 ### Fixed
 
+- A layout no longer fails with `The placement input flatBlockGaps: the flat block gap of … names no flat block` on some values of `layout.aspect`. A placement trial that makes a flat solid block steep again is now refused by name, and the layout keeps its earlier placement.
+- `render` and `score` from a saved layout JSON now refuse a `meta` key or value that the YAML reader refuses, with the path of the field and exit code 2. Before, such a file gave a draw.io file that was not valid XML.
 - A canton whose member holds a child group no longer fails with `Lane … crosses occupied group …`. A lane that a member holds is now reserved before a lane that the canton holds and that crosses the member.
 - A link that the router ran through a rank cell of its own frame, where it does not end, is no longer always removed. Stage 8 routes it once more after the other links, with the rank cells as walls, and draws it when the route is usable.
 - A layout no longer fails with `Removed link … stores an answer … that no router gives: it meets both ends of its gap, honours its checkpoints and is not orthogonal`. libavoid gives such an answer when it cannot reach a point after it passed every checkpoint. Stage 8 removes the link with the warning `ROUTE_GAP_REJECTED`, and restore now accepts that removal.
@@ -126,7 +130,8 @@ First release.
 - The draw.io export (`--format drawio`) with the binding contract, schema version 1: the `pg-*` attributes on the cells, stable ids, and the `meta:` of the author as attributes. Themes (light, dark, print) and the Cisco glyphs of draw.io are options.
 - Diagnostics with the file, line and column of the YAML, as text or as JSON lines.
 
-[Unreleased]: https://github.com/simnv/portograph/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/simnv/portograph/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/simnv/portograph/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/simnv/portograph/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/simnv/portograph/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/simnv/portograph/compare/v0.2.0...v0.2.1
