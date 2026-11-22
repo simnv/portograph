@@ -120,6 +120,12 @@ groups:
   core-a:  { parent: core, label: Pair A } # a child group of a member
 ```
 
+**Order of peer groups.** Two groups of one tier are exact peers when their links are the same up to renaming. No feed orders them, so
+their left-to-right order follows the order in the text: `groups` first, then `nodes` and `links`. The solver breaks the tie from that
+order, so the result is not always the declared order, but one text gives one picture. A changed order of declaration can give another
+picture. A generator that wants a stable picture must write the groups, the nodes and the links in one stable order. A canton fixes which
+groups are its members, not the order of the groups outside it; its members on one sub-tier stand in declaration order.
+
 **Shapes.** `shape:` says how a group stands its nodes.
 
 - **`ranked`** (the default; ADR-0019). The group puts its nodes on rows by the routed links inside
