@@ -178,6 +178,24 @@ describe('a link a foreign rank cell of its own frame rejects is routed once mor
     expect(score(model).snapshot.metrics.crossings.count).toBe(4);
   }, 60000);
 
+  it('the course preflight routes as stage 8 (review re-check of 05b, P2): it names no link that the cell retry draws', async () => {
+    // Before, the preflight ran the batches without the retry, named link-2 lost (its first answer enters pod-1#1) and refused the trial at
+    // 7e (stage `bundles`). With the shared loop the trial reaches 7f (stage `bands`), and the guard after the route refuses it for link-6
+    // and link-12, which it does lose.
+    const trials: { reason?: string; stage?: string }[] = [];
+    const model = await layout(parse(sheet('a-course-preflight-routes-as-stage-8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      testSideTrace: event => {
+        const item = event as { ev?: string; verdict?: { reason?: string }; trial?: { stage?: string } };
+        if (item.ev === 'course-trial') trials.push({ ...(item.verdict?.reason ? { reason: item.verdict.reason } : {}), ...(item.trial?.stage ? { stage: item.trial.stage } : {}) });
+      } });
+    expect(trials.length).toBeGreaterThan(0);
+    for (const trial of trials) {
+      expect(trial.stage).toBe('bands');
+      expect(trial.reason).toBe('the trial\'s route removes link-6, link-12, which the baseline\'s route keeps');
+    }
+    expect(model.removedLinks).toEqual(['link-13', 'link-14']);
+  }, 60000);
+
   it('known regression: the returned link fw-1 -> leaf-1a runs too near leaf-1b -> leaf-1c (G6) and crosses one link', async () => {
     // Main removes link-7 and has the G9 finding only. When a fix keeps link-7 apart from link-8, this list loses the G6 entry: update it.
     const text = sheet('a-returned-link-runs-beside-its-neighbour');

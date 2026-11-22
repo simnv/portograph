@@ -2548,8 +2548,23 @@ more, alone (`retryCellRejections`): every rank cell is a wall with the consumer
 every completed route is a protected run, and the stems and lane approaches of the retries after it
 are reserved (`pendingStemObstacles`, as between the batches). The same stitch judges the answer. The
 retries go in plan order, and a drawn retry protects the retries after it. A retry that is rejected
-again leaves the link removed with the retry's answer and reason, and restore judges that answer again
-as for any removal. The retries run in the route session, so they count against its budget. One
+again leaves the link removed with both answers and their roles: the first answer
+(`LayoutLink.cellRejectedRoute`, it entered a foreign cell) and the retry's answer (`rejectedRoute`,
+its rejection). The retries run in the route session, so they count against its budget. When the
+session deadline comes during the retries, the batch routes and the finished retries stand; each
+retry still to run leaves its link removed with its batch rejection and warning, marked
+`cellRetryCut` with the warning `ROUTE_CELL_RETRY_CUT`. When the command's own deadline has passed
+(`RouteOptions.commandOver`), the deadline ends the command, a hard stop. The course preflight
+(`routeAt7e`) routes with the same function as stage 8 (`routeBatches`), so it judges the routes the
+published model would have.
+
+Restore judges the roles with `tryStitch`, with the one predicate stage 8 reads
+(`cellRetryEligible`). The first answer must be a rejection the retry routes again, and the retry's
+answer a rejection that enters no rank cell (the retry routes with the cells as walls). A removal
+whose only answer the retry would route again, with no retry answer and no cut mark, is refused. A cut
+mark needs such an answer and no first answer beside it. Limit: restore cannot prove that the router
+returned a stored unusable answer, nor that the session ended; only routing again could prove it (the
+same limit as ticket 02). One
 producer gives the router, the stitch and the retry the group boxes, their edge margin and their
 consumers (`groupReservations`): the router reads the top groups and the frames, the stitch the top
 groups and the cells, the retry the cells. Placement routes trial models, so a retry can change which

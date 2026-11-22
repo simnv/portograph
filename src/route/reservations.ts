@@ -36,6 +36,15 @@ export function groupReservations(model: LayoutModel): GroupReservation[] {
 }
 
 /**
+ * The rejection the cell retry of stage 8 routes again: the stitch refused the route because it entered a rank cell (`GapRejected.entered`
+ * names a cell of `groupReservations`). Stage 8 and restore read this one predicate (R1; field-2026-11 ticket 05).
+ */
+export function cellRetryEligible(model: LayoutModel, rejection: { code: string; entered?: string } | undefined): boolean {
+  if (rejection?.code !== 'ROUTE_GAP_REJECTED' || rejection.entered === undefined) return false;
+  return groupReservations(model).some(item => item.kind === 'cell' && `group:${item.id}` === rejection.entered);
+}
+
+/**
  * Reserved rectangles a newly routed segment may not enter. Nodes, pills, labels and fixed paths
  * are judged by the public gates; lane and bundle reservations are not, so stage 8 asserts them
  * directly. A label band's unused space is traversable; its actual label remains protected.

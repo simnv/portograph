@@ -124,6 +124,7 @@ export function createEnv(document: NormalisedDocument, options: LayoutOptions):
         // The router's own timer must be positive; the remainder was checked above, and a 1 ms floor keeps the session honest rather than letting
         // it fall back to a fresh full policy.
         routeBudgetMs: Math.max(1, budget.share(options.routeBudgetMs ?? ROUTE_BUDGET_MS)),
+        commandOver: () => budget.remainingMs() <= 0,
       }));
       report('route', started, trial);
       return routed;

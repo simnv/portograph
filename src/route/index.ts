@@ -10,9 +10,9 @@ import { withLayoutMutation } from '../layout/mutation.js';
 import { completedRouteCovers, type RouteObstacle } from './obstacles.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute, type RoutePlan } from './plan.js';
 import { stitchPaths, stubCandidate, tryStitch, type RouteRejection, type Stitched } from './paths.js';
-import { groupReservations } from './reservations.js';
+import { cellRetryEligible, groupReservations } from './reservations.js';
 import type { RouteBatch, RoutedConnector } from './types.js';
-import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
+import { ROUTE_BUDGET_MS, RouteDeadlineError, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
 
 export type { RouteObstacle } from './obstacles.js';
 export type { LinkPlan, PlacementRuns, PlannedRun, RoutePiece, RoutePlan, StemReservation } from './plan.js';
@@ -48,6 +48,11 @@ export interface RouteOptions {
    * publishes is routed without this.
    */
   ordinaryOverlay?: boolean;
+  /**
+   * The command's own deadline has passed. A route-session deadline during the cell retry keeps the batch routes (`routeBatches`) unless
+   * this answers true; then the deadline ends the command, a hard stop. Without it (a direct `route` call) the session limit is the only one.
+   */
+  commandOver?: () => boolean;
 }
 
 /**
@@ -57,74 +62,97 @@ export interface RouteOptions {
  */
 export function routeRemainders(model: LayoutModel): string[] { return planRoute(model).remainders; }
 
-interface RouterAnswer { routes: Map<string, Point[]>; stitched?: Map<string, Stitched> }
+/** The router's answer for one plan: the routes per connector and, in tolerant mode, the judgement of each routed link. */
+export interface RouterAnswer { routes: Map<string, Point[]>; stitched?: Map<string, Stitched> }
 
-async function runRouter(model: LayoutModel, plan: RoutePlan, options: RouteOptions): Promise<RouterAnswer> {
+/**
+ * The ownership batches and the cell retry after them, in one route session: the one loop of stage 8 (`route`) and of the course
+ * preflight (`routeAt7e` in `pipeline/rounds.ts`; R1, field-2026-11 ticket 05, re-check of 05b). Every exit terminates the session.
+ *
+ * A route-session deadline during the batches ends the call (`RouteDeadlineError`). During the cell retry it does not: the batch
+ * routes and the retries that finished stand, and each retry still to run keeps its batch rejection, marked as cut (`retryCut`), so the
+ * link stays removed with its warning. When the command's own deadline has passed (`RouteOptions.commandOver`), the error ends the
+ * command as before (a hard stop).
+ */
+export async function routeBatches(model: LayoutModel, plan: RoutePlan, options: RouteOptions): Promise<RouterAnswer> {
   const routes = new Map<string, Point[]>();
   // Tolerant mode judges each link's route as its batch returns, before its cover can bind a later batch.
   const stitched = options.strictCheckpoints ? undefined : new Map<string, Stitched>();
   const createAttempt = options.createAttempt;
   const asked = plan.links.reduce((sum, item) => sum + item.connectors.length, 0);
   if (!createAttempt) throw new Error(`Routing ${asked} remaining gap(s) requires a libavoid worker factory`);
-  await withRouteSession(createAttempt, options.routeBudgetMs ?? ROUTE_BUDGET_MS, options.clock ?? systemRouteClock,
-    async route => {
-      const protectedRuns: { obstacle: RouteObstacle; segment: { from: Point; to: Point } }[] = [];
-      // Ownership batches run in a fixed order and every completed route protects the next batch.
-      for (const [index, batch] of plan.batches.entries()) {
-        // A later batch's reserved stems protect it the same way, before it has a route of its own.
-        const later = new Set(plan.batches.slice(index + 1).flatMap(item => item.links));
-        const routed = await route(batchRequest(plan, batch, [
-          ...completedCrossingObstacles(plan, batch, protectedRuns),
-          ...pendingStemObstacles(plan, batch, later),
-        ]));
-        for (const item of routed) {
-          if (routes.has(item.connector)) throw new Error(`Router returned ${item.connector} twice`);
-          routes.set(item.connector, item.points);
-        }
-        for (const id of batch.links) {
-          const link = model.links.find(item => item.id === id)!;
-          const linkPlan = plan.links.find(item => item.link === id)!;
-          // A route stage 8 cannot use (a skipped checkpoint, an end not met) is discarded, so its cover is
-          // no obstacle to the batches after it. Strict mode keeps the route and stitching throws.
-          if (stitched) {
-            const done = tryStitch(model, linkPlan, routes);
-            stitched.set(id, done);
-            if ('rejection' in done) {
-              for (const piece of linkPlan.pieces) if (piece.kind === 'gap') routes.delete(piece.connector);
-              continue;
+  // The retries still to run, once the batches are done; undefined while a batch runs.
+  let outstanding: Set<string> | undefined;
+  try {
+    await withRouteSession(createAttempt, options.routeBudgetMs ?? ROUTE_BUDGET_MS, options.clock ?? systemRouteClock,
+      async route => {
+        const protectedRuns: { obstacle: RouteObstacle; segment: { from: Point; to: Point } }[] = [];
+        // Ownership batches run in a fixed order and every completed route protects the next batch.
+        for (const [index, batch] of plan.batches.entries()) {
+          // A later batch's reserved stems protect it the same way, before it has a route of its own.
+          const later = new Set(plan.batches.slice(index + 1).flatMap(item => item.links));
+          const routed = await route(batchRequest(plan, batch, [
+            ...completedCrossingObstacles(plan, batch, protectedRuns),
+            ...pendingStemObstacles(plan, batch, later),
+          ]));
+          for (const item of routed) {
+            if (routes.has(item.connector)) throw new Error(`Router returned ${item.connector} twice`);
+            routes.set(item.connector, item.points);
+          }
+          for (const id of batch.links) {
+            const link = model.links.find(item => item.id === id)!;
+            const linkPlan = plan.links.find(item => item.link === id)!;
+            // A route stage 8 cannot use (a skipped checkpoint, an end not met) is discarded, so its cover is
+            // no obstacle to the batches after it. Strict mode keeps the route and stitching throws.
+            if (stitched) {
+              const done = tryStitch(model, linkPlan, routes);
+              stitched.set(id, done);
+              if ('rejection' in done) {
+                for (const piece of linkPlan.pieces) if (piece.kind === 'gap') routes.delete(piece.connector);
+                continue;
+              }
+            }
+            for (const piece of linkPlan.pieces) {
+              if (piece.kind !== 'gap') continue;
+              protectedRuns.push(...completedRouteCovers(model, link, piece.connector, routes.get(piece.connector) ?? []));
             }
           }
-          for (const piece of linkPlan.pieces) {
-            if (piece.kind !== 'gap') continue;
-            protectedRuns.push(...completedRouteCovers(model, link, piece.connector, routes.get(piece.connector) ?? []));
-          }
         }
-      }
-      if (stitched) await retryCellRejections(model, plan, route, routes, stitched, protectedRuns);
-    });
+        if (!stitched) return;
+        outstanding = new Set(plan.links.filter(linkPlan => cellRetryEligible(model, rejectionOf(stitched.get(linkPlan.link)))).map(item => item.link));
+        await retryCellRejections(model, plan, route, routes, stitched, protectedRuns, outstanding);
+      });
+  } catch (error) {
+    // Each retry updates the maps in one synchronous step after its answer, so they hold no half retry here.
+    if (!(error instanceof RouteDeadlineError) || outstanding === undefined || options.commandOver?.() === true) throw error;
+    for (const id of outstanding) {
+      const done = stitched!.get(id)!;
+      if ('rejection' in done) stitched!.set(id, { rejection: { ...done.rejection, retryCut: true } });
+    }
+  }
   return { routes, ...(stitched ? { stitched } : {}) };
 }
+
+const rejectionOf = (done: Stitched | undefined): RouteRejection | undefined => done !== undefined && 'rejection' in done ? done.rejection : undefined;
 
 /**
  * The cell retry of stage 8 (field-2026-11 ticket 05). A rank cell is no router obstacle in the ownership batches: the frame stands for it,
  * and the frame lets through every link that ends in it, so a cell never splits a batch and no reservation of the batches changes. The
- * stitch reads the cell (`reservations`), and a route that enters a foreign cell of its own frame is rejected (`GapRejected.entered`).
- * Such a link is routed once more, alone, after every batch: with every rank cell it does not consume as an obstacle (`groupReservations`,
- * the producer the stitch reads) and every completed route protected, then judged by the same stitch. Only a link the batches removed is
- * asked again, and nothing routes after it but a later retry, so no route the batches kept changes. Order: plan order (the link order of
- * the model); a retried route protects the retries after it, and the stems and lane approaches of the later retries protect it (as
- * `pendingStemObstacles` does between the batches). A retry that is rejected again keeps the link removed with the retry's answer,
- * which the removal check judges again on restore (DR-14). The retries run in the route session, so they count against its budget (R4).
+ * stitch reads the cell (`reservations`), and a route that enters a foreign cell of its own frame is rejected (`GapRejected.entered`;
+ * `cellRetryEligible`, which restore reads too). Such a link is routed once more, alone, after every batch: with every rank cell as an
+ * obstacle with the consumers the stitch reads (`groupReservations`) and every completed route protected, then judged by the same stitch.
+ * Only a link the batches removed is asked again, and nothing routes after it but a later retry, so no route of the call that the batches
+ * kept changes. Order: plan order (the link order of the model); a retried route protects the retries after it, and the stems and lane
+ * approaches of the later retries protect it (as `pendingStemObstacles` does between the batches). A retry that is rejected again keeps the
+ * link removed with both answers: the first (`firstAnswer`, it entered the cell) and the retry's (`answer`, its rejection); restore judges
+ * both (DR-14). The retries run in the route session, so they count against its budget (R4); `outstanding` loses each one as it finishes.
  */
 async function retryCellRejections(model: LayoutModel, plan: RoutePlan, route: (batch: RouteBatch) => Promise<RoutedConnector[]>,
-  routes: Map<string, Point[]>, stitched: Map<string, Stitched>, protectedRuns: { obstacle: RouteObstacle; segment: { from: Point; to: Point } }[]): Promise<void> {
-  const cells = groupReservations(model).filter(item => item.kind === 'cell');
-  const isCell = (entered: string | undefined): boolean => entered !== undefined && cells.some(cell => `group:${cell.id}` === entered);
-  const retries = plan.links.filter(linkPlan => {
-    const done = stitched.get(linkPlan.link);
-    return done !== undefined && 'rejection' in done && done.rejection.code === 'ROUTE_GAP_REJECTED' && isCell(done.rejection.entered);
-  });
-  const walls: RouteObstacle[] = cells.map(cell => ({ id: `group:${cell.id}`, bounds: cell.bounds, consumers: [...cell.consumers] }));
+  routes: Map<string, Point[]>, stitched: Map<string, Stitched>, protectedRuns: { obstacle: RouteObstacle; segment: { from: Point; to: Point } }[],
+  outstanding: Set<string>): Promise<void> {
+  const retries = plan.links.filter(linkPlan => outstanding.has(linkPlan.link));
+  const walls: RouteObstacle[] = groupReservations(model).filter(item => item.kind === 'cell')
+    .map(cell => ({ id: `group:${cell.id}`, bounds: cell.bounds, consumers: [...cell.consumers] }));
   for (const [index, linkPlan] of retries.entries()) {
     const batch = { id: `cell-retry:${linkPlan.link}`, links: [linkPlan.link] };
     // As between the batches: the stems and lane approaches of the retries after this one are reserved before they have a route.
@@ -132,15 +160,31 @@ async function retryCellRejections(model: LayoutModel, plan: RoutePlan, route: (
     const routed = await route(batchRequest(plan, batch, [...walls, ...completedCrossingObstacles(plan, batch, protectedRuns),
       ...pendingStemObstacles(plan, batch, later)]));
     const answer = new Map(routed.map(item => [item.connector, item.points] as const));
+    const first = rejectionOf(stitched.get(linkPlan.link))!;
     const again = tryStitch(model, linkPlan, answer);
+    outstanding.delete(linkPlan.link);
+    if ('rejection' in again) {
+      stitched.set(linkPlan.link, { rejection: { ...again.rejection, firstAnswer: first.answer } });
+      continue;
+    }
     stitched.set(linkPlan.link, again);
-    if ('rejection' in again) continue;
     const link = model.links.find(item => item.id === linkPlan.link)!;
     for (const [connector, points] of answer) {
       routes.set(connector, points);
       protectedRuns.push(...completedRouteCovers(model, link, connector, points));
     }
   }
+}
+
+/**
+ * Write one removal on a link of a draft: the flag, the answer judged (`rejectedRoute`) and, after the cell retry, the first answer
+ * (`cellRejectedRoute`) or the mark that the retry was cut (`cellRetryCut`). Stage 8 and the course preflight write removals with it (R1).
+ */
+export function markRemoved(link: LayoutLink, item: RouteRejection): void {
+  link.removed = true;
+  link.rejectedRoute = item.answer;
+  if (item.firstAnswer !== undefined) link.cellRejectedRoute = item.firstAnswer;
+  if (item.retryCut === true) link.cellRetryCut = true;
 }
 
 /** One end of a link as an author writes it: `node.port#ordinal`, `node.#ordinal` for an anonymous port, `group <id>` for a group end. */
@@ -168,7 +212,7 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
   const plan = planRoute(model, plans);
   // Overlay links need no WASM, and neither does a remainder every piece of which stage 8 claimed,
   // so a diagram with no batch never initializes it.
-  const answer: RouterAnswer = plan.batches.length ? await runRouter(model, plan, options)
+  const answer: RouterAnswer = plan.batches.length ? await routeBatches(model, plan, options)
     : { routes: new Map<string, Point[]>(), ...(options.strictCheckpoints ? {} : { stitched: new Map<string, Stitched>() }) };
   const { paths, rejections } = stitchPaths(model, plan, answer.routes, answer.stitched, options.ordinaryOverlay === true);
   return withLayoutMutation(model, 'route', draft => {
@@ -177,10 +221,11 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
     // is stored (`rejectedRoute`), so publication and restore judge it again and refuse a removal they do not reproduce (DR-14).
     for (const item of rejections) {
       const link = draft.links.find(candidate => candidate.id === item.link)!;
-      link.removed = true;
-      link.rejectedRoute = item.answer;
+      markRemoved(link, item);
       draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: item.code,
         message: rejectionMessage(link, item), owners: [{ ...link.owner }] });
+      if (item.retryCut === true) draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'ROUTE_CELL_RETRY_CUT',
+        message: `${link.id} was not routed again around the rank cells: the route session ended first.`, owners: [{ ...link.owner }] });
     }
     // A gap that stopped fitting after 7f sized it (the corridor move, a later stage) is planned by nobody: its parts are the router's,
     // and the diagnostic says so, unless 7f already named the gap (`TIER_GAP_PART_UNFIT` from the round cap).

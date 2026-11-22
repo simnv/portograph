@@ -6,12 +6,12 @@ import { endPort } from '../layout/approach.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EPS, horizontal, length, near, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { outward } from '../score/model.js';
-import { effectiveLayer, placementRuns, plannedRunsOf, planRoute, reversedRuns, type PlannedRun } from './plan.js';
+import { effectiveLayer, placementRuns, plannedRunsOf, planRoute, reversedRuns, type LinkPlan, type PlannedRun } from './plan.js';
 import { frozenLevelChordsFault, isRoutedChord } from '../layout/frame-paths.js';
 import { pathEnd } from '../layout/path-end.js';
 import { sharedBlockers, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
-import { ownedLanes, stubCandidate, tryStitch } from './paths.js';
-import { MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
+import { ownedLanes, stubCandidate, tryStitch, type RouteRejection } from './paths.js';
+import { cellRetryEligible, MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
 
 
 export interface ReservationConflict { link: string; reservation: string }
@@ -72,9 +72,10 @@ export function reservationConflicts(model: LayoutModel): ReservationConflict[] 
  */
 export function preRoute(model: LayoutModel): LayoutModel {
   const view: LayoutModel = { ...model, links: model.links.map(link => {
-    if (link.path?.fixed === true || (link.path === undefined && link.removed === undefined && link.rejectedRoute === undefined && link.stubCandidate === undefined)) return link;
+    if (link.path?.fixed === true || (link.path === undefined && link.removed === undefined && link.rejectedRoute === undefined && link.stubCandidate === undefined
+      && link.cellRejectedRoute === undefined && link.cellRetryCut === undefined)) return link;
     const kept = { ...link };
-    delete kept.path; delete kept.removed; delete kept.rejectedRoute; delete kept.stubCandidate;
+    delete kept.path; delete kept.removed; delete kept.rejectedRoute; delete kept.stubCandidate; delete kept.cellRejectedRoute; delete kept.cellRetryCut;
     return kept;
   }) };
   delete view.removedLinks;
@@ -202,9 +203,12 @@ function routerAnswerFloor(points: readonly Point[]): string | undefined {
  * stage 8 received it (`preRoute`). Seven refusals, each by name: no stored answer; an answer on a link that is not removed (in
  * `validateRoutedPaths`); a link stage 8 does not route; an answer for a gap the plan does not hold; an answer below the floor every
  * router answer reaches (`routerAnswerFloor`); an answer the judgement cannot read; an answer that stitches into a usable path.
+ * After the cell retry of stage 8 a removal has roles (field-2026-11 ticket 05): the first answer (`cellRejectedRoute`) must be a rejection
+ * the retry routes again (`cellRetryEligible`) and the retry's answer one that enters no cell; a lone answer the retry would route again
+ * needs the cut mark (`cellRetryCut`), and is refused without it.
  * The router does not run again: this proves that the stored answer is unusable and has a router answer's shape, not that the router
- * had to give it. A well-formed answer the judgement rejects still passes; only routing again would refuse it. No removed link: nothing
- * is planned.
+ * had to give it, nor that a cut retry's session ended. A well-formed answer the judgement rejects still passes; only routing again would
+ * refuse it. No removed link: nothing is planned.
  */
 function removalsReproduced(model: LayoutModel): void {
   const removed = model.links.filter(link => link.removed === true);
@@ -217,23 +221,49 @@ function removalsReproduced(model: LayoutModel): void {
     }
     const item = plan.links.find(candidate => candidate.link === link.id);
     if (item === undefined) throw new Error(`Removed link ${link.id} is no link stage 8 routes`);
-    const gaps = item.pieces.flatMap(piece => piece.kind === 'gap' ? [piece] : []), ids = gaps.map(gap => gap.connector);
-    const named = answer.map(entry => (entry as { connector?: unknown } | null)?.connector);
-    // Each entry is one gap of this plan, once, in plan order.
-    if (named.some((id, index) => typeof id !== 'string' || !ids.includes(id) || (index > 0 && ids.indexOf(id) <= ids.indexOf(named[index - 1] as string)))
-      || answer.some(entry => !Array.isArray(entry.points))) {
-      throw new Error(`Removed link ${link.id} stores a router answer that is not one for its planned gaps`);
+    const final = judgedRejection(view, link.id, item, answer, 'answer');
+    // The roles of the cell retry (field-2026-11 ticket 05): a removal whose answer the retry routes again needs the retry's answer, or the mark
+    // that the retry was cut. Restore judges each stored answer; it cannot prove that the router gave it, nor that the route session ended.
+    if (link.cellRejectedRoute !== undefined) {
+      if (link.cellRetryCut === true) throw new Error(`Removed link ${link.id} stores a first answer and a cut cell retry; a cut retry has no answer of its own`);
+      const first = judgedRejection(view, link.id, item, link.cellRejectedRoute, 'first answer');
+      if (!cellRetryEligible(view, first)) throw new Error(`Removed link ${link.id} stores a first answer that enters no rank cell; the cell retry does not route it again`);
+      // The retry routes with every rank cell as a wall, so its answer is no cell rejection (the first answer stored in both roles is one).
+      if (cellRetryEligible(view, final)) throw new Error(`Removed link ${link.id} stores a retry answer that enters ${final.entered}; the cell retry routes with the rank cells as walls`);
+    } else if (link.cellRetryCut === true) {
+      if (!cellRetryEligible(view, final)) throw new Error(`Removed link ${link.id} marks a cut cell retry, but its answer enters no rank cell`);
+    } else if (cellRetryEligible(view, final)) {
+      throw new Error(`Removed link ${link.id} stores only an answer that enters ${final.entered}; the cell retry routes it again, and no retry answer is stored`);
     }
-    for (const entry of answer) {
-      const reason = routerAnswerFloor(entry.points);
-      if (reason !== undefined) throw new Error(`Removed link ${link.id} stores an answer for ${entry.connector} that no router gives: ${reason}`);
-    }
-    const routes = new Map(answer.map(entry => [entry.connector, entry.points]));
-    let done: ReturnType<typeof tryStitch>;
-    try { done = tryStitch(view, item, routes); }
-    catch (error) { throw new Error(`Removed link ${link.id} cannot be judged again: ${(error as Error).message}`, { cause: error }); }
-    if (!('rejection' in done)) throw new Error(`Removed link ${link.id} has a usable stored route; its removal is not reproduced`);
   }
+}
+
+/**
+ * The rejection of one stored answer of a removed link (`rejectedRoute`, or `cellRejectedRoute` for the first answer of a cell retry), or a
+ * refusal by name: an answer not for its planned gaps, below the router floor, one the judgement cannot read, or one that stitches.
+ */
+function judgedRejection(view: LayoutModel, id: string, item: LinkPlan, answer: { connector: string; points: Point[] }[], role: string): RouteRejection {
+  if (!Array.isArray(answer)) throw new Error(`Removed link ${id} stores a ${role} that is not a router answer`);
+  const gaps = item.pieces.flatMap(piece => piece.kind === 'gap' ? [piece] : []), ids = gaps.map(gap => gap.connector);
+  const named = answer.map(entry => (entry as { connector?: unknown } | null)?.connector);
+  // Each entry is one gap of this plan, once, in plan order.
+  if (named.some((connector, index) => typeof connector !== 'string' || !ids.includes(connector) || (index > 0 && ids.indexOf(connector) <= ids.indexOf(named[index - 1] as string)))
+    || answer.some(entry => !Array.isArray(entry.points))) {
+    throw new Error(`Removed link ${id} stores a router answer that is not one for its planned gaps`);
+  }
+  for (const entry of answer) {
+    const reason = routerAnswerFloor(entry.points);
+    if (reason !== undefined) throw new Error(`Removed link ${id} stores an answer for ${entry.connector} that no router gives: ${reason}`);
+  }
+  const routes = new Map(answer.map(entry => [entry.connector, entry.points]));
+  let done: ReturnType<typeof tryStitch>;
+  try { done = tryStitch(view, item, routes); }
+  catch (error) { throw new Error(`Removed link ${id} cannot be judged again: ${(error as Error).message}`, { cause: error }); }
+  if (!('rejection' in done)) {
+    throw new Error(role === 'answer' ? `Removed link ${id} has a usable stored route; its removal is not reproduced`
+      : `Removed link ${id} has a usable stored ${role}; the stage would have drawn it`);
+  }
+  return done.rejection;
 }
 
 /**
@@ -263,6 +293,7 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
   for (const link of model.links) {
     if (link.removed === true && link.path) throw new Error(`Removed link ${link.id} must not carry a path`);
     if (link.removed !== true && link.rejectedRoute !== undefined) throw new Error(`Link ${link.id} stores a rejected router answer but is not removed`);
+    if (link.removed !== true && (link.cellRejectedRoute !== undefined || link.cellRetryCut !== undefined)) throw new Error(`Link ${link.id} stores a cell retry record but is not removed`);
     if (!drawn(link)) {
       if (link.path) throw new Error(`Link ${link.id} must not carry a path`);
       if (link.stubCandidate !== undefined) throw new Error(`Link ${link.id} cannot be a stub candidate`);

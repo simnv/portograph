@@ -314,6 +314,17 @@ export interface LayoutLink {
    */
   rejectedRoute?: { connector: string; points: Point[] }[];
   /**
+   * The first router answer of a link the cell retry of stage 8 routed again and that stays removed: the batch answer, which entered a
+   * foreign rank cell of the link's own frame (field-2026-11 ticket 05). `rejectedRoute` then holds the retry's answer. Restore judges both
+   * roles: this one must be a rejection the retry routes again, and the retry's must be a rejection.
+   */
+  cellRejectedRoute?: { connector: string; points: Point[] }[];
+  /**
+   * The cell retry of this removed link did not run: the route session ended first (`ROUTE_CELL_RETRY_CUT`). `rejectedRoute` holds the
+   * batch answer. Restore accepts a lone answer the retry would route again only with this mark; it cannot prove that the session ended.
+   */
+  cellRetryCut?: true;
+  /**
    * The face of the named pill that one end of this link meets, when it differs from the port's side (architecture ticket 15,
    * Section 1). Present only on a shared named port and only on a tangential face: a lateral port takes `top` or `bottom`, a top or
    * bottom port takes `left` or `right`. Stage 5 decides it with the link's course; `LayoutModel.courses` records the same fact.

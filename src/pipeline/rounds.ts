@@ -29,10 +29,10 @@ import { baselineDigest, farAnchorIndex, farEndDecisions as readDecisions, gener
 import { farEndDecisionEntry, farEndDecisionsOf, farEndEntries, trialLedger, type FarEndDeclineReason, pairGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import type { ReservationFailure } from '../layout/reservations.js';
-import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute } from '../route/plan.js';
-import { completedRouteCovers, type RouteObstacle } from '../route/obstacles.js';
-import { stitchPaths, tryStitch, type Stitched } from '../route/paths.js';
-import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession } from '../route/worker.js';
+import { planRoute } from '../route/plan.js';
+import { stitchPaths, type Stitched } from '../route/paths.js';
+import { ROUTE_BUDGET_MS } from '../route/worker.js';
+import { markRemoved, routeBatches } from '../route/index.js';
 import { CommandDeadlineError } from './budget.js';
 import { isDeadlineError } from './deadline.js';
 import type { Refusal, Round } from './round.js';
@@ -233,54 +233,19 @@ async function routeAt7e(env: Env, trial7e: LayoutModel): Promise<LayoutModel> {
   const routed = await env.timed('route-trial', async () => {
     const plans = tierGapPlans(model7e);
     const plan = planRoute(model7e, plans);
-    const routes = new Map<string, Point[]>();
-    const stitched = env.options.strictCheckpoints ? undefined : new Map<string, Stitched>();
-    if (plan.batches.length > 0) {
-      const asked = plan.links.reduce((sum, item) => sum + item.connectors.length, 0);
-      if (!env.options.createRouteAttempt) throw new Error(`Routing ${asked} remaining gap(s) requires a libavoid worker factory`);
-      await withRouteSession(
-        env.options.createRouteAttempt,
-        Math.max(1, env.budget.share(env.options.routeBudgetMs ?? ROUTE_BUDGET_MS)),
-        env.clock ?? systemRouteClock,
-        async runRoute => {
-          const protectedRuns: { obstacle: RouteObstacle; segment: { from: Point; to: Point } }[] = [];
-          for (const [index, batch] of plan.batches.entries()) {
-            const later = new Set(plan.batches.slice(index + 1).flatMap(item => item.links));
-            const batchRoutes = await runRoute(batchRequest(plan, batch, [
-              ...completedCrossingObstacles(plan, batch, protectedRuns),
-              ...pendingStemObstacles(plan, batch, later),
-            ]));
-            for (const item of batchRoutes) {
-              if (routes.has(item.connector)) throw new Error(`Router returned ${item.connector} twice`);
-              routes.set(item.connector, item.points);
-            }
-            for (const id of batch.links) {
-              const link = model7e.links.find(item => item.id === id)!;
-              const linkPlan = plan.links.find(item => item.link === id)!;
-              if (stitched) {
-                const done = tryStitch(model7e, linkPlan, routes);
-                stitched.set(id, done);
-                if ('rejection' in done) {
-                  for (const piece of linkPlan.pieces) if (piece.kind === 'gap') routes.delete(piece.connector);
-                  continue;
-                }
-              }
-              for (const piece of linkPlan.pieces) {
-                if (piece.kind !== 'gap') continue;
-                protectedRuns.push(...completedRouteCovers(model7e, link, piece.connector, routes.get(piece.connector) ?? []));
-              }
-            }
-          }
-        },
-      );
-    }
+    // The one loop of stage 8, the cell retry included (`routeBatches`, R1): the preflight judges the routes the published model would have.
+    const { routes, stitched } = plan.batches.length > 0 ? await routeBatches(model7e, plan, {
+      ...(env.options.createRouteAttempt ? { createAttempt: env.options.createRouteAttempt } : {}),
+      routeBudgetMs: Math.max(1, env.budget.share(env.options.routeBudgetMs ?? ROUTE_BUDGET_MS)),
+      ...(env.clock ? { clock: env.clock } : {}),
+      ...(env.options.strictCheckpoints ? { strictCheckpoints: true } : {}),
+      commandOver: () => env.budget.remainingMs() <= 0,
+    }) : { routes: new Map<string, Point[]>(), ...(env.options.strictCheckpoints ? {} : { stitched: new Map<string, Stitched>() }) };
     const { paths, rejections } = stitchPaths(model7e, plan, routes, stitched, true);
     const links = model7e.links.map(link => ({ ...link }));
     for (const { link, path } of paths) links.find(item => item.id === link)!.path = path;
     for (const item of rejections) {
-      const link = links.find(candidate => candidate.id === item.link)!;
-      link.removed = true;
-      link.rejectedRoute = item.answer;
+      markRemoved(links.find(candidate => candidate.id === item.link)!, item);
     }
     const removedLinks = rejections.length > 0 ? links.filter(link => link.removed === true).map(link => link.id) : model7e.removedLinks;
     return { ...model7e, links, ...(removedLinks === undefined ? {} : { removedLinks }) };

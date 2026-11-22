@@ -73,6 +73,10 @@ export interface RouteRejection {
   entered?: string;
   /** The router answer judged, per routed gap of the link that has one, in plan order; stage 8 stores it as `LayoutLink.rejectedRoute` (DR-14). */
   answer: { connector: string; points: Point[] }[];
+  /** After a cell retry that is rejected again: the batch answer, which entered a foreign rank cell (`LayoutLink.cellRejectedRoute`). */
+  firstAnswer?: { connector: string; points: Point[] }[];
+  /** The cell retry of this link did not run: the route session ended first (`LayoutLink.cellRetryCut`). */
+  retryCut?: true;
 }
 
 /**
